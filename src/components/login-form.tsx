@@ -29,8 +29,11 @@ export function LoginForm() {
     try {
       await signIn("password", { email, password, flow: "signIn" });
       router.push("/");
-    } catch {
-      setError("Invalid email or password.");
+    } catch (err) {
+      console.error("Sign-in error:", err);
+      setError(
+        err instanceof Error ? err.message : "Invalid email or password.",
+      );
     } finally {
       setPending(false);
     }
