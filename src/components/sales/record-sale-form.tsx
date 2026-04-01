@@ -1037,10 +1037,8 @@ export function RecordSaleForm({
                         <TableCell>
                           <div className="flex items-center gap-1">
                             <Tooltip>
-                              <TooltipTrigger asChild>
-                                <Badge variant={li.hqBatchId ? "secondary" : badge.variant} className="text-xs cursor-help">
-                                  {li.hqBatchId ? "HQ Auto-Fulfill" : badge.label}
-                                </Badge>
+                              <TooltipTrigger render={<Badge variant={li.hqBatchId ? "secondary" : badge.variant} className="text-xs cursor-help" />}>
+                                {li.hqBatchId ? "HQ Auto-Fulfill" : badge.label}
                               </TooltipTrigger>
                               <TooltipContent>
                                 {li.hqBatchId ? HQ_AUTO_FULFILL_TOOLTIP : badge.tooltip}
