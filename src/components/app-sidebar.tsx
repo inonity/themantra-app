@@ -112,7 +112,12 @@ const agentNav = [
     icon: BoxIcon,
   },
   {
-    title: "Sales History",
+    title: "Customer Interests",
+    url: "/dashboard/interests",
+    icon: ClipboardListIcon,
+  },
+  {
+    title: "Sales",
     url: "/dashboard/my-sales",
     icon: HistoryIcon,
   },
@@ -138,6 +143,11 @@ const salesNav = [
     title: "My Inventory",
     url: "/dashboard/inventory",
     icon: BoxIcon,
+  },
+  {
+    title: "Customer Interests",
+    url: "/dashboard/interests",
+    icon: ClipboardListIcon,
   },
   {
     title: "Sales History",
@@ -199,7 +209,6 @@ export function AppSidebar() {
                 <SidebarMenuItem>
                   <SidebarMenuButton
                     render={<Link href="/dashboard/record-sale" />}
-                    isActive={pathname === "/dashboard/record-sale"}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
                   >
                     <PlusCircleIcon data-icon="inline-start" />

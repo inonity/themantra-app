@@ -16,12 +16,13 @@ import {
 } from "@/components/ui/card";
 import { buttonVariants } from "@/components/ui/button";
 import {
-  ShoppingCartIcon,
-  SparklesIcon,
+  PlusCircleIcon,
+  HeartIcon,
   DollarSignIcon,
   AlertCircleIcon,
   ClockIcon,
   TrendingUpIcon,
+  ShoppingCartIcon,
 } from "lucide-react";
 
 /* ------------------------------------------------------------------ */
@@ -269,11 +270,11 @@ function AgentSalesDashboard() {
       {/* Quick actions */}
       <div className="flex gap-3">
         <Link href="/dashboard/record-sale" className={buttonVariants({ variant: "default", size: "lg" })}>
-          <ShoppingCartIcon className="h-4 w-4" />
+          <PlusCircleIcon className="h-4 w-4" />
           Add Sale
         </Link>
         <Link href="/dashboard/record-interest" className={`${buttonVariants({ variant: "outline", size: "lg" })} border-border!`}>
-          <SparklesIcon className="h-4 w-4" />
+          <HeartIcon className="h-4 w-4" />
           Record Interest
         </Link>
       </div>
