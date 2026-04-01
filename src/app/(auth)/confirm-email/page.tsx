@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useMutation } from "convex/react";
 import { useAuthActions } from "@convex-dev/auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -86,7 +86,7 @@ function ConfirmEmailInner({ token }: { token: string }) {
   );
 }
 
-export default function ConfirmEmailPage() {
+function ConfirmEmailContent() {
   const searchParams = useSearchParams();
   const token = searchParams.get("token");
 
@@ -108,5 +108,19 @@ export default function ConfirmEmailPage() {
         </Card>
       )}
     </div>
+  );
+}
+
+export default function ConfirmEmailPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex min-h-screen items-center justify-center bg-zinc-50 px-4 dark:bg-black">
+          <Loader2Icon className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      }
+    >
+      <ConfirmEmailContent />
+    </Suspense>
   );
 }
