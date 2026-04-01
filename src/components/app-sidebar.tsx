@@ -8,6 +8,7 @@ import {
   ShoppingCartIcon,
   WarehouseIcon,
   ClipboardListIcon,
+  PlusCircleIcon,
   HistoryIcon,
   UsersIcon,
   TagIcon,
@@ -68,14 +69,14 @@ const adminNav = [
     icon: WarehouseIcon,
   },
   {
-    title: "Sales",
-    url: "/dashboard/sales",
-    icon: ShoppingCartIcon,
-  },
-  {
     title: "Offers",
     url: "/dashboard/offers",
     icon: TagIcon,
+  },
+  {
+    title: "Pricing",
+    url: "/dashboard/pricing",
+    icon: PercentIcon,
   },
   {
     title: "Fulfillment",
@@ -88,14 +89,14 @@ const adminNav = [
     icon: UsersIcon,
   },
   {
-    title: "Pricing",
-    url: "/dashboard/pricing",
-    icon: PercentIcon,
-  },
-  {
     title: "Agent Payments",
     url: "/dashboard/agent-payments",
     icon: BanknoteIcon,
+  },
+    {
+    title: "Sales",
+    url: "/dashboard/sales",
+    icon: ShoppingCartIcon,
   },
 ]
 
@@ -111,14 +112,9 @@ const agentNav = [
     icon: BoxIcon,
   },
   {
-    title: "Interests",
-    url: "/dashboard/interests",
-    icon: HeartIcon,
-  },
-  {
-    title: "Record Sale",
-    url: "/dashboard/record-sale",
-    icon: ClipboardListIcon,
+    title: "Sales History",
+    url: "/dashboard/my-sales",
+    icon: HistoryIcon,
   },
   {
     title: "Fulfillment",
@@ -126,12 +122,7 @@ const agentNav = [
     icon: TruckIcon,
   },
   {
-    title: "Sales History",
-    url: "/dashboard/my-sales",
-    icon: HistoryIcon,
-  },
-  {
-    title: "Payments",
+    title: "HQ Payments",
     url: "/dashboard/payments",
     icon: BanknoteIcon,
   },
@@ -149,14 +140,9 @@ const salesNav = [
     icon: BoxIcon,
   },
   {
-    title: "Interests",
-    url: "/dashboard/interests",
-    icon: HeartIcon,
-  },
-  {
-    title: "Record Sale",
-    url: "/dashboard/record-sale",
-    icon: ClipboardListIcon,
+    title: "Sales History",
+    url: "/dashboard/my-sales",
+    icon: HistoryIcon,
   },
   {
     title: "Fulfillment",
@@ -164,12 +150,7 @@ const salesNav = [
     icon: TruckIcon,
   },
   {
-    title: "Sales History",
-    url: "/dashboard/my-sales",
-    icon: HistoryIcon,
-  },
-  {
-    title: "Payments",
+    title: "HQ Payments",
     url: "/dashboard/payments",
     icon: BanknoteIcon,
   },
@@ -210,6 +191,37 @@ export function AppSidebar() {
         </SidebarMenu>
       </SidebarHeader>
       <SidebarContent>
+        {user?.role !== "admin" && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Quick Actions</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    render={<Link href="/dashboard/record-sale" />}
+                    isActive={pathname === "/dashboard/record-sale"}
+                    className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                  >
+                    <PlusCircleIcon data-icon="inline-start" />
+                    <span>Add Sale</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+              <SidebarMenu className="mt-1">
+                <SidebarMenuItem>
+                  <SidebarMenuButton
+                    render={<Link href="/dashboard/record-interest" />}
+                    isActive={pathname === "/dashboard/record-interest"}
+                    className="border border-border hover:bg-accent"
+                  >
+                    <HeartIcon data-icon="inline-start" />
+                    <span>Record Interest</span>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
         <SidebarGroup>
           <SidebarGroupLabel>Navigation</SidebarGroupLabel>
           <SidebarGroupContent>
