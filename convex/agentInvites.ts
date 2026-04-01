@@ -1,6 +1,7 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, internalMutation } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { v } from "convex/values";
-import { requireRole, requireAuth } from "./helpers/auth";
+import { requireRole } from "./helpers/auth";
 
 export const create = mutation({
   args: {
@@ -8,6 +9,7 @@ export const create = mutation({
     name: v.string(),
     phone: v.string(),
     role: v.optional(v.union(v.literal("agent"), v.literal("sales"))),
+    siteUrl: v.string(),
   },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, "admin");
@@ -31,18 +33,91 @@ export const create = mutation({
     }
 
     const inviteToken = crypto.randomUUID();
+    const assignedRole = args.role ?? "agent";
 
     const inviteId = await ctx.db.insert("agentInvites", {
       email: args.email,
       name: args.name,
       phone: args.phone,
-      role: args.role ?? "agent",
+      role: assignedRole,
       inviteToken,
       status: "pending",
+      emailStatus: "pending",
       createdBy: admin._id,
     });
 
+    // Schedule sending the invite email (action handles status tracking)
+    const inviteLink = `${args.siteUrl}/join?token=${inviteToken}`;
+    await ctx.scheduler.runAfter(0, internal.emails.sendInviteEmail, {
+      email: args.email,
+      name: args.name,
+      role: assignedRole,
+      inviteLink,
+      inviteId,
+    });
+
     return { inviteId, inviteToken };
+  },
+});
+
+export const markEmailSent = internalMutation({
+  args: { inviteId: v.id("agentInvites") },
+  handler: async (ctx, args) => {
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite) return;
+    // Only update if still pending (not already failed)
+    if (invite.emailStatus === "pending") {
+      await ctx.db.patch(args.inviteId, {
+        emailStatus: "sent",
+        emailSentAt: Date.now(),
+      });
+    }
+  },
+});
+
+export const markEmailFailed = internalMutation({
+  args: {
+    inviteId: v.id("agentInvites"),
+    error: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite) return;
+    await ctx.db.patch(args.inviteId, {
+      emailStatus: "failed",
+      emailError: args.error,
+    });
+  },
+});
+
+export const resendInviteEmail = mutation({
+  args: {
+    inviteId: v.id("agentInvites"),
+    siteUrl: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, "admin");
+
+    const invite = await ctx.db.get(args.inviteId);
+    if (!invite) throw new Error("Invite not found");
+    if (invite.status !== "pending") {
+      throw new Error("Can only resend emails for pending invites");
+    }
+
+    // Reset email status
+    await ctx.db.patch(args.inviteId, {
+      emailStatus: "pending",
+      emailError: undefined,
+    });
+
+    const inviteLink = `${args.siteUrl}/join?token=${invite.inviteToken}`;
+    await ctx.scheduler.runAfter(0, internal.emails.sendInviteEmail, {
+      email: invite.email,
+      name: invite.name,
+      role: invite.role ?? "agent",
+      inviteLink,
+      inviteId: args.inviteId,
+    });
   },
 });
 
@@ -77,7 +152,6 @@ export const completeInvite = mutation({
   args: { token: v.string() },
   handler: async (ctx, args) => {
     // No auth required — the invite token serves as authorization.
-    // Auth state may not have propagated yet after signUp.
     const invite = await ctx.db
       .query("agentInvites")
       .withIndex("by_inviteToken", (q) => q.eq("inviteToken", args.token))
@@ -122,13 +196,20 @@ export const completeInvite = mutation({
         agentId: user._id,
         stockModel: "dropship",
         rateType: "percentage",
-        rateValue: 1.0, // 100% to HQ = 0 commission
+        rateValue: 1.0,
         updatedAt: Date.now(),
       });
     }
 
     // Mark invite as completed
     await ctx.db.patch(invite._id, { status: "completed", updatedAt: Date.now() });
+
+    // Send welcome email
+    await ctx.scheduler.runAfter(0, internal.emails.sendWelcomeEmail, {
+      email: invite.email,
+      name: invite.name,
+      role: assignedRole,
+    });
   },
 });
 

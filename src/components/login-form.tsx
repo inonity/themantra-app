@@ -14,7 +14,13 @@ import {
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 
-export function LoginForm() {
+export function LoginForm({
+  emailConfirmed,
+  errorMessage,
+}: {
+  emailConfirmed?: boolean;
+  errorMessage?: string;
+}) {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const [email, setEmail] = useState("");
@@ -48,6 +54,16 @@ export function LoginForm() {
         </CardDescription>
       </CardHeader>
       <CardContent>
+        {emailConfirmed && (
+          <div className="mb-4 rounded-md border border-green-200 bg-green-50 px-3 py-2 text-sm text-green-800">
+            Email updated successfully. Please sign in with your new email.
+          </div>
+        )}
+        {errorMessage && (
+          <div className="mb-4 rounded-md border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {errorMessage}
+          </div>
+        )}
         <form onSubmit={handleSubmit} className="flex flex-col gap-4">
           <div className="flex flex-col gap-2">
             <Label htmlFor="email">Email</Label>

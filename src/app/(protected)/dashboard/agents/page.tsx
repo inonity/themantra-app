@@ -21,7 +21,11 @@ import {
   PlusIcon,
   TrashIcon,
   DollarSignIcon,
+  MailIcon,
+  RefreshCwIcon,
+  AlertCircleIcon,
 } from "lucide-react";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useState } from "react";
 
 function CopyLinkButton({ token }: { token: string }) {
@@ -52,19 +56,75 @@ const STOCK_MODEL_LABELS: Record<string, string> = {
   dropship: "Dropship",
 };
 
+function EmailStatusBadge({
+  status,
+  error,
+  sentAt,
+}: {
+  status?: string;
+  error?: string;
+  sentAt?: number;
+}) {
+  if (!status) {
+    return (
+      <span className="text-muted-foreground text-xs">No email</span>
+    );
+  }
+
+  if (status === "sent") {
+    return (
+      <Tooltip>
+        <TooltipTrigger>
+          <Badge variant="outline" className="gap-1">
+            <MailIcon className="h-3 w-3" />
+            Sent
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>
+          {sentAt
+            ? `Sent ${new Date(sentAt).toLocaleString()}`
+            : "Email sent"}
+        </TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  if (status === "failed") {
+    return (
+      <Tooltip>
+        <TooltipTrigger>
+          <Badge variant="destructive" className="gap-1">
+            <AlertCircleIcon className="h-3 w-3" />
+            Failed
+          </Badge>
+        </TooltipTrigger>
+        <TooltipContent>{error ?? "Email delivery failed"}</TooltipContent>
+      </Tooltip>
+    );
+  }
+
+  // pending
+  return (
+    <Badge variant="secondary" className="gap-1">
+      <RefreshCwIcon className="h-3 w-3 animate-spin" />
+      Sending
+    </Badge>
+  );
+}
+
 export default function AgentsPage() {
   const agents = useQuery(api.users.listAgents);
   const salesStaff = useQuery(api.users.listSalesStaff);
   const invites = useQuery(api.agentInvites.list);
   const agentProfiles = useQuery(api.agentProfiles.listAll);
   const revokeInvite = useMutation(api.agentInvites.revoke);
+  const resendEmail = useMutation(api.agentInvites.resendInviteEmail);
 
   // Index profiles by agentId for quick lookup
   const profileMap = new Map(
     (agentProfiles ?? []).map((p) => [p.agentId, p])
   );
 
-  const pendingInvites = invites?.filter((i) => i.status === "pending") ?? [];
   const isLoading = agents === undefined || invites === undefined || salesStaff === undefined;
 
   return (
@@ -211,58 +271,112 @@ export default function AgentsPage() {
               )}
             </div>
 
-            {/* Pending Invites */}
-            {pendingInvites.length > 0 && (
-              <div className="space-y-4">
-                <h2 className="text-xl font-semibold">
-                  Pending Invites ({pendingInvites.length})
-                </h2>
+            {/* Invitations */}
+            <div className="space-y-4">
+              <h2 className="text-xl font-semibold">
+                Invitations ({invites.length})
+              </h2>
+              {invites.length === 0 ? (
+                <p className="text-muted-foreground text-sm">
+                  No invitations yet.
+                </p>
+              ) : (
                 <Table>
                   <TableHeader>
                     <TableRow>
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
+                      <TableHead>Role</TableHead>
                       <TableHead>Status</TableHead>
+                      <TableHead>Email Status</TableHead>
                       <TableHead className="text-right">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {pendingInvites.map((invite) => (
+                    {invites.map((invite) => (
                       <TableRow key={invite._id}>
                         <TableCell className="font-medium">
                           {invite.name}
                         </TableCell>
                         <TableCell>{invite.email}</TableCell>
-                        <TableCell>{invite.phone}</TableCell>
                         <TableCell>
-                          <div className="flex items-center gap-1">
-                            <Badge variant="secondary">Pending</Badge>
-                            <Badge variant="outline">
-                              {(invite as { role?: string }).role === "sales" ? "Sales" : "Agent"}
-                            </Badge>
-                          </div>
+                          <Badge variant="outline">
+                            {invite.role === "sales" ? "Sales" : "Agent"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <Badge
+                            variant={
+                              invite.status === "completed"
+                                ? "default"
+                                : "secondary"
+                            }
+                          >
+                            {invite.status === "completed"
+                              ? "Joined"
+                              : "Pending"}
+                          </Badge>
+                        </TableCell>
+                        <TableCell>
+                          <EmailStatusBadge
+                            status={invite.emailStatus}
+                            error={invite.emailError}
+                            sentAt={invite.emailSentAt}
+                          />
                         </TableCell>
                         <TableCell className="text-right">
                           <div className="flex items-center justify-end gap-1">
-                            <CopyLinkButton token={invite.inviteToken} />
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() =>
-                                revokeInvite({ inviteId: invite._id })
-                              }
-                            >
-                              <TrashIcon className="h-4 w-4" />
-                            </Button>
+                            {invite.status === "pending" && (
+                              <>
+                                {(invite.emailStatus === "failed" ||
+                                  invite.emailStatus === "sent") && (
+                                  <Tooltip>
+                                    <TooltipTrigger
+                                      render={
+                                        <Button
+                                          variant="ghost"
+                                          size="sm"
+                                          onClick={() =>
+                                            resendEmail({
+                                              inviteId: invite._id,
+                                              siteUrl: window.location.origin,
+                                            })
+                                          }
+                                        />
+                                      }
+                                    >
+                                      <RefreshCwIcon className="h-4 w-4" />
+                                    </TooltipTrigger>
+                                    <TooltipContent>Resend email</TooltipContent>
+                                  </Tooltip>
+                                )}
+                                <CopyLinkButton token={invite.inviteToken} />
+                                <Tooltip>
+                                  <TooltipTrigger
+                                    render={
+                                      <Button
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={() =>
+                                          revokeInvite({ inviteId: invite._id })
+                                        }
+                                      />
+                                    }
+                                  >
+                                    <TrashIcon className="h-4 w-4" />
+                                  </TooltipTrigger>
+                                  <TooltipContent>Revoke invite</TooltipContent>
+                                </Tooltip>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
                 </Table>
-              </div>
-            )}
+              )}
+            </div>
           </>
         )}
       </div>

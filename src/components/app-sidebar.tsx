@@ -15,9 +15,13 @@ import {
   PercentIcon,
   HeartIcon,
   TruckIcon,
+  ChevronsUpDown,
+  LogOut,
+  Settings,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { useAuthActions } from "@convex-dev/auth/react"
 import { useCurrentUser } from "@/hooks/useStoreUserEffect"
 
 import {
@@ -33,7 +37,14 @@ import {
   SidebarMenuItem,
   SidebarRail,
 } from "@/components/ui/sidebar"
-import { SignOutButton } from "@/components/sign-out-button"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 
 const adminNav = [
   {
@@ -167,6 +178,7 @@ const salesNav = [
 export function AppSidebar() {
   const user = useCurrentUser()
   const pathname = usePathname()
+  const { signOut } = useAuthActions()
 
   const navItems =
     user?.role === "admin"
@@ -176,6 +188,15 @@ export function AppSidebar() {
         : user?.role === "sales"
           ? salesNav
           : []
+
+  const initials = user?.name
+    ? user.name
+        .split(" ")
+        .map((n) => n[0])
+        .join("")
+        .toUpperCase()
+        .slice(0, 2)
+    : "?"
 
   return (
     <Sidebar>
@@ -211,7 +232,63 @@ export function AppSidebar() {
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SignOutButton />
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                render={
+                  <SidebarMenuButton
+                    size="lg"
+                    className="data-[popup-open]:bg-sidebar-accent data-[popup-open]:text-sidebar-accent-foreground"
+                  />
+                }
+              >
+                <Avatar className="h-8 w-8 rounded-lg">
+                  <AvatarFallback className="rounded-lg">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="grid flex-1 text-left text-sm leading-tight">
+                  <span className="truncate font-medium">
+                    {user?.name ?? "Loading..."}
+                  </span>
+                  <span className="truncate text-xs text-muted-foreground">
+                    {user?.email ?? ""}
+                  </span>
+                </div>
+                <ChevronsUpDown className="ml-auto size-4" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent
+                className="min-w-56 rounded-lg"
+                side="top"
+                align="end"
+                sideOffset={4}
+              >
+                <div className="flex items-center gap-2 px-1.5 py-1.5 text-left text-sm">
+                  <Avatar className="h-8 w-8 rounded-lg">
+                    <AvatarFallback className="rounded-lg">
+                      {initials}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="grid flex-1 text-left text-sm leading-tight">
+                    <span className="truncate font-medium">
+                      {user?.name ?? "Loading..."}
+                    </span>
+                    <span className="truncate text-xs text-muted-foreground">
+                      {user?.email ?? ""}
+                    </span>
+                  </div>
+                </div>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem render={<Link href="/dashboard/settings" />}>
+                  <Settings />
+                  Settings
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem onClick={() => signOut()}>
+                  <LogOut />
+                  Sign out
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>

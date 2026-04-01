@@ -14,6 +14,7 @@ import type * as agentProfiles from "../agentProfiles.js";
 import type * as agentSettlements from "../agentSettlements.js";
 import type * as auth from "../auth.js";
 import type * as batches from "../batches.js";
+import type * as emails from "../emails.js";
 import type * as files from "../files.js";
 import type * as helpers_auth from "../helpers/auth.js";
 import type * as helpers_pricing from "../helpers/pricing.js";
@@ -42,6 +43,7 @@ declare const fullApi: ApiFromModules<{
   agentSettlements: typeof agentSettlements;
   auth: typeof auth;
   batches: typeof batches;
+  emails: typeof emails;
   files: typeof files;
   "helpers/auth": typeof helpers_auth;
   "helpers/pricing": typeof helpers_pricing;

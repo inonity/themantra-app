@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckIcon, CopyIcon } from "lucide-react";
+import { getErrorMessage } from "@/lib/utils";
 
 export function AddAgentDialog({
   children,
@@ -51,16 +52,18 @@ export function AddAgentDialog({
     setError("");
     setPending(true);
     try {
+      const siteUrl = window.location.origin;
       const result = await createInvite({
         email,
         name,
         phone,
         role,
+        siteUrl,
       });
-      const link = `${window.location.origin}/join?token=${result.inviteToken}`;
+      const link = `${siteUrl}/join?token=${result.inviteToken}`;
       setInviteLink(link);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create invite");
+      setError(getErrorMessage(err, "Failed to create invite"));
     } finally {
       setPending(false);
     }

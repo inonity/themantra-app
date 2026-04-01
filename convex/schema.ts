@@ -23,6 +23,10 @@ export default defineSchema({
     nickname: v.optional(v.string()),
     address: v.optional(v.string()),
     invitedBy: v.optional(v.id("users")),
+    // Pending email change
+    pendingEmail: v.optional(v.string()),
+    pendingEmailToken: v.optional(v.string()),
+    pendingEmailExpiresAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // NOTE: "distributor" and "stockist" roles planned for future
   })
@@ -404,6 +408,15 @@ export default defineSchema({
     role: v.optional(v.union(v.literal("agent"), v.literal("sales"))),
     inviteToken: v.string(),
     status: v.union(v.literal("pending"), v.literal("completed")),
+    emailStatus: v.optional(
+      v.union(
+        v.literal("pending"),
+        v.literal("sent"),
+        v.literal("failed")
+      )
+    ),
+    emailSentAt: v.optional(v.number()),
+    emailError: v.optional(v.string()),
     createdBy: v.id("users"),
     updatedAt: v.optional(v.number()),
   })

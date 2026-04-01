@@ -50,6 +50,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { TrashIcon, UploadIcon, XIcon, CameraIcon } from "lucide-react";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils";
 
 type FulfillmentSource = "agent_stock" | "hq_transfer" | "pending_batch" | "future_release";
 
@@ -746,7 +747,7 @@ export function RecordSaleForm({
       toast.success("Sale recorded successfully");
       router.push("/dashboard/my-sales");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to record sale");
+      toast.error(getErrorMessage(error, "Failed to record sale"));
     } finally {
       setSubmitting(false);
       setUploadingProof(false);
