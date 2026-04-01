@@ -144,6 +144,31 @@ export const sendEmailConfirmation = internalAction({
   },
 });
 
+export const sendPasswordChangedEmail = internalAction({
+  args: {
+    email: v.string(),
+    name: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    await sendBrevoEmail({
+      to: [{ email: args.email, name: args.name }],
+      subject: "Your password has been changed — TheMantra",
+      htmlContent: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Password Changed</h2>
+          <p>Hi ${args.name},</p>
+          <p>Your password for <strong>TheMantra</strong> has been successfully changed.</p>
+          <p>If you did not make this change, please contact your administrator immediately.</p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="color: #9ca3af; font-size: 12px;">
+            TheMantra - Inventory & Sales Management
+          </p>
+        </div>
+      `,
+    });
+  },
+});
+
 export const sendWelcomeEmail = internalAction({
   args: {
     email: v.string(),

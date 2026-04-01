@@ -1,7 +1,8 @@
 "use client";
 
 import { useAuthActions } from "@convex-dev/auth/react";
-import { useState } from "react";
+import { useConvexAuth } from "convex/react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import {
@@ -22,11 +23,23 @@ export function LoginForm({
   errorMessage?: string;
 }) {
   const { signIn } = useAuthActions();
+  const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
   const [pending, setPending] = useState(false);
+  const [signInComplete, setSignInComplete] = useState(false);
+
+  // Wait for Convex backend to confirm authentication before navigating.
+  // signIn() resolves before useConvexAuth() reflects the new state,
+  // so navigating immediately would hit a frame where isAuthenticated is false,
+  // causing AuthGuard to redirect back to /login.
+  useEffect(() => {
+    if (signInComplete && isAuthenticated) {
+      router.push("/dashboard");
+    }
+  }, [signInComplete, isAuthenticated, router]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -34,13 +47,12 @@ export function LoginForm({
     setPending(true);
     try {
       await signIn("password", { email, password, flow: "signIn" });
-      router.push("/");
+      setSignInComplete(true);
     } catch (err) {
       console.error("Sign-in error:", err);
       setError(
         err instanceof Error ? err.message : "Invalid email or password.",
       );
-    } finally {
       setPending(false);
     }
   }

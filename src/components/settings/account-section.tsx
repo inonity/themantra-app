@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useSyncExternalStore } from "react";
+import { useEffect, useState } from "react";
 import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc } from "../../../convex/_generated/dataModel";
@@ -28,15 +28,12 @@ export function AccountSection({ user }: { user: Doc<"users"> }) {
   const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
 
   const hasPendingEmail = !!user.pendingEmail;
-  // Check expiry every 30s using a clock subscription (React compiler safe)
-  const now = useSyncExternalStore(
-    (cb) => {
-      const id = setInterval(cb, 30_000);
-      return () => clearInterval(id);
-    },
-    () => Date.now(),
-    () => Date.now()
-  );
+  // Check expiry every 30s
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 30_000);
+    return () => clearInterval(id);
+  }, []);
   const pendingExpired = user.pendingEmailExpiresAt
     ? now > user.pendingEmailExpiresAt
     : false;

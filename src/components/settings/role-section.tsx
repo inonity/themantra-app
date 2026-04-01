@@ -32,7 +32,7 @@ type SettingsData = {
 
 function formatRate(rateType: string, rateValue: number) {
   if (rateType === "percentage") {
-    return `${rateValue}% of retail`;
+    return `${Math.round(rateValue * 100)}% of retail`;
   }
   return `RM ${rateValue.toFixed(2)} fixed`;
 }
@@ -145,6 +145,29 @@ export function RoleSection({ data }: { data: SettingsData }) {
                 </TabsList>
                 {stockModels.map((sm) => {
                   const pricing = getPricingForModel(sm);
+
+                  // Resolve offer pricing for this stock model
+                  const agentSpecific = agentPricing?.find((ap) => ap.stockModel === sm);
+                  const offersForModel = applicableOffers
+                    .map((offer) => {
+                      // Agent-specific offer override takes priority
+                      const agentOverride = agentSpecific?.offerOverrides?.find(
+                        (oo) => oo.offerId === offer._id
+                      );
+                      if (agentOverride) {
+                        return { offer, rateType: agentOverride.rateType, rateValue: agentOverride.rateValue };
+                      }
+                      // Fall back to default offerPricing for this stock model
+                      const defaultOp = offerPricing.find(
+                        (op) => op.offerId === offer._id && op.stockModel === sm
+                      );
+                      if (defaultOp) {
+                        return { offer, rateType: defaultOp.rateType, rateValue: defaultOp.rateValue };
+                      }
+                      return null;
+                    })
+                    .filter((o) => o !== null);
+
                   return (
                     <TabsContent key={sm} value={sm} className="space-y-3">
                       {pricing ? (
@@ -224,6 +247,48 @@ export function RoleSection({ data }: { data: SettingsData }) {
                               </div>
                             </div>
                           )}
+
+                          {offersForModel.length > 0 && (
+                            <>
+                              <Separator />
+                              <div className="space-y-2">
+                                <p className="text-muted-foreground text-xs">
+                                  Applicable Offers
+                                </p>
+                                {offersForModel.map(({ offer, rateType, rateValue }) => (
+                                  <div key={offer._id} className="rounded-md border p-3 space-y-2">
+                                    <div className="flex items-center justify-between">
+                                      <div>
+                                        <p className="text-sm font-medium">{offer.name}</p>
+                                        {offer.description && (
+                                          <p className="text-muted-foreground text-xs">
+                                            {offer.description}
+                                          </p>
+                                        )}
+                                      </div>
+                                      <Badge variant="secondary" className="text-xs">
+                                        Min {offer.minQuantity} pcs
+                                      </Badge>
+                                    </div>
+                                    <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                      <span>Bundle: RM {offer.bundlePrice.toFixed(2)}</span>
+                                      <span>{formatRate(rateType, rateValue)}</span>
+                                      {offer.startDate && (
+                                        <span>
+                                          From: {new Date(offer.startDate).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                      {offer.endDate && (
+                                        <span>
+                                          Until: {new Date(offer.endDate).toLocaleDateString()}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </div>
+                                ))}
+                              </div>
+                            </>
+                          )}
                         </div>
                       ) : (
                         <p className="text-muted-foreground text-sm py-2">
@@ -234,63 +299,6 @@ export function RoleSection({ data }: { data: SettingsData }) {
                   );
                 })}
               </Tabs>
-            </div>
-          </>
-        )}
-
-        {/* Applicable Offers */}
-        {isSeller && applicableOffers.length > 0 && (
-          <>
-            <Separator />
-            <div className="space-y-2">
-              <h3 className="text-sm font-medium">Applicable Offers</h3>
-              <div className="space-y-2">
-                {applicableOffers.map((offer) => {
-                  const pricing = offerPricing.filter(
-                    (op) => op.offerId === offer._id
-                  );
-                  return (
-                    <div key={offer._id} className="rounded-md border p-3 space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <p className="text-sm font-medium">{offer.name}</p>
-                          {offer.description && (
-                            <p className="text-muted-foreground text-xs">
-                              {offer.description}
-                            </p>
-                          )}
-                        </div>
-                        <Badge variant="secondary" className="text-xs">
-                          Min {offer.minQuantity} pcs
-                        </Badge>
-                      </div>
-                      <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                        <span>Bundle: RM {offer.bundlePrice.toFixed(2)}</span>
-                        {offer.startDate && (
-                          <span>
-                            From: {new Date(offer.startDate).toLocaleDateString()}
-                          </span>
-                        )}
-                        {offer.endDate && (
-                          <span>
-                            Until: {new Date(offer.endDate).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                      {pricing.length > 0 && (
-                        <div className="flex flex-wrap gap-2 pt-1">
-                          {pricing.map((p) => (
-                            <Badge key={p._id} variant="outline" className="text-xs">
-                              {STOCK_MODEL_LABELS[p.stockModel]}:{" "}
-                              {formatRate(p.rateType, p.rateValue)}
-                            </Badge>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
             </div>
           </>
         )}

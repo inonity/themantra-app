@@ -1,7 +1,11 @@
 "use client";
 
 import { useState } from "react";
+import { useAction } from "convex/react";
+import { useAuthActions } from "@convex-dev/auth/react";
+import { api } from "../../../convex/_generated/api";
 import { toast } from "sonner";
+import { getErrorMessage } from "@/lib/utils";
 import {
   Dialog,
   DialogContent,
@@ -31,18 +35,26 @@ export function UpdatePasswordDialog({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  const changePassword = useAction(api.passwordChange.changePassword);
+  const { signOut } = useAuthActions();
+  const [currentPassword, setCurrentPassword] = useState("");
   const [newPassword, setNewPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
 
   function reset() {
+    setCurrentPassword("");
     setNewPassword("");
     setConfirmPassword("");
   }
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
+    if (!currentPassword) {
+      toast.error("Please enter your current password");
+      return;
+    }
     if (newPassword.length < 8) {
       toast.error("Password must be at least 8 characters");
       return;
@@ -57,14 +69,15 @@ export function UpdatePasswordDialog({
   async function handleConfirm() {
     setLoading(true);
     try {
-      // TODO: Integrate with Convex Auth password change when available
-      // For now, show a placeholder message
-      toast.success("Password update will be available via email confirmation.");
+      await changePassword({ currentPassword, newPassword });
+      toast.success("Password updated. Signing you out...");
       onOpenChange(false);
       setShowConfirm(false);
       reset();
-    } catch {
-      toast.error("Failed to update password");
+      await signOut();
+    } catch (err) {
+      toast.error(getErrorMessage(err, "Failed to update password"));
+      setShowConfirm(false);
     } finally {
       setLoading(false);
     }
@@ -83,11 +96,22 @@ export function UpdatePasswordDialog({
           <DialogHeader>
             <DialogTitle>Update Password</DialogTitle>
             <DialogDescription>
-              Enter your new password. A confirmation email will be sent later.
+              Enter your current password and choose a new one.
             </DialogDescription>
           </DialogHeader>
           <form onSubmit={handleSubmit}>
             <div className="space-y-4 py-4">
+              <div className="space-y-2">
+                <Label htmlFor="current-password">Current Password</Label>
+                <Input
+                  id="current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(e) => setCurrentPassword(e.target.value)}
+                  placeholder="Enter current password"
+                  required
+                />
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="new-password">New Password</Label>
                 <Input
@@ -116,7 +140,7 @@ export function UpdatePasswordDialog({
               <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
                 Cancel
               </Button>
-              <Button type="submit" disabled={!newPassword || !confirmPassword}>
+              <Button type="submit" disabled={!currentPassword || !newPassword || !confirmPassword}>
                 Continue
               </Button>
             </DialogFooter>
