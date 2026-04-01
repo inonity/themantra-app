@@ -1,0 +1,630 @@
+"use client";
+
+import { useQuery, useMutation } from "convex/react";
+import { api } from "../../../../../convex/_generated/api";
+import type { Doc } from "../../../../../convex/_generated/dataModel";
+import { RoleGuard } from "@/components/role-guard";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { Badge } from "@/components/ui/badge";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import {
+  CopyIcon,
+  CheckIcon,
+  ChevronDownIcon,
+  ChevronRightIcon,
+  CheckCircleIcon,
+  BanknoteIcon,
+} from "lucide-react";
+import { useState } from "react";
+
+type SettlementWithAgent = Doc<"agentSettlements"> & { agentName: string };
+
+const CHANNEL_LABELS: Record<string, string> = {
+  direct: "Direct",
+  agent: "Agent",
+  tiktok: "TikTok",
+  shopee: "Shopee",
+  other: "Other",
+};
+
+function stockModelLabel(model?: string) {
+  switch (model) {
+    case "hold_paid":
+      return "Hold & Paid";
+    case "consignment":
+      return "Consignment";
+    case "dropship":
+      return "Dropship";
+    default:
+      return "—";
+  }
+}
+
+function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false);
+
+  async function handleCopy() {
+    await navigator.clipboard.writeText(text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  }
+
+  return (
+    <Button variant="ghost" size="sm" onClick={handleCopy}>
+      {copied ? (
+        <CheckIcon className="h-4 w-4" />
+      ) : (
+        <CopyIcon className="h-4 w-4" />
+      )}
+    </Button>
+  );
+}
+
+function paymentStatusBadge(status: string) {
+  const variant =
+    status === "paid"
+      ? "default"
+      : status === "submitted"
+        ? "secondary"
+        : "destructive";
+  const label =
+    status === "paid"
+      ? "Confirmed"
+      : status === "submitted"
+        ? "Awaiting Confirmation"
+        : "Pending";
+  return <Badge variant={variant}>{label}</Badge>;
+}
+
+function ConfirmPaymentDialog({
+  settlement,
+  agentName,
+}: {
+  settlement: SettlementWithAgent;
+  agentName: string;
+}) {
+  const confirmPayment = useMutation(api.agentSettlements.confirmPayment);
+  const [open, setOpen] = useState(false);
+  const [notes, setNotes] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
+  async function handleConfirm() {
+    setConfirming(true);
+    try {
+      await confirmPayment({
+        settlementId: settlement._id,
+        notes: notes.trim() || undefined,
+      });
+      setOpen(false);
+      setNotes("");
+    } finally {
+      setConfirming(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <Button size="sm" variant="default" onClick={() => setOpen(true)} />
+        }
+      >
+        <CheckCircleIcon className="h-4 w-4 mr-1" />
+        Confirm
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Confirm Payment — {settlement.referenceId}</DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg bg-muted p-3 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Agent</span>
+              <span className="font-medium">{agentName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Amount</span>
+              <span className="font-bold">
+                RM {settlement.totalAmount.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Payment Date</span>
+              <span>
+                {settlement.paymentDate
+                  ? new Date(settlement.paymentDate).toLocaleDateString()
+                  : "—"}
+              </span>
+            </div>
+            {settlement.agentNotes && (
+              <div className="flex justify-between text-sm">
+                <span className="text-muted-foreground">Agent Note</span>
+                <span>{settlement.agentNotes}</span>
+              </div>
+            )}
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Sales Included</span>
+              <span>{settlement.saleIds.length}</span>
+            </div>
+          </div>
+
+          <div>
+            <Label>Admin Note (optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. verified in bank statement"
+              rows={2}
+            />
+          </div>
+
+          <Button
+            className="w-full"
+            onClick={handleConfirm}
+            disabled={confirming}
+          >
+            {confirming ? "Confirming..." : "Confirm Payment Received"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function PayCommissionDialog({
+  settlement,
+  agentName,
+}: {
+  settlement: SettlementWithAgent;
+  agentName: string;
+}) {
+  const markCommissionPaid = useMutation(
+    api.agentSettlements.markCommissionPaid
+  );
+  const [open, setOpen] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState<string>("bank_transfer");
+  const [notes, setNotes] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+
+  async function handleConfirm() {
+    setSubmitting(true);
+    try {
+      await markCommissionPaid({
+        settlementId: settlement._id,
+        paymentMethod: paymentMethod as
+          | "cash"
+          | "bank_transfer"
+          | "online"
+          | "other",
+        notes: notes.trim() || undefined,
+      });
+      setOpen(false);
+      setNotes("");
+    } finally {
+      setSubmitting(false);
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={setOpen}>
+      <DialogTrigger
+        render={
+          <Button size="sm" variant="default" onClick={() => setOpen(true)} />
+        }
+      >
+        <BanknoteIcon className="h-4 w-4 mr-1" />
+        Pay Commission
+      </DialogTrigger>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>
+            Pay Commission to {agentName} — {settlement.referenceId}
+          </DialogTitle>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="rounded-lg bg-muted p-3 space-y-2">
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Agent</span>
+              <span className="font-medium">{agentName}</span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Commission Amount</span>
+              <span className="font-bold text-green-600">
+                RM {settlement.totalAmount.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-sm">
+              <span className="text-muted-foreground">Sales Included</span>
+              <span>{settlement.saleIds.length}</span>
+            </div>
+          </div>
+
+          <div className="space-y-2">
+            <Label>Payment Method</Label>
+            <Select value={paymentMethod} onValueChange={(v) => { if (v) setPaymentMethod(v); }}>
+              <SelectTrigger>
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                <SelectItem value="cash">Cash</SelectItem>
+                <SelectItem value="online">Online</SelectItem>
+                <SelectItem value="other">Other</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div>
+            <Label>Admin Note (optional)</Label>
+            <Textarea
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. transferred to agent's Maybank account"
+              rows={2}
+            />
+          </div>
+
+          <Button
+            className="w-full"
+            onClick={handleConfirm}
+            disabled={submitting}
+          >
+            {submitting ? "Processing..." : "Confirm Commission Paid"}
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function SettlementRow({
+  settlement,
+  direction,
+}: {
+  settlement: SettlementWithAgent;
+  direction: "agent_to_hq" | "hq_to_agent";
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const detail = useQuery(
+    api.agentSettlements.getWithSales,
+    expanded ? { settlementId: settlement._id } : "skip"
+  );
+
+  const isPending = settlement.paymentStatus !== "paid";
+
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer"
+        onClick={() => setExpanded(!expanded)}
+      >
+        <TableCell>
+          {expanded ? (
+            <ChevronDownIcon className="h-4 w-4" />
+          ) : (
+            <ChevronRightIcon className="h-4 w-4" />
+          )}
+        </TableCell>
+        <TableCell className="font-medium">{settlement.agentName}</TableCell>
+        <TableCell>
+          <span className="font-mono text-sm">{settlement.referenceId}</span>
+          <CopyButton text={settlement.referenceId} />
+        </TableCell>
+        <TableCell className={direction === "hq_to_agent" ? "font-semibold text-green-600" : "font-semibold"}>
+          RM {settlement.totalAmount.toFixed(2)}
+        </TableCell>
+        <TableCell>
+          {settlement.saleIds.length} sale{settlement.saleIds.length !== 1 ? "s" : ""}
+        </TableCell>
+        <TableCell>{paymentStatusBadge(settlement.paymentStatus)}</TableCell>
+        <TableCell>
+          {settlement.paymentDate
+            ? new Date(settlement.paymentDate).toLocaleDateString()
+            : settlement.confirmedAt
+              ? new Date(settlement.confirmedAt).toLocaleDateString()
+              : "—"}
+        </TableCell>
+        <TableCell
+          className="text-right"
+          onClick={(e) => e.stopPropagation()}
+        >
+          {direction === "agent_to_hq" &&
+            settlement.paymentStatus === "submitted" && (
+              <ConfirmPaymentDialog
+                settlement={settlement}
+                agentName={settlement.agentName}
+              />
+            )}
+          {direction === "hq_to_agent" && isPending && (
+            <PayCommissionDialog
+              settlement={settlement}
+              agentName={settlement.agentName}
+            />
+          )}
+        </TableCell>
+      </TableRow>
+
+      {expanded && (
+        <TableRow>
+          <TableCell colSpan={8} className="bg-muted/50 p-4">
+            {settlement.agentNotes && (
+              <p className="text-sm text-muted-foreground mb-3">
+                Agent note: {settlement.agentNotes}
+              </p>
+            )}
+            {settlement.notes && (
+              <p className="text-sm text-muted-foreground mb-3">
+                Admin note: {settlement.notes}
+              </p>
+            )}
+            {!detail ? (
+              <p className="text-sm text-muted-foreground">Loading sales...</p>
+            ) : detail.sales.length === 0 ? (
+              <p className="text-sm text-muted-foreground">No sales found.</p>
+            ) : (
+              <>
+                <h4 className="font-semibold text-sm mb-2">
+                  Included Sales ({detail.sales.length})
+                </h4>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Products</TableHead>
+                      <TableHead>Channel</TableHead>
+                      <TableHead>Stock Model</TableHead>
+                      <TableHead className="text-right">Sale Total</TableHead>
+                      <TableHead className="text-right">HQ Share</TableHead>
+                      <TableHead className="text-right">Commission</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.sales.map((sale) => (
+                      <TableRow key={sale._id}>
+                        <TableCell className="text-sm">
+                          {new Date(sale.saleDate).toLocaleDateString()}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {sale.customerDetail?.name ?? "—"}
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {sale.lineItemsWithProducts &&
+                          sale.lineItemsWithProducts.length > 0 ? (
+                            <div className="space-y-0.5">
+                              {sale.lineItemsWithProducts.map(
+                                (item: { productName: string; quantity: number; productId: string }, i: number) => (
+                                  <div key={i} className="text-xs">
+                                    {item.productName}{" "}
+                                    <span className="text-muted-foreground">
+                                      x{item.quantity}
+                                    </span>
+                                  </div>
+                                )
+                              )}
+                            </div>
+                          ) : (
+                            <span className="text-muted-foreground">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell>
+                          <Badge variant="outline">
+                            {CHANNEL_LABELS[sale.saleChannel] ?? sale.saleChannel}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="text-sm">
+                          {stockModelLabel(sale.stockModel)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          RM {sale.totalAmount.toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm">
+                          RM {(sale.hqPrice ?? 0).toFixed(2)}
+                        </TableCell>
+                        <TableCell className="text-right text-sm text-green-600">
+                          RM {(sale.agentCommission ?? 0).toFixed(2)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </>
+            )}
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  );
+}
+
+function SettlementsTable({
+  settlements,
+  direction,
+  emptyMessage,
+}: {
+  settlements: SettlementWithAgent[];
+  direction: "agent_to_hq" | "hq_to_agent";
+  emptyMessage: string;
+}) {
+  if (settlements.length === 0) {
+    return (
+      <Card>
+        <CardContent className="py-6 text-center text-muted-foreground">
+          {emptyMessage}
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Table>
+      <TableHeader>
+        <TableRow>
+          <TableHead className="w-8" />
+          <TableHead>Agent</TableHead>
+          <TableHead>Reference ID</TableHead>
+          <TableHead>Amount</TableHead>
+          <TableHead>Sales</TableHead>
+          <TableHead>Status</TableHead>
+          <TableHead>Date</TableHead>
+          <TableHead className="text-right">Actions</TableHead>
+        </TableRow>
+      </TableHeader>
+      <TableBody>
+        {settlements.map((s) => (
+          <SettlementRow key={s._id} settlement={s} direction={direction} />
+        ))}
+      </TableBody>
+    </Table>
+  );
+}
+
+export default function AgentPaymentsPage() {
+  const allSettlements = useQuery(api.agentSettlements.listAllForAdmin);
+  const isLoading = allSettlements === undefined;
+
+  // Split by direction
+  const commissionSettlements = (allSettlements ?? []).filter(
+    (s) => s.direction === "hq_to_agent"
+  );
+  const paymentSettlements = (allSettlements ?? []).filter(
+    (s) => (s.direction ?? "agent_to_hq") === "agent_to_hq"
+  );
+
+  // Count pending for badges
+  const pendingCommissions = commissionSettlements.filter(
+    (s) => s.paymentStatus !== "paid"
+  );
+  const pendingPayments = paymentSettlements.filter(
+    (s) => s.paymentStatus === "submitted"
+  );
+
+  // Split each direction into pending/history
+  const commissionPending = commissionSettlements.filter(
+    (s) => s.paymentStatus !== "paid"
+  );
+  const commissionHistory = commissionSettlements.filter(
+    (s) => s.paymentStatus === "paid"
+  );
+  const paymentPending = paymentSettlements.filter(
+    (s) => s.paymentStatus !== "paid"
+  );
+  const paymentHistory = paymentSettlements.filter(
+    (s) => s.paymentStatus === "paid"
+  );
+
+  return (
+    <RoleGuard allowed={["admin"]}>
+      <div className="space-y-6">
+        <div>
+          <h1 className="text-3xl font-semibold tracking-tight">
+            Agent Payments
+          </h1>
+          <p className="text-muted-foreground">
+            Review and confirm agent payments to HQ and commission payouts.
+          </p>
+        </div>
+
+        {isLoading ? (
+          <div className="text-muted-foreground">Loading...</div>
+        ) : (
+          <Tabs defaultValue="commission">
+            <TabsList>
+              <TabsTrigger value="commission">
+                Commission to Agent
+                {pendingCommissions.length > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {pendingCommissions.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+              <TabsTrigger value="payment">
+                Payment to HQ
+                {pendingPayments.length > 0 && (
+                  <Badge variant="destructive" className="ml-2">
+                    {pendingPayments.length}
+                  </Badge>
+                )}
+              </TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="commission" className="space-y-6">
+              {commissionPending.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    Pending
+                    <Badge variant="secondary">{commissionPending.length}</Badge>
+                  </h2>
+                  <SettlementsTable
+                    settlements={commissionPending}
+                    direction="hq_to_agent"
+                    emptyMessage="No pending commissions."
+                  />
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold">History</h2>
+                <SettlementsTable
+                  settlements={commissionHistory}
+                  direction="hq_to_agent"
+                  emptyMessage="No commission history yet."
+                />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="payment" className="space-y-6">
+              {paymentPending.length > 0 && (
+                <div className="space-y-3">
+                  <h2 className="text-lg font-semibold flex items-center gap-2">
+                    Pending
+                    <Badge variant="secondary">{paymentPending.length}</Badge>
+                  </h2>
+                  <SettlementsTable
+                    settlements={paymentPending}
+                    direction="agent_to_hq"
+                    emptyMessage="No pending payments."
+                  />
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <h2 className="text-lg font-semibold">History</h2>
+                <SettlementsTable
+                  settlements={paymentHistory}
+                  direction="agent_to_hq"
+                  emptyMessage="No payment history yet."
+                />
+              </div>
+            </TabsContent>
+          </Tabs>
+        )}
+      </div>
+    </RoleGuard>
+  );
+}
