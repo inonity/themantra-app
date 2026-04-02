@@ -184,6 +184,7 @@ export default defineSchema({
           batchId: v.optional(v.id("batches")),
           fulfilledAt: v.optional(v.number()),
           hqUnitPrice: v.optional(v.number()),
+          inBundle: v.optional(v.boolean()),
         })
       )
     ),

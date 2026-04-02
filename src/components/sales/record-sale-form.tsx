@@ -48,7 +48,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, CreditCardIcon, CalendarIcon, TagIcon } from "lucide-react";
+import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, CreditCardIcon, CalendarIcon, TagIcon, PlusIcon, MinusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -56,18 +56,17 @@ type FulfillmentSource = "agent_stock" | "hq_transfer" | "pending_batch" | "futu
 
 interface UnifiedLineItem {
   productId: Id<"products">;
-  quantity: number;
   productName: string;
   source: FulfillmentSource;
   // Only set for agent_stock items
   batchId?: Id<"batches">;
   inventoryId?: string;
-  maxQuantity?: number;
   batchCode?: string;
   // Set when agent picks an HQ batch for auto-fulfill on record
   hqBatchId?: Id<"batches">;
   hqBatchCode?: string;
-  hqMaxQuantity?: number;
+  // Max available from this inventory/batch (for limiting adds)
+  inventoryMax?: number;
 }
 
 const SALE_CHANNEL_LABELS: Record<string, string> = {
@@ -192,7 +191,7 @@ export function RecordSaleForm({
       (i) =>
         i.productId === productId &&
         i.quantity > 0 &&
-        !usedInventoryIds.has(i._id)
+        (usedInventoryCounts.get(i._id) ?? 0) < i.quantity
     );
     if (agentInv) {
       return { source: "agent_stock", inv: agentInv };
@@ -228,54 +227,50 @@ export function RecordSaleForm({
       const pMap = new Map(allProducts.map((p) => [p._id, p]));
       const bMap = new Map(batches.map((b) => [b._id, b]));
       const items: UnifiedLineItem[] = [];
-      const usedInvIds = new Set<string>();
+      const usedInvCounts = new Map<string, number>();
 
       for (const item of interest.items) {
         const product = pMap.get(item.productId);
 
-        // Try to match to agent inventory first (even for future_release)
-        const inv = inventory.find(
-          (i) =>
-            i.productId === item.productId &&
-            i.quantity >= item.quantity &&
-            !usedInvIds.has(i._id)
-        );
+        for (let u = 0; u < item.quantity; u++) {
+          // Try to match to agent inventory (has enough remaining)
+          const inv = inventory.find(
+            (i) =>
+              i.productId === item.productId &&
+              (usedInvCounts.get(i._id) ?? 0) < i.quantity
+          );
 
-        if (inv) {
-          usedInvIds.add(inv._id);
-          const batch = bMap.get(inv.batchId);
-          items.push({
-            productId: item.productId,
-            quantity: item.quantity,
-            productName: product?.name ?? "Unknown",
-            source: "agent_stock",
-            batchId: inv.batchId,
-            inventoryId: inv._id,
-            maxQuantity: inv.quantity,
-            batchCode: batch?.batchCode ?? "?",
-          });
-        } else if (product?.status === "future_release") {
-          // Check HQ inventory, then fall back to future_release
-          const hqInv = (businessInventory ?? []).find(
-            (i) => i.productId === item.productId && i.quantity > 0
-          );
-          items.push({
-            productId: item.productId,
-            quantity: item.quantity,
-            productName: product.name,
-            source: hqInv ? "hq_transfer" : "future_release",
-          });
-        } else {
-          // Check HQ
-          const hqInv = (businessInventory ?? []).find(
-            (i) => i.productId === item.productId && i.quantity > 0
-          );
-          items.push({
-            productId: item.productId,
-            quantity: item.quantity,
-            productName: product?.name ?? "Unknown",
-            source: hqInv ? "hq_transfer" : "pending_batch",
-          });
+          if (inv) {
+            usedInvCounts.set(inv._id, (usedInvCounts.get(inv._id) ?? 0) + 1);
+            const batch = bMap.get(inv.batchId);
+            items.push({
+              productId: item.productId,
+              productName: product?.name ?? "Unknown",
+              source: "agent_stock",
+              batchId: inv.batchId,
+              inventoryId: inv._id,
+              inventoryMax: inv.quantity,
+              batchCode: batch?.batchCode ?? "?",
+            });
+          } else if (product?.status === "future_release") {
+            const hqInv = (businessInventory ?? []).find(
+              (i) => i.productId === item.productId && i.quantity > 0
+            );
+            items.push({
+              productId: item.productId,
+              productName: product.name,
+              source: hqInv ? "hq_transfer" : "future_release",
+            });
+          } else {
+            const hqInv = (businessInventory ?? []).find(
+              (i) => i.productId === item.productId && i.quantity > 0
+            );
+            items.push({
+              productId: item.productId,
+              productName: product?.name ?? "Unknown",
+              source: hqInv ? "hq_transfer" : "pending_batch",
+            });
+          }
         }
       }
 
@@ -284,23 +279,33 @@ export function RecordSaleForm({
     }
   }, [interest, interestPreFilled, allProducts, batches, inventory, businessInventory]);
 
-  // Track used inventory IDs
-  const usedInventoryIds = new Set(
-    unifiedItems.filter((li) => li.inventoryId).map((li) => li.inventoryId!)
-  );
+  // Track how many units from each inventory are used
+  const usedInventoryCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const li of unifiedItems) {
+      if (li.inventoryId) {
+        counts.set(li.inventoryId, (counts.get(li.inventoryId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [unifiedItems]);
+  // Track how many units from each HQ batch are used
+  const usedHQBatchCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const li of unifiedItems) {
+      if (li.hqBatchId) {
+        counts.set(li.hqBatchId, (counts.get(li.hqBatchId) ?? 0) + 1);
+      }
+    }
+    return counts;
+  }, [unifiedItems]);
   const usedProductIds = new Set(
     unifiedItems.filter((li) => li.source !== "agent_stock").map((li) => li.productId)
   );
 
-  // Items for pricing
-  const currentItems = unifiedItems.map((li) => ({
-    productId: li.productId,
-    quantity: li.quantity,
-  }));
-
   const lineItemProductIds = useMemo(
-    () => [...new Set(currentItems.map((li) => li.productId))],
-    [currentItems]
+    () => [...new Set(unifiedItems.map((li) => li.productId))],
+    [unifiedItems]
   );
 
   const applicableOffers = useQuery(
@@ -310,15 +315,14 @@ export function RecordSaleForm({
       : "skip"
   );
 
-  const totalQuantity = currentItems.reduce((sum, li) => sum + li.quantity, 0);
+  const totalQuantity = unifiedItems.length;
 
-  // Pricing calculation
+  // Pricing calculation — each item in unifiedItems is 1 unit
   const pricing = useMemo(() => {
-    if (currentItems.length === 0) return null;
+    if (unifiedItems.length === 0) return null;
 
-    const defaultTotal = currentItems.reduce((sum, li) => {
-      const product = productMap.get(li.productId);
-      return sum + li.quantity * (product?.price ?? 0);
+    const defaultTotal = unifiedItems.reduce((sum, li) => {
+      return sum + (productMap.get(li.productId)?.price ?? 0);
     }, 0);
 
     const selectedOffer =
@@ -327,10 +331,11 @@ export function RecordSaleForm({
         : null;
 
     if (selectedOffer) {
+      // Determine eligible vs non-eligible items
       const eligibleIndices: number[] = [];
       const nonEligibleIndices: number[] = [];
-      for (let idx = 0; idx < currentItems.length; idx++) {
-        const li = currentItems[idx];
+      for (let idx = 0; idx < unifiedItems.length; idx++) {
+        const li = unifiedItems[idx];
         const product = productMap.get(li.productId);
         let eligible = true;
         if (selectedOffer.productId) {
@@ -347,71 +352,49 @@ export function RecordSaleForm({
         }
       }
 
-      const eligibleQty = eligibleIndices.reduce((s, idx) => s + currentItems[idx].quantity, 0);
+      const eligibleQty = eligibleIndices.length;
 
       if (eligibleQty >= selectedOffer.minQuantity) {
         const bundleCount = Math.floor(eligibleQty / selectedOffer.minQuantity);
         const bundledUnitCount = bundleCount * selectedOffer.minQuantity;
-        const eligibleRemainder = eligibleQty - bundledUnitCount;
 
-        // Expand eligible items to assign bundle vs remainder
-        const expanded: { idx: number }[] = [];
-        for (const idx of eligibleIndices) {
-          for (let u = 0; u < currentItems[idx].quantity; u++) {
-            expanded.push({ idx });
-          }
-        }
+        // First N eligible items go into bundles, rest are non-bundled
+        const bundledIndices = eligibleIndices.slice(0, bundledUnitCount);
+        const remainderIndices = eligibleIndices.slice(bundledUnitCount);
 
-        // Track which items are bundled vs remainder, and assign to specific bundles
-        const bundledPerIdx = new Map<number, number>();
-        const remainderPerIdx = new Map<number, number>();
-        // Per-bundle grouping: bundle index → { itemIndices, originalPrice }
+        // Group bundled items into per-bundle sets
         const bundles: { itemIndices: Set<number>; originalPrice: number }[] = [];
         for (let b = 0; b < bundleCount; b++) {
-          bundles.push({ itemIndices: new Set(), originalPrice: 0 });
-        }
-
-        for (let i = 0; i < expanded.length; i++) {
-          const { idx } = expanded[i];
-          if (i < bundledUnitCount) {
-            bundledPerIdx.set(idx, (bundledPerIdx.get(idx) ?? 0) + 1);
-            const bundleIdx = Math.floor(i / selectedOffer.minQuantity);
-            bundles[bundleIdx].itemIndices.add(idx);
-            const regularPrice = productMap.get(currentItems[idx].productId)?.price ?? 0;
-            bundles[bundleIdx].originalPrice += regularPrice;
-          } else {
-            remainderPerIdx.set(idx, (remainderPerIdx.get(idx) ?? 0) + 1);
+          const start = b * selectedOffer.minQuantity;
+          const end = start + selectedOffer.minQuantity;
+          const indices = bundledIndices.slice(start, end);
+          let originalPrice = 0;
+          const itemIndices = new Set<number>();
+          for (const idx of indices) {
+            itemIndices.add(idx);
+            originalPrice += productMap.get(unifiedItems[idx].productId)?.price ?? 0;
           }
+          bundles.push({ itemIndices, originalPrice });
         }
 
-        // Calculate total using whole bundle price (no per-unit division = no rounding errors)
+        // Totals
         const bundleTotal = bundleCount * selectedOffer.bundlePrice;
-        let bundledOriginalPrice = 0;
-        let remainderTotal = 0;
-        for (const idx of eligibleIndices) {
-          const bundled = bundledPerIdx.get(idx) ?? 0;
-          const remainder = remainderPerIdx.get(idx) ?? 0;
-          const regularPrice = productMap.get(currentItems[idx].productId)?.price ?? 0;
-          bundledOriginalPrice += bundled * regularPrice;
-          remainderTotal += remainder * regularPrice;
-        }
-        let nonEligibleTotal = 0;
-        for (const idx of nonEligibleIndices) {
-          const li = currentItems[idx];
-          const regularPrice = productMap.get(li.productId)?.price ?? 0;
-          nonEligibleTotal += li.quantity * regularPrice;
-        }
+        const bundledOriginalPrice = bundledIndices.reduce(
+          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
+        );
+        const remainderTotal = remainderIndices.reduce(
+          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
+        );
+        const nonEligibleTotal = nonEligibleIndices.reduce(
+          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
+        );
         const offerTotal = bundleTotal + remainderTotal + nonEligibleTotal;
 
-        // Non-bundled indices: remainder-only eligible + non-eligible
-        const bundledSet = new Set<number>();
-        for (const idx of eligibleIndices) {
-          if ((bundledPerIdx.get(idx) ?? 0) > 0) bundledSet.add(idx);
-        }
-        const nonBundledIndices: number[] = [];
-        for (let i = 0; i < currentItems.length; i++) {
-          if (!bundledSet.has(i)) nonBundledIndices.push(i);
-        }
+        // Non-bundled = remainder eligible + non-eligible
+        const nonBundledIndices = [...remainderIndices, ...nonEligibleIndices];
+
+        // Track which indices are bundled (for submission tagging)
+        const bundledSet = new Set(bundledIndices);
 
         return {
           defaultTotal,
@@ -423,11 +406,7 @@ export function RecordSaleForm({
           bundledOriginalPrice,
           bundles,
           nonBundledIndices,
-          remainder: eligibleRemainder,
-          bundledPerIdx,
-          remainderPerIdx,
-          eligibleIndices,
-          nonEligibleIndices,
+          bundledSet,
         };
       }
     }
@@ -442,13 +421,9 @@ export function RecordSaleForm({
       bundledOriginalPrice: 0,
       bundles: [] as { itemIndices: Set<number>; originalPrice: number }[],
       nonBundledIndices: [] as number[],
-      remainder: 0,
-      bundledPerIdx: new Map<number, number>(),
-      remainderPerIdx: new Map<number, number>(),
-      eligibleIndices: [] as number[],
-      nonEligibleIndices: [] as number[],
+      bundledSet: new Set<number>(),
     };
-  }, [currentItems, selectedOfferId, applicableOffers, productMap]);
+  }, [unifiedItems, selectedOfferId, applicableOffers, productMap]);
 
   function addItem(value: string) {
     // Value could be an inventory ID (for agent_stock) or a product ID (for pending/future)
@@ -456,37 +431,19 @@ export function RecordSaleForm({
     if (inv) {
       const product = productMap.get(inv.productId);
       const batch = batchMap.get(inv.batchId);
-      if (isDropship) {
-        // HQ inventory — mark as hq_transfer (pending), admin fulfills later
-        setUnifiedItems([
-          ...unifiedItems,
-          {
-            productId: inv.productId,
-            quantity: 1,
-            productName: product?.name ?? "Unknown",
-            source: "hq_transfer",
-            batchId: inv.batchId,
-            inventoryId: inv._id,
-            maxQuantity: inv.quantity,
-            batchCode: batch?.batchCode ?? "?",
-          },
-        ]);
-      } else {
-        // Agent's own inventory — fulfill from stock
-        setUnifiedItems([
-          ...unifiedItems,
-          {
-            productId: inv.productId,
-            quantity: 1,
-            productName: product?.name ?? "Unknown",
-            source: "agent_stock",
-            batchId: inv.batchId,
-            inventoryId: inv._id,
-            maxQuantity: inv.quantity,
-            batchCode: batch?.batchCode ?? "?",
-          },
-        ]);
-      }
+      const source: FulfillmentSource = isDropship ? "hq_transfer" : "agent_stock";
+      setUnifiedItems([
+        ...unifiedItems,
+        {
+          productId: inv.productId,
+          productName: product?.name ?? "Unknown",
+          source,
+          batchId: inv.batchId,
+          inventoryId: inv._id,
+          inventoryMax: inv.quantity,
+          batchCode: batch?.batchCode ?? "?",
+        },
+      ]);
     }
   }
 
@@ -500,12 +457,11 @@ export function RecordSaleForm({
         ...unifiedItems,
         {
           productId: inv.productId,
-          quantity: 1,
           productName: product?.name ?? "Unknown",
           source: "agent_stock",
           batchId: inv.batchId,
           inventoryId: inv._id,
-          maxQuantity: inv.quantity,
+          inventoryMax: inv.quantity,
           batchCode: batch?.batchCode ?? "?",
         },
       ]);
@@ -515,7 +471,6 @@ export function RecordSaleForm({
   function addPendingProduct(productId: string) {
     const product = productMap.get(productId as Id<"products">);
     if (!product) return;
-    // "No stock needed" = always pending. Determine source based on availability.
     let source: FulfillmentSource;
     if (product.status === "future_release") {
       source = "future_release";
@@ -529,7 +484,6 @@ export function RecordSaleForm({
       ...unifiedItems,
       {
         productId: product._id,
-        quantity: 1,
         productName: product.name,
         source,
       },
@@ -545,12 +499,11 @@ export function RecordSaleForm({
       ...unifiedItems,
       {
         productId: inv.productId,
-        quantity: 1,
         productName: product?.name ?? "Unknown",
         source: "hq_transfer",
         hqBatchId: inv.batchId,
         hqBatchCode: batch?.batchCode ?? "?",
-        hqMaxQuantity: inv.quantity,
+        inventoryMax: inv.quantity,
       },
     ]);
   }
@@ -580,15 +533,45 @@ export function RecordSaleForm({
     if (updated.length === 0) setSelectedOfferId("");
   }
 
-  function updateQuantity(index: number, qty: number) {
-    setUnifiedItems(
-      unifiedItems.map((li, i) => {
-        if (i !== index) return li;
-        const max = li.maxQuantity ?? Infinity;
-        return { ...li, quantity: Math.max(1, Math.min(qty, max)) };
-      })
-    );
+  // Add one more unit of the same product+source+batch (duplicates the given item)
+  function addUnitLike(item: UnifiedLineItem) {
+    // Check inventory limit
+    if (item.inventoryId && item.inventoryMax != null) {
+      const usedCount = usedInventoryCounts.get(item.inventoryId) ?? 0;
+      if (usedCount >= item.inventoryMax) {
+        toast.error("No more stock available for this item");
+        return;
+      }
+    }
+    if (item.hqBatchId && item.inventoryMax != null) {
+      const usedCount = usedHQBatchCounts.get(item.hqBatchId) ?? 0;
+      if (usedCount >= item.inventoryMax) {
+        toast.error("No more HQ stock available for this item");
+        return;
+      }
+    }
+    setUnifiedItems([...unifiedItems, { ...item }]);
   }
+
+  // Remove one unit matching the same product+source+batch (removes last occurrence)
+  function removeUnitLike(item: UnifiedLineItem) {
+    // Find the last index matching this product+source+batch
+    for (let i = unifiedItems.length - 1; i >= 0; i--) {
+      const li = unifiedItems[i];
+      if (
+        li.productId === item.productId &&
+        li.source === item.source &&
+        li.batchId === item.batchId &&
+        li.hqBatchId === item.hqBatchId
+      ) {
+        const updated = unifiedItems.filter((_, idx) => idx !== i);
+        setUnifiedItems(updated);
+        if (updated.length === 0) setSelectedOfferId("");
+        return;
+      }
+    }
+  }
+
 
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -641,26 +624,54 @@ export function RecordSaleForm({
         ? parseFloat(amountReceived)
         : undefined;
 
+      // Group unit-based items into quantities, split by bundle status
+      const bundledSet = pricing?.bundledSet ?? new Set<number>();
+
+      // Helper: group items by key into { ...item, quantity }
+      type GroupedFulfilled = { batchId: Id<"batches">; productId: Id<"products">; quantity: number; inBundle?: boolean; fulfillmentSource?: FulfillmentSource };
+      type GroupedPending = { productId: Id<"products">; quantity: number; fulfillmentSource: FulfillmentSource; inBundle?: boolean };
+      const fulfilledGroups = new Map<string, GroupedFulfilled>();
+      const pendingGroups = new Map<string, GroupedPending>();
+
+      for (let i = 0; i < unifiedItems.length; i++) {
+        const li = unifiedItems[i];
+        const inBundle = bundledSet.has(i);
+        if (li.source === "agent_stock" && li.batchId) {
+          const key = `${li.batchId}-${li.productId}-${inBundle}`;
+          const existing = fulfilledGroups.get(key);
+          if (existing) {
+            existing.quantity++;
+          } else {
+            fulfilledGroups.set(key, {
+              batchId: li.batchId,
+              productId: li.productId,
+              quantity: 1,
+              inBundle: inBundle || undefined,
+              ...(isDropship ? { fulfillmentSource: "agent_stock" as const } : {}),
+            });
+          }
+        } else {
+          const key = `${li.productId}-${li.source}-${inBundle}`;
+          const existing = pendingGroups.get(key);
+          if (existing) {
+            existing.quantity++;
+          } else {
+            pendingGroups.set(key, {
+              productId: li.productId,
+              quantity: 1,
+              fulfillmentSource: li.source,
+              inBundle: inBundle || undefined,
+            });
+          }
+        }
+      }
+
+      const fulfilledItems = [...fulfilledGroups.values()];
+      const pendingItems = [...pendingGroups.values()];
+
       let saleId: Id<"sales">;
 
       if (isDropship) {
-        const fulfilledItems = unifiedItems
-          .filter((li) => li.source === "agent_stock" && li.batchId)
-          .map((li) => ({
-            batchId: li.batchId!,
-            productId: li.productId,
-            quantity: li.quantity,
-            fulfillmentSource: "agent_stock" as const,
-          }));
-
-        const pendingItems = unifiedItems
-          .filter((li) => li.source !== "agent_stock")
-          .map((li) => ({
-            productId: li.productId,
-            quantity: li.quantity,
-            fulfillmentSource: li.source,
-          }));
-
         saleId = await recordDropship({
           fulfilledItems: fulfilledItems.length > 0 ? fulfilledItems : undefined,
           pendingItems: pendingItems.length > 0 ? pendingItems : undefined,
@@ -676,22 +687,6 @@ export function RecordSaleForm({
           amountReceived: amountReceivedValue,
         });
       } else {
-        const fulfilledItems = unifiedItems
-          .filter((li) => li.source === "agent_stock" && li.batchId)
-          .map((li) => ({
-            batchId: li.batchId!,
-            productId: li.productId,
-            quantity: li.quantity,
-          }));
-
-        const pendingItems = unifiedItems
-          .filter((li) => li.source !== "agent_stock")
-          .map((li) => ({
-            productId: li.productId,
-            quantity: li.quantity,
-            fulfillmentSource: li.source,
-          }));
-
         saleId = await recordSale({
           fulfilledItems: fulfilledItems.length > 0 ? fulfilledItems : undefined,
           pendingItems: pendingItems.length > 0 ? pendingItems : undefined,
@@ -714,24 +709,34 @@ export function RecordSaleForm({
         (li) => li.source !== "agent_stock" && li.hqBatchId
       );
       if (hqAutoFulfillItems.length > 0) {
-        // LineItems in the sale: fulfilled items first, then pending items (in order).
-        // We need to find the index of each hq_transfer item in the pending group.
-        const fulfilledCount = unifiedItems.filter(
-          (li) => li.source === "agent_stock" && li.batchId
-        ).length;
-        const pendingItemsList = unifiedItems.filter(
-          (li) => li.source !== "agent_stock"
-        );
-        const autoFulfillPayload: { lineItemIndex: number; batchId: Id<"batches">; quantity: number }[] = [];
-        pendingItemsList.forEach((li, pendingIdx) => {
-          if (li.hqBatchId) {
-            autoFulfillPayload.push({
-              lineItemIndex: fulfilledCount + pendingIdx,
-              batchId: li.hqBatchId,
-              quantity: li.quantity,
-            });
+        // Group HQ auto-fulfill items by batchId
+        const hqGroups = new Map<string, { batchId: Id<"batches">; quantity: number }>();
+        for (const li of hqAutoFulfillItems) {
+          const key = li.hqBatchId!;
+          const existing = hqGroups.get(key);
+          if (existing) {
+            existing.quantity++;
+          } else {
+            hqGroups.set(key, { batchId: li.hqBatchId!, quantity: 1 });
           }
-        });
+        }
+        // Find the line item indices in the stored sale for these pending items
+        const fulfilledCount = fulfilledItems.length;
+        const autoFulfillPayload: { lineItemIndex: number; batchId: Id<"batches">; quantity: number }[] = [];
+        let pendingIdx = 0;
+        for (const pending of pendingItems) {
+          // Check if any HQ auto-fulfill items match this pending group
+          for (const [, hqGroup] of hqGroups) {
+            if (hqAutoFulfillItems.some((li) => li.hqBatchId === hqGroup.batchId && li.productId === pending.productId && li.source === pending.fulfillmentSource)) {
+              autoFulfillPayload.push({
+                lineItemIndex: fulfilledCount + pendingIdx,
+                batchId: hqGroup.batchId,
+                quantity: hqGroup.quantity,
+              });
+            }
+          }
+          pendingIdx++;
+        }
         if (autoFulfillPayload.length > 0) {
           await selfFulfillFromHQ({ saleId, items: autoFulfillPayload });
         }
@@ -751,26 +756,23 @@ export function RecordSaleForm({
     }
   }
 
-  // Available items for the "Add" dropdown
+  // Available items for the "Add" dropdown — show items that still have remaining stock
   const availableInventory = activeInventory.filter(
-    (inv) => !usedInventoryIds.has(inv._id) && inv.quantity > 0
+    (inv) => inv.quantity > 0 && (usedInventoryCounts.get(inv._id) ?? 0) < inv.quantity
   );
 
   // Agent's own inventory (available even in dropship mode)
   const availableAgentInventory = isDropship
     ? inventory.filter(
-        (inv) => !usedInventoryIds.has(inv._id) && inv.quantity > 0
+        (inv) => inv.quantity > 0 && (usedInventoryCounts.get(inv._id) ?? 0) < inv.quantity
       )
     : [];
 
   // HQ inventory available for auto-fulfill (salesperson only, non-dropship)
   const isSalesperson = userRole === "sales";
-  const usedHQBatchIds = new Set(
-    unifiedItems.filter((li) => li.hqBatchId).map((li) => li.hqBatchId!)
-  );
   const availableHQInventory = isSalesperson && !isDropship
     ? (businessInventory ?? []).filter(
-        (inv) => inv.quantity > 0 && !usedHQBatchIds.has(inv.batchId)
+        (inv) => inv.quantity > 0 && (usedHQBatchCounts.get(inv.batchId) ?? 0) < inv.quantity
       )
     : [];
 
@@ -938,7 +940,7 @@ export function RecordSaleForm({
                   <TableHead>Product</TableHead>
                   <TableHead>Status</TableHead>
                   <TableHead>Batch</TableHead>
-                  <TableHead className="w-[100px]">Qty</TableHead>
+                  <TableHead className="text-center">Qty</TableHead>
                   <TableHead className="text-right">Price</TableHead>
                   <TableHead className="w-[50px]" />
                 </TableRow>
@@ -947,18 +949,55 @@ export function RecordSaleForm({
                 {(() => {
                   const hasActiveOffer = pricing?.offer != null && pricing.offerTotal !== null && pricing.bundles.length > 0;
 
-                  // Helper to render an item row
-                  const renderItemRow = (
-                    li: UnifiedLineItem,
-                    index: number,
-                    options: { indented?: boolean; showPrice?: boolean }
+                  // Group consecutive units into visual groups by (productId, source, batchId, hqBatchId)
+                  // For offer mode, group within bundled/non-bundled sections separately
+                  type VisualGroup = {
+                    item: UnifiedLineItem;
+                    indices: number[]; // indices in unifiedItems
+                    qty: number;
+                    canAdd: boolean; // can add more units
+                  };
+
+                  function groupIndices(indices: number[]): VisualGroup[] {
+                    const groups: VisualGroup[] = [];
+                    for (const idx of indices) {
+                      const li = unifiedItems[idx];
+                      const lastGroup = groups[groups.length - 1];
+                      if (
+                        lastGroup &&
+                        lastGroup.item.productId === li.productId &&
+                        lastGroup.item.source === li.source &&
+                        lastGroup.item.batchId === li.batchId &&
+                        lastGroup.item.hqBatchId === li.hqBatchId
+                      ) {
+                        lastGroup.indices.push(idx);
+                        lastGroup.qty++;
+                      } else {
+                        // Check if more can be added from this inventory/source
+                        let canAdd = true;
+                        if (li.inventoryId && li.inventoryMax != null) {
+                          canAdd = (usedInventoryCounts.get(li.inventoryId) ?? 0) < li.inventoryMax;
+                        } else if (li.hqBatchId && li.inventoryMax != null) {
+                          canAdd = (usedHQBatchCounts.get(li.hqBatchId) ?? 0) < li.inventoryMax;
+                        }
+                        groups.push({ item: li, indices: [idx], qty: 1, canAdd });
+                      }
+                    }
+                    return groups;
+                  }
+
+                  // Render a grouped item row
+                  const renderGroupRow = (
+                    group: VisualGroup,
+                    options: { indented?: boolean; showPrice?: boolean; keyPrefix?: string }
                   ) => {
-                    const product = productMap.get(li.productId);
+                    const product = productMap.get(group.item.productId);
                     const basePrice = product?.price ?? 0;
-                    const badge = SOURCE_BADGES[li.source];
+                    const badge = SOURCE_BADGES[group.item.source];
+                    const li = group.item;
                     return (
                       <TableRow
-                        key={`${li.productId}-${li.inventoryId ?? li.source}-${index}`}
+                        key={`${options.keyPrefix ?? ""}${group.indices[0]}`}
                         className={options.indented ? "bg-muted/30" : undefined}
                       >
                         <TableCell className={options.indented ? "pl-8 font-medium" : "font-medium"}>
@@ -980,37 +1019,32 @@ export function RecordSaleForm({
                           {li.hqBatchCode ?? li.batchCode ?? "—"}
                         </TableCell>
                         <TableCell>
-                          {li.source === "agent_stock" || li.hqBatchId ? (
-                            <div className="flex items-center gap-1.5">
-                              <Input
-                                type="number"
-                                min={1}
-                                max={li.maxQuantity ?? li.hqMaxQuantity}
-                                value={li.quantity}
-                                onChange={(e) =>
-                                  updateQuantity(index, parseInt(e.target.value) || 1)
-                                }
-                                className="w-16 h-8"
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                / {li.maxQuantity ?? li.hqMaxQuantity}
-                              </span>
-                            </div>
-                          ) : (
-                            <Input
-                              type="number"
-                              min={1}
-                              value={li.quantity}
-                              onChange={(e) =>
-                                updateQuantity(index, parseInt(e.target.value) || 1)
-                              }
-                              className="w-20 h-8"
-                            />
-                          )}
+                          <div className="flex items-center justify-center gap-1">
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-6 w-6"
+                              onClick={() => removeUnitLike(li)}
+                            >
+                              <MinusIcon className="h-3 w-3" />
+                            </Button>
+                            <span className="w-6 text-center text-sm font-medium">{group.qty}</span>
+                            <Button
+                              type="button"
+                              variant="outline"
+                              size="icon"
+                              className="h-6 w-6"
+                              disabled={!group.canAdd}
+                              onClick={() => addUnitLike(li)}
+                            >
+                              <PlusIcon className="h-3 w-3" />
+                            </Button>
+                          </div>
                         </TableCell>
                         <TableCell className="text-right font-medium">
                           {options.showPrice
-                            ? `RM${(basePrice * li.quantity).toFixed(2)}`
+                            ? `RM${(basePrice * group.qty).toFixed(2)}`
                             : ""}
                         </TableCell>
                         <TableCell>
@@ -1019,7 +1053,13 @@ export function RecordSaleForm({
                             variant="ghost"
                             size="icon"
                             className="h-8 w-8"
-                            onClick={() => removeItem(index)}
+                            onClick={() => {
+                              // Remove all units in this group
+                              const toRemove = new Set(group.indices);
+                              const updated = unifiedItems.filter((_, i) => !toRemove.has(i));
+                              setUnifiedItems(updated);
+                              if (updated.length === 0) setSelectedOfferId("");
+                            }}
                           >
                             <TrashIcon className="h-4 w-4 text-muted-foreground" />
                           </Button>
@@ -1031,9 +1071,8 @@ export function RecordSaleForm({
                   const rows: React.ReactNode[] = [];
 
                   if (hasActiveOffer) {
-                    // Render each bundle as its own group
+                    // Render each bundle group
                     pricing.bundles.forEach((bundle, bIdx) => {
-                      // Bundle header row
                       rows.push(
                         <TableRow key={`offer-header-${bIdx}`} className="bg-muted/30">
                           <TableCell colSpan={4} className="font-semibold">
@@ -1051,22 +1090,24 @@ export function RecordSaleForm({
                           <TableCell />
                         </TableRow>
                       );
-
-                      // Bundled items under this bundle (indented, no price)
-                      for (const idx of bundle.itemIndices) {
-                        rows.push(renderItemRow(unifiedItems[idx], idx, { indented: true, showPrice: false }));
+                      const bundleGroups = groupIndices([...bundle.itemIndices]);
+                      for (const group of bundleGroups) {
+                        rows.push(renderGroupRow(group, { indented: true, showPrice: false, keyPrefix: `bundle-${bIdx}-` }));
                       }
                     });
 
-                    // Non-bundled items (remainder + non-eligible) at regular price
-                    for (const idx of pricing.nonBundledIndices) {
-                      rows.push(renderItemRow(unifiedItems[idx], idx, { showPrice: true }));
+                    // Non-bundled items at regular price
+                    const nonBundledGroups = groupIndices(pricing.nonBundledIndices);
+                    for (const group of nonBundledGroups) {
+                      rows.push(renderGroupRow(group, { showPrice: true, keyPrefix: "non-bundled-" }));
                     }
                   } else {
-                    // No offer — show all items with regular prices
-                    unifiedItems.forEach((li, index) => {
-                      rows.push(renderItemRow(li, index, { showPrice: true }));
-                    });
+                    // No offer — group all items
+                    const allIndices = unifiedItems.map((_, i) => i);
+                    const groups = groupIndices(allIndices);
+                    for (const group of groups) {
+                      rows.push(renderGroupRow(group, { showPrice: true }));
+                    }
                   }
 
                   return rows;
@@ -1084,10 +1125,11 @@ export function RecordSaleForm({
                           {(isDropship ? availableAgentInventory : availableInventory).map((inv) => {
                             const product = productMap.get(inv.productId);
                             const batch = batchMap.get(inv.batchId);
+                            const remaining = inv.quantity - (usedInventoryCounts.get(inv._id) ?? 0);
                             return (
                               <SelectItem key={inv._id} value={inv._id}>
                                 {product?.name ?? "Unknown"} — Batch{" "}
-                                {batch?.batchCode ?? "?"} (avail: {inv.quantity})
+                                {batch?.batchCode ?? "?"} (avail: {remaining})
                               </SelectItem>
                             );
                           })}

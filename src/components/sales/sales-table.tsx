@@ -102,23 +102,57 @@ interface OfferLike {
   collection?: string;
 }
 
-// Compute offer grouping for a list of items, split per bundle
-// When itemPrices is provided (from snapshots), use those instead of live product lookups
+// Group items by stored inBundle flag — items with inBundle=true go into bundles, rest outside.
+// Falls back to legacy computation for old sales without the flag.
 function computeOfferGrouping(
-  items: { productId: Id<"products">; quantity: number; productPrice?: number }[],
+  items: { productId: Id<"products">; quantity: number; productPrice?: number; inBundle?: boolean }[],
   offer: OfferLike | null | undefined,
   products: Map<Id<"products">, Doc<"products">>,
   useSnapshotPrices = false,
 ) {
   const allIndices = items.map((_, i) => i);
-  const empty = { bundles: [] as BundleGroup[], bundledSet: new Set<number>(), nonBundledIndices: allIndices };
+  const empty = { bundles: [] as BundleGroup[], nonBundledIndices: allIndices };
   if (!offer) return empty;
 
+  // Check if any item has the inBundle flag — if so, use stored grouping
+  const hasInBundleFlag = items.some((item) => item.inBundle != null);
+
+  if (hasInBundleFlag) {
+    // Simple: items tagged inBundle go into bundles, rest outside
+    const bundledIndices = items.map((item, i) => item.inBundle ? i : -1).filter((i) => i >= 0);
+    const nonBundledIndices = items.map((item, i) => !item.inBundle ? i : -1).filter((i) => i >= 0);
+
+    const bundledQty = bundledIndices.reduce((sum, idx) => sum + items[idx].quantity, 0);
+    const bundleCount = Math.floor(bundledQty / offer.minQuantity);
+
+    const bundles: BundleGroup[] = [];
+    for (let b = 0; b < bundleCount; b++) {
+      const start = b * offer.minQuantity;
+      const end = start + offer.minQuantity;
+      // Expand bundled items into units and slice per bundle
+      const expandedUnits: number[] = [];
+      for (const idx of bundledIndices) {
+        for (let u = 0; u < items[idx].quantity; u++) {
+          expandedUnits.push(idx);
+        }
+      }
+      const bundleUnits = expandedUnits.slice(start, end);
+      const itemIndices = new Set(bundleUnits);
+      let originalPrice = 0;
+      for (const idx of bundleUnits) {
+        originalPrice += items[idx].productPrice ?? products.get(items[idx].productId)?.price ?? 0;
+      }
+      bundles.push({ originalPrice, bundlePrice: offer.bundlePrice, itemIndices });
+    }
+
+    return { bundles, nonBundledIndices };
+  }
+
+  // Legacy fallback: compute grouping from eligibility (for old sales without inBundle)
   const eligibleIndices: number[] = [];
   let eligibleQty = 0;
   for (let i = 0; i < items.length; i++) {
     if (useSnapshotPrices) {
-      // Snapshot: all items in the sale with an offer were already eligible at sale time
       eligibleIndices.push(i);
       eligibleQty += items[i].quantity;
     } else {
@@ -131,46 +165,38 @@ function computeOfferGrouping(
   }
 
   const bundleCount = Math.floor(eligibleQty / offer.minQuantity);
-  if (bundleCount === 0) {
-    return { ...empty, nonBundledIndices: items.map((_, i) => i) };
-  }
+  if (bundleCount === 0) return empty;
 
-  // Expand eligible units and assign each to a bundle number
-  const expanded: { idx: number }[] = [];
+  // Expand eligible units and assign to bundles
+  const expanded: number[] = [];
   for (const idx of eligibleIndices) {
     for (let u = 0; u < items[idx].quantity; u++) {
-      expanded.push({ idx });
+      expanded.push(idx);
     }
   }
 
   const bundledUnitCount = bundleCount * offer.minQuantity;
-  const bundledSet = new Set<number>(); // indices with ANY bundled units
   const bundles: BundleGroup[] = [];
   for (let b = 0; b < bundleCount; b++) {
-    bundles.push({ originalPrice: 0, bundlePrice: offer.bundlePrice, itemIndices: new Set() });
-  }
-
-  for (let i = 0; i < expanded.length; i++) {
-    const { idx } = expanded[i];
-    if (i < bundledUnitCount) {
-      const bundleIdx = Math.floor(i / offer.minQuantity);
-      bundles[bundleIdx].itemIndices.add(idx);
-      // Use snapshotted price if available, otherwise live product price
-      const price = items[idx].productPrice ?? products.get(items[idx].productId)?.price ?? 0;
-      bundles[bundleIdx].originalPrice += price;
-      bundledSet.add(idx);
+    const start = b * offer.minQuantity;
+    const end = start + offer.minQuantity;
+    const bundleUnits = expanded.slice(start, end);
+    const itemIndices = new Set(bundleUnits);
+    let originalPrice = 0;
+    for (const idx of bundleUnits) {
+      originalPrice += items[idx].productPrice ?? products.get(items[idx].productId)?.price ?? 0;
     }
+    bundles.push({ originalPrice, bundlePrice: offer.bundlePrice, itemIndices });
   }
 
-  // Non-bundled = non-eligible + eligible remainder (eligible but not in bundledSet)
+  // Non-bundled: items not in any bundle
+  const bundledSet = new Set(expanded.slice(0, bundledUnitCount));
   const nonBundledIndices: number[] = [];
   for (let i = 0; i < items.length; i++) {
-    if (!bundledSet.has(i)) {
-      nonBundledIndices.push(i);
-    }
+    if (!bundledSet.has(i)) nonBundledIndices.push(i);
   }
 
-  return { bundles, bundledSet, nonBundledIndices };
+  return { bundles, nonBundledIndices };
 }
 
 function SaleLineItems({
@@ -238,6 +264,7 @@ function SaleLineItems({
       // Use snapshotted name/price, fall back to live product data
       const itemName = item.productName ?? product?.name ?? "Unknown";
       const itemPrice = item.productPrice ?? product?.price ?? 0;
+      const qty = item.quantity;
       const fulfilled = item.fulfilledQuantity ?? 0;
       const source = item.fulfillmentSource ?? "pending_batch";
       const isDone = fulfilled >= item.quantity;
@@ -245,7 +272,7 @@ function SaleLineItems({
       const badgeStyle = SOURCE_BADGE_STYLES[source] ?? "";
       return (
         <TableRow
-          key={`pending-${i}`}
+          key={`pending-${indented ? "bundled" : "rest"}-${i}`}
           className={`bg-muted/30 hover:bg-muted/50 ${isDone ? "opacity-60" : ""}`}
         >
           <TableCell />
@@ -266,7 +293,7 @@ function SaleLineItems({
             </Badge>
           </TableCell>
           <TableCell className="text-sm">
-            x{item.quantity}
+            x{qty}
             {fulfilled > 0 && fulfilled < item.quantity && (
               <span className="text-muted-foreground">
                 {" "}({fulfilled} done)
@@ -276,7 +303,7 @@ function SaleLineItems({
           <TableCell />
           <TableCell />
           <TableCell className="text-right text-sm">
-            {!indented ? `RM${(itemPrice * item.quantity).toFixed(2)}` : ""}
+            {!indented ? `RM${(itemPrice * qty).toFixed(2)}` : ""}
           </TableCell>
         </TableRow>
       );
@@ -326,22 +353,33 @@ function SaleLineItems({
     }
   }
 
-  const fulfilledItems = lineItems.map((m) => ({
+  // Match inBundle flag from sale.lineItems to stockMovement lineItems by index
+  const inBundleByIdx = new Map<number, boolean>();
+  if (saleLineItems) {
+    for (let i = 0; i < saleLineItems.length; i++) {
+      if (saleLineItems[i].inBundle != null) {
+        inBundleByIdx.set(i, saleLineItems[i].inBundle!);
+      }
+    }
+  }
+  const fulfilledItems = lineItems.map((m, i) => ({
     productId: m.productId,
     quantity: m.quantity,
     productPrice: snapshotMap.get(m.productId)?.productPrice ?? products.get(m.productId)?.price,
+    inBundle: inBundleByIdx.get(i),
   }));
   const { bundles, nonBundledIndices } = computeOfferGrouping(fulfilledItems, effectiveOffer, products, hasSnapshots);
 
-  const renderFulfilledItem = (m: typeof lineItems[number], indented: boolean) => {
+  const renderFulfilledItem = (m: typeof lineItems[number], idx: number, indented: boolean) => {
     const snapshot = snapshotMap.get(m.productId);
     const product = products.get(m.productId);
     const itemName = snapshot?.productName ?? product?.name ?? "Unknown";
     const itemPrice = snapshot?.productPrice ?? product?.price ?? 0;
+    const qty = m.quantity;
     const batch = batches.get(m.batchId);
     return (
       <TableRow
-        key={m._id}
+        key={`${m._id}-${indented ? "bundled" : "rest"}`}
         className="bg-muted/30 hover:bg-muted/50"
       >
         <TableCell />
@@ -358,12 +396,12 @@ function SaleLineItems({
           </span>
         </TableCell>
         <TableCell className="text-sm">
-          x{m.quantity}
+          x{qty}
         </TableCell>
         <TableCell />
         <TableCell />
         <TableCell className="text-right text-sm">
-          {!indented ? `RM${(itemPrice * m.quantity).toFixed(2)}` : ""}
+          {!indented ? `RM${(itemPrice * qty).toFixed(2)}` : ""}
         </TableCell>
       </TableRow>
     );
@@ -375,12 +413,12 @@ function SaleLineItems({
         <Fragment key={`bundle-group-${bIdx}`}>
           {renderBundleHeader(bundle, bIdx)}
           {[...bundle.itemIndices].map((itemIdx) =>
-            renderFulfilledItem(lineItems[itemIdx], true)
+            renderFulfilledItem(lineItems[itemIdx], itemIdx, true)
           )}
         </Fragment>
       ))}
       {nonBundledIndices.map((itemIdx) =>
-        renderFulfilledItem(lineItems[itemIdx], false)
+        renderFulfilledItem(lineItems[itemIdx], itemIdx, false)
       )}
       {saleData.notes && (
         <TableRow className="bg-muted/30 hover:bg-muted/50">

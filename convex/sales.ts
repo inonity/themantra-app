@@ -48,6 +48,7 @@ export const recordB2CSale = mutation({
           batchId: v.id("batches"),
           productId: v.id("products"),
           quantity: v.number(),
+          inBundle: v.optional(v.boolean()),
         })
       )
     ),
@@ -57,6 +58,7 @@ export const recordB2CSale = mutation({
           productId: v.id("products"),
           quantity: v.number(),
           fulfillmentSource: fulfillmentSourceValidator,
+          inBundle: v.optional(v.boolean()),
         })
       )
     ),
@@ -111,8 +113,8 @@ export const recordB2CSale = mutation({
     }
 
     // Normalize into fulfilledItems + pendingItems
-    let fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number }[] = [];
-    let pendingItems: { productId: Id<"products">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release" }[] = [];
+    let fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; inBundle?: boolean }[] = [];
+    let pendingItems: { productId: Id<"products">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release"; inBundle?: boolean }[] = [];
 
     if (isNewStyle) {
       fulfilledItems = args.fulfilledItems ?? [];
@@ -404,6 +406,7 @@ export const recordB2CSale = mutation({
       batchId?: Id<"batches">;
       fulfilledAt?: number;
       hqUnitPrice: number;
+      inBundle?: boolean;
     }[] = [];
 
     for (let idx = 0; idx < fulfilledItems.length; idx++) {
@@ -420,6 +423,7 @@ export const recordB2CSale = mutation({
         batchId: item.batchId,
         fulfilledAt: movedAt,
         hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        inBundle: item.inBundle,
       });
     }
 
@@ -435,6 +439,7 @@ export const recordB2CSale = mutation({
         fulfillmentSource: item.fulfillmentSource,
         fulfilledQuantity: 0,
         hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        inBundle: item.inBundle,
       });
     }
 
@@ -740,6 +745,7 @@ export const recordDropshipSale = mutation({
         productId: v.id("products"),
         quantity: v.number(),
         fulfillmentSource: v.optional(fulfillmentSourceValidator),
+        inBundle: v.optional(v.boolean()),
       })
     )),
     pendingItems: v.optional(v.array(
@@ -752,6 +758,7 @@ export const recordDropshipSale = mutation({
           v.literal("pending_batch"),
           v.literal("future_release")
         ),
+        inBundle: v.optional(v.boolean()),
       })
     )),
     saleChannel: v.union(
@@ -799,7 +806,7 @@ export const recordDropshipSale = mutation({
     }
 
     // Normalize into fulfilledItems + pendingItems (support legacy `items` arg)
-    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release" }[] =
+    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release"; inBundle?: boolean }[] =
       args.fulfilledItems ?? args.items?.map((i) => ({ ...i, fulfillmentSource: undefined })) ?? [];
     const pendingItems = args.pendingItems ?? [];
 
@@ -990,6 +997,7 @@ export const recordDropshipSale = mutation({
       batchId?: Id<"batches">;
       fulfilledAt?: number;
       hqUnitPrice: number;
+      inBundle?: boolean;
     }[] = [];
 
     for (const item of fulfilledItems) {
@@ -1005,6 +1013,7 @@ export const recordDropshipSale = mutation({
         batchId: item.batchId,
         fulfilledAt: movedAt,
         hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        inBundle: item.inBundle,
       });
     }
 
@@ -1018,6 +1027,7 @@ export const recordDropshipSale = mutation({
         fulfillmentSource: item.fulfillmentSource,
         fulfilledQuantity: 0,
         hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        inBundle: item.inBundle,
       });
     }
 
