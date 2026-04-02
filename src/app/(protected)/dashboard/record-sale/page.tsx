@@ -18,12 +18,17 @@ export default function RecordSalePage() {
   return (
     <RoleGuard allowed={["agent", "sales"]}>
       <div className="space-y-6">
-        <h1 className="text-3xl font-semibold tracking-tight">
-          Record a Sale
-        </h1>
+        <div className="max-w-4xl mx-auto">
+          <h1 className="text-3xl font-semibold tracking-tight">
+            New Sale Order
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            Create a new sale order with customer and product details.
+          </p>
+        </div>
 
         {isLoading ? (
-          <div className="text-muted-foreground">Loading...</div>
+          <div className="text-muted-foreground max-w-4xl mx-auto">Loading...</div>
         ) : (
           <RecordSaleForm
             inventory={inventory}

@@ -351,7 +351,7 @@ function AgentSalesDashboard() {
             <p className="text-sm text-muted-foreground text-center py-6">Loading...</p>
           ) : recentSales.length === 0 ? (
             <p className="text-sm text-muted-foreground text-center py-6">
-              No sales recorded yet. Start by recording your first sale!
+              No sales yet. Create your first sale order to get started!
             </p>
           ) : (
             <SalesTable

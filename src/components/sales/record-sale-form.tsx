@@ -48,7 +48,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { TrashIcon, UploadIcon, XIcon, CameraIcon } from "lucide-react";
+import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, CreditCardIcon, CalendarIcon, TagIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 
@@ -741,7 +741,7 @@ export function RecordSaleForm({
         await markConverted({ interestId, saleId });
       }
 
-      toast.success("Sale recorded successfully");
+      toast.success("Sale order submitted successfully");
       router.push("/dashboard/my-sales");
     } catch (error) {
       toast.error(getErrorMessage(error, "Failed to record sale"));
@@ -783,15 +783,12 @@ export function RecordSaleForm({
   const hasItems = unifiedItems.length > 0;
 
   return (
-    <form onSubmit={handleFormSubmit}>
-      <Card className="max-w-4xl">
-        <CardHeader>
-          <CardTitle>
-            {interestId ? "Convert Interest to Sale" : "Record a Sale"}
-          </CardTitle>
-          {interest && (
+    <form onSubmit={handleFormSubmit} className="space-y-6 max-w-4xl mx-auto">
+      {interest && (
+        <Card className="border-blue-200 bg-blue-50/50 dark:border-blue-900 dark:bg-blue-950/20">
+          <CardContent className="py-3 px-4">
             <p className="text-sm text-muted-foreground">
-              Interest from {interest.customerDetail.name}:{" "}
+              Converting interest from <span className="font-medium text-foreground">{interest.customerDetail.name}</span>:{" "}
               {interest.items
                 .map((item) => {
                   const product = productMap.get(item.productId);
@@ -799,115 +796,141 @@ export function RecordSaleForm({
                 })
                 .join(", ")}
             </p>
-          )}
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Customer Details */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <UserIcon className="h-4 w-4 text-muted-foreground" />
+            Customer Details
+          </CardTitle>
         </CardHeader>
-        <CardContent className="space-y-6">
-          {/* Sale Details + Customer Details */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="saleDate">Sale Date</Label>
-                <Input
-                  id="saleDate"
-                  type="date"
-                  value={saleDate}
-                  onChange={(e) => setSaleDate(e.target.value)}
-                  max={formatDateForInput(Date.now())}
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="saleChannel">Sale Channel</Label>
-                <Select
-                  value={saleChannel}
-                  onValueChange={(v) => { if (v) setSaleChannel(v); }}
-                >
-                  <SelectTrigger id="saleChannel">
-                    <SelectValue placeholder="Select channel">
-                      {SALE_CHANNEL_LABELS[saleChannel] ?? "Select channel"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="direct">Direct</SelectItem>
-                    <SelectItem value="tiktok">TikTok</SelectItem>
-                    <SelectItem value="shopee">Shopee</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {showCollectorOption && (
-                <div className="space-y-2">
-                  <Label>Who Collects Payment?</Label>
-                  <Select
-                    value={paymentCollector}
-                    onValueChange={(v) => {
-                      if (v) setPaymentCollector(v as "agent" | "hq");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue>
-                        {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="agent">
-                        I collect from customer
-                      </SelectItem>
-                      <SelectItem value="hq">HQ collects directly</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="space-y-2">
-                <Label htmlFor="notes">Notes (optional)</Label>
-                <Textarea
-                  id="notes"
-                  value={notes}
-                  onChange={(e) => setNotes(e.target.value)}
-                  placeholder="Any additional notes..."
-                />
-              </div>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="customerName">Name</Label>
+              <Input
+                id="customerName"
+                value={customerName}
+                onChange={(e) => setCustomerName(e.target.value)}
+                placeholder="Full name"
+                required
+              />
             </div>
-            <div className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="customerName">Customer Name</Label>
-                <Input
-                  id="customerName"
-                  value={customerName}
-                  onChange={(e) => setCustomerName(e.target.value)}
-                  placeholder="Full name"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customerPhone">Phone</Label>
-                <Input
-                  id="customerPhone"
-                  type="tel"
-                  value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="Phone number"
-                  required
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="customerEmail">Email</Label>
-                <Input
-                  id="customerEmail"
-                  type="email"
-                  value={customerEmail}
-                  onChange={(e) => setCustomerEmail(e.target.value)}
-                  placeholder="Email address"
-                  required
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerPhone">Phone</Label>
+              <Input
+                id="customerPhone"
+                type="tel"
+                value={customerPhone}
+                onChange={(e) => setCustomerPhone(e.target.value)}
+                placeholder="Phone number"
+                required
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="customerEmail">Email</Label>
+              <Input
+                id="customerEmail"
+                type="email"
+                value={customerEmail}
+                onChange={(e) => setCustomerEmail(e.target.value)}
+                placeholder="Email address"
+                required
+              />
             </div>
           </div>
+        </CardContent>
+      </Card>
 
-          <Separator />
+      {/* Order Details */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <CalendarIcon className="h-4 w-4 text-muted-foreground" />
+            Order Details
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-4">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="space-y-2">
+              <Label htmlFor="saleDate">Date</Label>
+              <Input
+                id="saleDate"
+                type="date"
+                value={saleDate}
+                onChange={(e) => setSaleDate(e.target.value)}
+                max={formatDateForInput(Date.now())}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="saleChannel">Channel</Label>
+              <Select
+                value={saleChannel}
+                onValueChange={(v) => { if (v) setSaleChannel(v); }}
+              >
+                <SelectTrigger id="saleChannel">
+                  <SelectValue placeholder="Select channel">
+                    {SALE_CHANNEL_LABELS[saleChannel] ?? "Select channel"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="direct">Direct</SelectItem>
+                  <SelectItem value="tiktok">TikTok</SelectItem>
+                  <SelectItem value="shopee">Shopee</SelectItem>
+                  <SelectItem value="other">Other</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          {showCollectorOption && (
+            <div className="space-y-2">
+              <Label>Who Collects Payment?</Label>
+              <Select
+                value={paymentCollector}
+                onValueChange={(v) => {
+                  if (v) setPaymentCollector(v as "agent" | "hq");
+                }}
+              >
+                <SelectTrigger className="md:w-[300px]">
+                  <SelectValue>
+                    {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="agent">
+                    I collect from customer
+                  </SelectItem>
+                  <SelectItem value="hq">HQ collects directly</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          )}
+          <div className="space-y-2">
+            <Label htmlFor="notes">Notes (optional)</Label>
+            <Textarea
+              id="notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="Any additional notes..."
+              rows={2}
+            />
+          </div>
+        </CardContent>
+      </Card>
 
-          {/* Unified Items Table */}
-          <div className="space-y-3">
-            <Label className="text-base font-medium">Items</Label>
+      {/* Items */}
+      <Card>
+        <CardHeader className="pb-4">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <ShoppingBagIcon className="h-4 w-4 text-muted-foreground" />
+            Items
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
 
             <Table>
               <TableHeader>
@@ -1175,230 +1198,238 @@ export function RecordSaleForm({
                 </TableFooter>
               )}
             </Table>
-          </div>
 
           {/* Offer selection */}
           {applicableOffers && applicableOffers.length > 0 && (
-            <div className="space-y-2">
-              <Label>Apply Offer</Label>
-              <Select
-                value={selectedOfferId || "none"}
-                onValueChange={(v) =>
-                  setSelectedOfferId(v === "none" || !v ? "" : v)
-                }
-              >
-                <SelectTrigger className="w-full md:w-fit md:min-w-[350px]">
-                  <SelectValue placeholder="Select an offer...">
-                    {selectedOfferId
-                      ? (() => {
-                          const offer = applicableOffers?.find(
-                            (o) => o._id === selectedOfferId
-                          );
-                          return offer
-                            ? `${offer.name} — ${offer.minQuantity} for RM${offer.bundlePrice.toFixed(2)}`
-                            : "Select an offer...";
-                        })()
-                      : "No offer (default pricing)"}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">No offer (default pricing)</SelectItem>
-                  {applicableOffers.map((offer) => (
-                    <SelectItem key={offer._id} value={offer._id}>
-                      {offer.name} — {offer.minQuantity} for RM
-                      {offer.bundlePrice.toFixed(2)}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {selectedOfferId &&
-                pricing?.offer &&
-                totalQuantity < pricing.offer.minQuantity && (
-                  <p className="text-sm text-destructive">
-                    Need at least {pricing.offer.minQuantity} items for this
-                    offer. You have {totalQuantity}.
-                  </p>
-                )}
-            </div>
+            <>
+              <Separator />
+              <div className="space-y-2">
+                <Label className="flex items-center gap-2">
+                  <TagIcon className="h-4 w-4 text-muted-foreground" />
+                  Apply Offer
+                </Label>
+                <Select
+                  value={selectedOfferId || "none"}
+                  onValueChange={(v) =>
+                    setSelectedOfferId(v === "none" || !v ? "" : v)
+                  }
+                >
+                  <SelectTrigger className="w-full md:w-fit md:min-w-[350px]">
+                    <SelectValue placeholder="Select an offer...">
+                      {selectedOfferId
+                        ? (() => {
+                            const offer = applicableOffers?.find(
+                              (o) => o._id === selectedOfferId
+                            );
+                            return offer
+                              ? `${offer.name} — ${offer.minQuantity} for RM${offer.bundlePrice.toFixed(2)}`
+                              : "Select an offer...";
+                          })()
+                        : "No offer (default pricing)"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">No offer (default pricing)</SelectItem>
+                    {applicableOffers.map((offer) => (
+                      <SelectItem key={offer._id} value={offer._id}>
+                        {offer.name} — {offer.minQuantity} for RM
+                        {offer.bundlePrice.toFixed(2)}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {selectedOfferId &&
+                  pricing?.offer &&
+                  totalQuantity < pricing.offer.minQuantity && (
+                    <p className="text-sm text-destructive">
+                      Need at least {pricing.offer.minQuantity} items for this
+                      offer. You have {totalQuantity}.
+                    </p>
+                  )}
+              </div>
+            </>
           )}
+        </CardContent>
+      </Card>
 
-          <Separator />
-
-          {/* Payment Details */}
-          {hasItems && (
-            <div className="space-y-4">
-              <Label className="text-base font-medium">Payment</Label>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="paymentMethod">Payment Method</Label>
-                  <Select
-                    value={paymentMethod || "none"}
-                    onValueChange={(v) => {
-                      setPaymentMethod(v === "none" || !v ? "" : v);
-                      if (v === "cash" || v === "none" || !v) {
-                        clearPaymentProof();
-                        setAmountReceived("");
-                      }
-                    }}
-                  >
-                    <SelectTrigger id="paymentMethod">
-                      <SelectValue placeholder="Select payment method...">
-                        {paymentMethod
-                          ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
-                          : "Not specified"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not specified</SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="qr">QR Payment</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* Amount received — shown when HQ collects via non-cash */}
-                {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (
-                  <div className="space-y-2">
-                    <Label htmlFor="amountReceived">Amount Received (RM)</Label>
-                    <Input
-                      id="amountReceived"
-                      type="number"
-                      step="0.01"
-                      min={0}
-                      value={amountReceived || (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2)}
-                      onChange={(e) => setAmountReceived(e.target.value)}
-                    />
-                    {(() => {
-                      const total = pricing.offerTotal ?? pricing.defaultTotal;
-                      const received = parseFloat(amountReceived);
-                      if (!isNaN(received) && received > total) {
-                        const overpayment = (received - total).toFixed(2);
-                        return (
-                          <p className="text-sm text-muted-foreground">
-                            Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — company keeps the change.
-                          </p>
-                        );
-                      }
-                      return null;
-                    })()}
-                  </div>
-                )}
+      {/* Payment Details */}
+      {hasItems && (
+        <Card>
+          <CardHeader className="pb-4">
+            <CardTitle className="flex items-center gap-2 text-base">
+              <CreditCardIcon className="h-4 w-4 text-muted-foreground" />
+              Payment
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label htmlFor="paymentMethod">Payment Method</Label>
+                <Select
+                  value={paymentMethod || "none"}
+                  onValueChange={(v) => {
+                    setPaymentMethod(v === "none" || !v ? "" : v);
+                    if (v === "cash" || v === "none" || !v) {
+                      clearPaymentProof();
+                      setAmountReceived("");
+                    }
+                  }}
+                >
+                  <SelectTrigger id="paymentMethod">
+                    <SelectValue placeholder="Select payment method...">
+                      {paymentMethod
+                        ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
+                        : "Not specified"}
+                    </SelectValue>
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Not specified</SelectItem>
+                    <SelectItem value="cash">Cash</SelectItem>
+                    <SelectItem value="qr">QR Payment</SelectItem>
+                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                    <SelectItem value="other">Other</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
 
-              {/* Proof of payment upload — shown for QR/bank transfer, required only when HQ collects */}
-              {isNonCashPayment && (
+              {/* Amount received — shown when HQ collects via non-cash */}
+              {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (
                 <div className="space-y-2">
-                  <Label>
-                    Proof of Payment
-                    {needsProofOfPayment && <span className="text-destructive ml-1">*</span>}
-                  </Label>
-                  <p className="text-sm text-muted-foreground">
-                    {needsProofOfPayment
-                      ? "Upload a receipt or screenshot of the payment."
-                      : "Optional — upload a receipt or screenshot for your records."}
-                  </p>
-
-                  {paymentProofPreview ? (
-                    <div className="relative inline-block">
-                      <img
-                        src={paymentProofPreview}
-                        alt="Payment proof preview"
-                        className="max-h-48 rounded-lg border object-contain"
-                      />
-                      <Button
-                        type="button"
-                        variant="destructive"
-                        size="icon"
-                        className="absolute -top-2 -right-2 size-6"
-                        onClick={clearPaymentProof}
-                      >
-                        <XIcon />
-                      </Button>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {paymentProofFile?.name}
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="flex gap-2">
-                      <input
-                        ref={fileInputRef}
-                        type="file"
-                        accept="image/*"
-                        onChange={handleFileSelect}
-                        className="hidden"
-                      />
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => fileInputRef.current?.click()}
-                      >
-                        <UploadIcon data-icon="inline-start" />
-                        Upload File
-                      </Button>
-                      <Button
-                        type="button"
-                        variant="outline"
-                        onClick={() => {
-                          if (fileInputRef.current) {
-                            fileInputRef.current.setAttribute("capture", "environment");
-                            fileInputRef.current.click();
-                            fileInputRef.current.removeAttribute("capture");
-                          }
-                        }}
-                      >
-                        <CameraIcon data-icon="inline-start" />
-                        Take Photo
-                      </Button>
-                    </div>
-                  )}
+                  <Label htmlFor="amountReceived">Amount Received (RM)</Label>
+                  <Input
+                    id="amountReceived"
+                    type="number"
+                    step="0.01"
+                    min={0}
+                    value={amountReceived || (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2)}
+                    onChange={(e) => setAmountReceived(e.target.value)}
+                  />
+                  {(() => {
+                    const total = pricing.offerTotal ?? pricing.defaultTotal;
+                    const received = parseFloat(amountReceived);
+                    if (!isNaN(received) && received > total) {
+                      const overpayment = (received - total).toFixed(2);
+                      return (
+                        <p className="text-sm text-muted-foreground">
+                          Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — company keeps the change.
+                        </p>
+                      );
+                    }
+                    return null;
+                  })()}
                 </div>
               )}
             </div>
-          )}
 
-          <Separator />
+            {/* Proof of payment upload — shown for QR/bank transfer, required only when HQ collects */}
+            {isNonCashPayment && (
+              <div className="space-y-2">
+                <Label>
+                  Proof of Payment
+                  {needsProofOfPayment && <span className="text-destructive ml-1">*</span>}
+                </Label>
+                <p className="text-sm text-muted-foreground">
+                  {needsProofOfPayment
+                    ? "Upload a receipt or screenshot of the payment."
+                    : "Optional — upload a receipt or screenshot for your records."}
+                </p>
 
-          {/* Submit */}
-          <div className="flex justify-end gap-3">
-            {hasPendingItems && (
-              <p className="text-sm text-muted-foreground self-center mr-auto">
-                Some items need fulfillment later. Settlement created now.
-              </p>
+                {paymentProofPreview ? (
+                  <div className="relative inline-block">
+                    <img
+                      src={paymentProofPreview}
+                      alt="Payment proof preview"
+                      className="max-h-48 rounded-lg border object-contain"
+                    />
+                    <Button
+                      type="button"
+                      variant="destructive"
+                      size="icon"
+                      className="absolute -top-2 -right-2 size-6"
+                      onClick={clearPaymentProof}
+                    >
+                      <XIcon />
+                    </Button>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {paymentProofFile?.name}
+                    </p>
+                  </div>
+                ) : (
+                  <div className="flex gap-2">
+                    <input
+                      ref={fileInputRef}
+                      type="file"
+                      accept="image/*"
+                      onChange={handleFileSelect}
+                      className="hidden"
+                    />
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => fileInputRef.current?.click()}
+                    >
+                      <UploadIcon data-icon="inline-start" />
+                      Upload File
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => {
+                        if (fileInputRef.current) {
+                          fileInputRef.current.setAttribute("capture", "environment");
+                          fileInputRef.current.click();
+                          fileInputRef.current.removeAttribute("capture");
+                        }
+                      }}
+                    >
+                      <CameraIcon data-icon="inline-start" />
+                      Take Photo
+                    </Button>
+                  </div>
+                )}
+              </div>
             )}
-            <Button
-              type="submit"
-              disabled={
-                !hasItems ||
-                !saleChannel ||
-                !customerName ||
-                !customerPhone ||
-                !customerEmail ||
-                (needsProofOfPayment && !paymentProofFile) ||
-                submitting ||
-                uploadingProof
-              }
-            >
-              {uploadingProof
-                ? "Uploading..."
-                : submitting
-                  ? "Recording..."
-                  : "Record Sale"}
-            </Button>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
+
+      {/* Submit */}
+      <div className="flex justify-end gap-3">
+        {hasPendingItems && (
+          <p className="text-sm text-muted-foreground self-center mr-auto">
+            Some items need fulfillment later. Settlement created now.
+          </p>
+        )}
+        <Button
+          type="submit"
+          size="lg"
+          disabled={
+            !hasItems ||
+            !saleChannel ||
+            !customerName ||
+            !customerPhone ||
+            !customerEmail ||
+            (needsProofOfPayment && !paymentProofFile) ||
+            submitting ||
+            uploadingProof
+          }
+        >
+          {uploadingProof
+            ? "Uploading..."
+            : submitting
+              ? "Submitting..."
+              : "Submit Order"}
+        </Button>
+      </div>
 
       {/* Confirmation dialog when agent/salesperson collects payment */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirm Sale</AlertDialogTitle>
+            <AlertDialogTitle>Confirm Sale Order</AlertDialogTitle>
             <AlertDialogDescription>
-              You are recording a sale where you collected the payment directly
+              You are submitting a sale where you collected the payment directly
               from the customer via{" "}
               <span className="font-medium">
                 {paymentMethod === "cash"
@@ -1424,7 +1455,7 @@ export function RecordSaleForm({
                 submitSale();
               }}
             >
-              Confirm &amp; Record
+              Confirm &amp; Submit
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
