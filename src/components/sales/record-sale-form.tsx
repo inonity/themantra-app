@@ -1345,16 +1345,29 @@ export function RecordSaleForm({
                     step="0.01"
                     min={0}
                     value={amountReceived || (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2)}
-                    onChange={(e) => setAmountReceived(e.target.value)}
+                    onChange={(e) => {
+                      const raw = e.target.value;
+                      if (raw === "") {
+                        setAmountReceived("");
+                        return;
+                      }
+                      // Round to 2 decimal places to avoid floating-point stepper drift
+                      const num = parseFloat(raw);
+                      if (!isNaN(num)) {
+                        setAmountReceived((Math.round(num * 100) / 100).toString());
+                      } else {
+                        setAmountReceived(raw);
+                      }
+                    }}
                   />
                   {(() => {
-                    const total = pricing.offerTotal ?? pricing.defaultTotal;
-                    const received = parseFloat(amountReceived);
+                    const total = Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100;
+                    const received = Math.round(parseFloat(amountReceived) * 100) / 100;
                     if (!isNaN(received) && received > total) {
-                      const overpayment = (received - total).toFixed(2);
+                      const overpayment = (Math.round((received - total) * 100) / 100).toFixed(2);
                       return (
                         <p className="text-sm text-muted-foreground">
-                          Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — company keeps the change.
+                          Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — will be transferred to you as commission.
                         </p>
                       );
                     }

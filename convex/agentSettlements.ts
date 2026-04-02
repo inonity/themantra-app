@@ -38,28 +38,20 @@ export async function addSaleToSettlement(
   }
 
   // Create a new pending settlement with reference ID
-  const agent = await ctx.db.get(agentId);
-  const initials = (agent?.name ?? agent?.nickname ?? "AG")
-    .split(" ")
-    .map((w) => w[0])
-    .join("")
-    .toUpperCase()
-    .slice(0, 2);
-
   const now = new Date();
   const dateStr =
     String(now.getFullYear()).slice(-2) +
     String(now.getMonth() + 1).padStart(2, "0") +
     String(now.getDate()).padStart(2, "0");
 
-  // Count existing settlements for sequence number
-  const existingSettlements = await ctx.db
+  // Count all settlements globally for a unique sequence number
+  const allSettlements = await ctx.db
     .query("agentSettlements")
-    .withIndex("by_agentId", (q) => q.eq("agentId", agentId))
+    .order("desc")
     .take(1000);
 
-  const seq = String(existingSettlements.length + 1).padStart(3, "0");
-  const referenceId = `TM-${initials}-${dateStr}-${seq}`;
+  const seq = String(allSettlements.length + 1).padStart(3, "0");
+  const referenceId = `TM-${dateStr}-${seq}`;
 
   const settlementId = await ctx.db.insert("agentSettlements", {
     agentId,
@@ -249,26 +241,20 @@ export const generate = mutation({
         unsettledSales.reduce((sum, s) => sum + (s.hqPrice ?? 0), 0) * 100
       ) / 100;
 
-    const initials = (agent.name ?? agent.nickname ?? "AG")
-      .split(" ")
-      .map((w) => w[0])
-      .join("")
-      .toUpperCase()
-      .slice(0, 2);
-
     const now = new Date();
     const dateStr =
       String(now.getFullYear()).slice(-2) +
       String(now.getMonth() + 1).padStart(2, "0") +
       String(now.getDate()).padStart(2, "0");
 
-    const existingSettlements = await ctx.db
+    // Count all settlements globally for a unique sequence number
+    const allSettlements = await ctx.db
       .query("agentSettlements")
-      .withIndex("by_agentId", (q) => q.eq("agentId", args.agentId))
+      .order("desc")
       .take(1000);
 
-    const seq = String(existingSettlements.length + 1).padStart(3, "0");
-    const referenceId = `TM-${initials}-${dateStr}-${seq}`;
+    const seq = String(allSettlements.length + 1).padStart(3, "0");
+    const referenceId = `TM-${dateStr}-${seq}`;
 
     const settlementId = await ctx.db.insert("agentSettlements", {
       agentId: args.agentId,

@@ -556,9 +556,12 @@ export const recordB2CSale = mutation({
 
     // Settlement logic depends on who collects payment
     if (hqCollects) {
-      // HQ collected payment — HQ owes agent their commission
-      if (agentCommission > 0) {
-        await addSaleToSettlement(ctx, userId, saleId, agentCommission, "hq_to_agent");
+      // HQ collected payment — HQ owes agent their commission + any overpayment
+      const commissionWithOverpayment = Math.round(
+        (agentCommission + (overpaymentAmount ?? 0)) * 100
+      ) / 100;
+      if (commissionWithOverpayment > 0) {
+        await addSaleToSettlement(ctx, userId, saleId, commissionWithOverpayment, "hq_to_agent");
       }
     } else {
       // Agent collected payment — agent owes HQ the hqPrice
@@ -1154,9 +1157,12 @@ export const recordDropshipSale = mutation({
 
     // Settlement logic depends on who collects payment
     if (hqCollects) {
-      // HQ collected payment — HQ owes agent their commission
-      if (agentCommission > 0) {
-        await addSaleToSettlement(ctx, userId, saleId, agentCommission, "hq_to_agent");
+      // HQ collected payment — HQ owes agent their commission + any overpayment
+      const commissionWithOverpayment = Math.round(
+        (agentCommission + (dsOverpaymentAmount ?? 0)) * 100
+      ) / 100;
+      if (commissionWithOverpayment > 0) {
+        await addSaleToSettlement(ctx, userId, saleId, commissionWithOverpayment, "hq_to_agent");
       }
     } else {
       // Agent collected payment — agent owes HQ the hqPrice

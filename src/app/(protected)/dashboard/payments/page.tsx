@@ -125,6 +125,7 @@ function CommissionBreakdownRow({
       hqUnitPrice?: number;
     }[];
     hqUnitPriceMap?: Record<string, number>;
+    overpaymentAmount?: number;
   };
 }) {
   const [expanded, setExpanded] = useState(false);
@@ -190,7 +191,7 @@ function CommissionBreakdownRow({
           RM {(sale.hqPrice ?? 0).toFixed(2)}
         </TableCell>
         <TableCell className="text-right text-sm text-green-600">
-          RM {(sale.agentCommission ?? 0).toFixed(2)}
+          RM {((sale.agentCommission ?? 0) + (sale.overpaymentAmount ?? 0)).toFixed(2)}
         </TableCell>
       </TableRow>
 
@@ -352,6 +353,18 @@ function CommissionBreakdownRow({
                               RM {(sale.agentCommission ?? 0).toFixed(2)}
                             </TableCell>
                           </TableRow>
+                          {sale.overpaymentAmount != null && sale.overpaymentAmount > 0 && (
+                            <TableRow>
+                              <TableCell colSpan={2} className="text-sm text-right font-medium text-green-600">
+                                + Overpayment
+                              </TableCell>
+                              <TableCell className="text-right text-sm font-medium text-green-600">
+                                RM {sale.overpaymentAmount.toFixed(2)}
+                              </TableCell>
+                              <TableCell />
+                              <TableCell />
+                            </TableRow>
+                          )}
                         </TableBody>
                       </Table>
                     </div>
@@ -430,6 +443,16 @@ function CommissionBreakdownRow({
                           RM {(sale.agentCommission ?? 0).toFixed(2)}
                         </TableCell>
                       </TableRow>
+                      {sale.overpaymentAmount != null && sale.overpaymentAmount > 0 && (
+                        <TableRow>
+                          <TableCell colSpan={6} className="text-sm text-right font-medium text-green-600">
+                            + Overpayment
+                          </TableCell>
+                          <TableCell className="text-right text-sm font-semibold text-green-600">
+                            RM {sale.overpaymentAmount.toFixed(2)}
+                          </TableCell>
+                        </TableRow>
+                      )}
                     </TableBody>
                   </Table>
                 </div>
@@ -440,6 +463,11 @@ function CommissionBreakdownRow({
                   <p className="font-medium text-green-600">
                     Your Commission = RM {(sale.agentCommission ?? 0).toFixed(2)}
                   </p>
+                  {sale.overpaymentAmount != null && sale.overpaymentAmount > 0 && (
+                    <p className="font-medium text-green-600">
+                      + Overpayment = RM {sale.overpaymentAmount.toFixed(2)}
+                    </p>
+                  )}
                 </div>
               )}
             </div>
@@ -479,7 +507,7 @@ function SettlementSalesTable({
           <TableHead>Stock Model</TableHead>
           <TableHead className="text-right">Sale Total</TableHead>
           <TableHead className="text-right">HQ Share</TableHead>
-          <TableHead className="text-right">Commission</TableHead>
+          <TableHead className="text-right">You Receive</TableHead>
         </TableRow>
       </TableHeader>
       <TableBody>
@@ -563,7 +591,7 @@ function SettlementRow({
                     <TableHead>Stock Model</TableHead>
                     <TableHead className="text-right">Sale Total</TableHead>
                     <TableHead className="text-right">HQ Share</TableHead>
-                    <TableHead className="text-right">Your Commission</TableHead>
+                    <TableHead className="text-right">You Receive</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
