@@ -39,7 +39,7 @@ export const transferToAgent = mutation({
       .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
         q.eq("batchId", args.batchId).eq("heldByType", "business")
       )
-      .unique();
+      .first();
 
     if (!businessInventory || businessInventory.quantity < args.quantity) {
       throw new Error("Insufficient business inventory");
@@ -141,7 +141,7 @@ export const transferBulkToAgent = mutation({
         .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
           q.eq("batchId", item.batchId).eq("heldByType", "business")
         )
-        .unique();
+        .first();
 
       if (!businessInventory || businessInventory.quantity < item.quantity) {
         throw new Error(`Insufficient stock for batch ${batch.batchCode}`);

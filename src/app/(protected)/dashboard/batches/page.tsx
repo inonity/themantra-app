@@ -21,22 +21,31 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "convex/react";
-import { PlusIcon, MoreHorizontalIcon, ChevronDownIcon, PencilIcon } from "lucide-react";
+import { PlusIcon, MoreHorizontalIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { BatchFormDialog } from "@/components/batches/batch-form-dialog";
 import { useState } from "react";
+import { toast } from "sonner";
 
-const statusVariant: Record<string, "default" | "secondary" | "destructive"> = {
+type BatchStatus = "upcoming" | "available" | "depleted" | "cancelled";
+
+const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   upcoming: "secondary",
   available: "default",
   depleted: "destructive",
+  cancelled: "outline",
 };
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const allStatuses = ["upcoming", "available", "depleted"] as const;
+const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
+  upcoming: ["available", "cancelled"],
+  available: ["depleted", "cancelled"],
+  depleted: ["cancelled"],
+  cancelled: [],
+};
 
 export default function BatchesPage() {
   const batches = useQuery(api.batches.listAll);
@@ -50,6 +59,16 @@ export default function BatchesPage() {
   );
 
   const isLoading = batches === undefined || products === undefined;
+
+  async function handleStatusChange(batchId: Doc<"batches">["_id"], newStatus: BatchStatus) {
+    try {
+      await updateStatus({ id: batchId, status: newStatus });
+      toast.success(`Status changed to ${capitalize(newStatus)}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update status";
+      toast.error(message);
+    }
+  }
 
   return (
     <RoleGuard allowed={["admin"]}>
@@ -93,6 +112,7 @@ export default function BatchesPage() {
             <TableBody>
               {batches.map((batch) => {
                 const product = productMap.get(batch.productId);
+                const allowedNext = ALLOWED_TRANSITIONS[batch.status as BatchStatus] ?? [];
                 return (
                   <TableRow key={batch._id}>
                     <TableCell className="font-medium">
@@ -108,34 +128,35 @@ export default function BatchesPage() {
                     <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>
                     <TableCell>{batch.totalQuantity}</TableCell>
                     <TableCell>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger>
-                          <Badge
-                            variant={statusVariant[batch.status]}
-                            className="cursor-pointer gap-1"
-                          >
-                            {capitalize(batch.status)}
-                            <ChevronDownIcon className="h-3 w-3" />
-                          </Badge>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent>
-                          {allStatuses.map((s) => (
-                            <DropdownMenuItem
-                              key={s}
-                              onClick={() =>
-                                updateStatus({
-                                  id: batch._id,
-                                  status: s,
-                                })
-                              }
+                      {allowedNext.length > 0 ? (
+                        <DropdownMenu>
+                          <DropdownMenuTrigger>
+                            <Badge
+                              variant={statusVariant[batch.status]}
+                              className="cursor-pointer gap-1"
                             >
-                              <Badge variant={statusVariant[s]} className="mr-2">
-                                {capitalize(s)}
-                              </Badge>
-                            </DropdownMenuItem>
-                          ))}
-                        </DropdownMenuContent>
-                      </DropdownMenu>
+                              {capitalize(batch.status)}
+                              <ChevronDownIcon className="h-3 w-3" />
+                            </Badge>
+                          </DropdownMenuTrigger>
+                          <DropdownMenuContent>
+                            {allowedNext.map((s) => (
+                              <DropdownMenuItem
+                                key={s}
+                                onClick={() => handleStatusChange(batch._id, s)}
+                              >
+                                <Badge variant={statusVariant[s]} className="mr-2">
+                                  {capitalize(s)}
+                                </Badge>
+                              </DropdownMenuItem>
+                            ))}
+                          </DropdownMenuContent>
+                        </DropdownMenu>
+                      ) : (
+                        <Badge variant={statusVariant[batch.status]}>
+                          {capitalize(batch.status)}
+                        </Badge>
+                      )}
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>

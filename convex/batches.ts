@@ -2,6 +2,35 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "./helpers/auth";
 
+const batchStatusValidator = v.union(
+  v.literal("upcoming"),
+  v.literal("available"),
+  v.literal("depleted"),
+  v.literal("cancelled")
+);
+
+type BatchStatus = "upcoming" | "available" | "depleted" | "cancelled";
+
+// Allowed status transitions
+const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
+  upcoming: ["available", "cancelled"],
+  available: ["depleted", "cancelled"],
+  depleted: ["cancelled"],
+  cancelled: [], // terminal state
+};
+
+function validateTransition(from: BatchStatus, to: BatchStatus): string | null {
+  if (from === to) return null; // no-op, allow silently
+  if (!ALLOWED_TRANSITIONS[from].includes(to)) {
+    const allowed = ALLOWED_TRANSITIONS[from];
+    if (allowed.length === 0) {
+      return `Cannot change status from "${from}" — it is a terminal state.`;
+    }
+    return `Cannot change status from "${from}" to "${to}". Allowed: ${allowed.join(", ")}.`;
+  }
+  return null;
+}
+
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
@@ -80,14 +109,15 @@ export const create = mutation({
     manufacturedDate: v.string(),
     expectedReadyDate: v.optional(v.string()),
     totalQuantity: v.number(),
-    status: v.union(
-      v.literal("upcoming"),
-      v.literal("available"),
-      v.literal("depleted")
-    ),
+    status: batchStatusValidator,
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
+
+    // Only upcoming and available are valid for new batches
+    if (args.status !== "upcoming" && args.status !== "available") {
+      throw new Error("New batches can only be created as upcoming or available.");
+    }
 
     const product = await ctx.db.get(args.productId);
     if (!product) {
@@ -129,11 +159,7 @@ export const update = mutation({
     manufacturedDate: v.string(),
     expectedReadyDate: v.optional(v.string()),
     totalQuantity: v.number(),
-    status: v.union(
-      v.literal("upcoming"),
-      v.literal("available"),
-      v.literal("depleted")
-    ),
+    status: batchStatusValidator,
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
@@ -152,18 +178,38 @@ export const update = mutation({
       throw new Error(`Batch code "${args.batchCode}" is already in use`);
     }
 
+    // Validate status transition
     const previousStatus = batch.status;
+    if (previousStatus !== args.status) {
+      const error = validateTransition(previousStatus, args.status);
+      if (error) throw new Error(error);
+
+      // Handle cancellation: clean up business inventory
+      if (args.status === "cancelled") {
+        await handleCancellation(ctx, args.id);
+      }
+    }
+
     const { id, ...fields } = args;
     await ctx.db.patch(id, { ...fields, updatedAt: Date.now() });
 
-    // If transitioning from upcoming to available, create business inventory
-    if (previousStatus === "upcoming" && args.status === "available") {
-      await ctx.db.insert("inventory", {
-        batchId: id,
-        productId: batch.productId,
-        heldByType: "business",
-        quantity: args.totalQuantity,
-      });
+    // If transitioning to available, create business inventory (only if none exists)
+    if (previousStatus !== "available" && args.status === "available") {
+      const existingInventory = await ctx.db
+        .query("inventory")
+        .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+          q.eq("batchId", id).eq("heldByType", "business")
+        )
+        .take(1);
+
+      if (existingInventory.length === 0) {
+        await ctx.db.insert("inventory", {
+          batchId: id,
+          productId: batch.productId,
+          heldByType: "business",
+          quantity: args.totalQuantity,
+        });
+      }
     }
   },
 });
@@ -171,11 +217,7 @@ export const update = mutation({
 export const updateStatus = mutation({
   args: {
     id: v.id("batches"),
-    status: v.union(
-      v.literal("upcoming"),
-      v.literal("available"),
-      v.literal("depleted")
-    ),
+    status: batchStatusValidator,
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
@@ -186,16 +228,68 @@ export const updateStatus = mutation({
     }
 
     const previousStatus = batch.status;
+    if (previousStatus === args.status) return; // no-op
+
+    // Validate transition
+    const error = validateTransition(previousStatus, args.status);
+    if (error) throw new Error(error);
+
+    // Handle cancellation: clean up business inventory
+    if (args.status === "cancelled") {
+      await handleCancellation(ctx, args.id);
+    }
+
     await ctx.db.patch(args.id, { status: args.status, updatedAt: Date.now() });
 
-    // If transitioning from upcoming to available, create business inventory
-    if (previousStatus === "upcoming" && args.status === "available") {
-      await ctx.db.insert("inventory", {
-        batchId: args.id,
-        productId: batch.productId,
-        heldByType: "business",
-        quantity: batch.totalQuantity,
-      });
+    // If transitioning to available, create business inventory (only if none exists)
+    if (args.status === "available") {
+      const existingInventory = await ctx.db
+        .query("inventory")
+        .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+          q.eq("batchId", args.id).eq("heldByType", "business")
+        )
+        .take(1);
+
+      if (existingInventory.length === 0) {
+        await ctx.db.insert("inventory", {
+          batchId: args.id,
+          productId: batch.productId,
+          heldByType: "business",
+          quantity: batch.totalQuantity,
+        });
+      }
     }
   },
 });
+
+// Helper: handle cancellation cleanup
+import { MutationCtx } from "./_generated/server";
+import { Id } from "./_generated/dataModel";
+
+async function handleCancellation(ctx: MutationCtx, batchId: Id<"batches">) {
+  // Check if any agents hold stock from this batch
+  const agentInventory = await ctx.db
+    .query("inventory")
+    .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+      q.eq("batchId", batchId).eq("heldByType", "agent")
+    )
+    .take(1);
+
+  if (agentInventory.length > 0) {
+    throw new Error(
+      "Cannot cancel this batch — agents still hold stock from it. Recall the stock first."
+    );
+  }
+
+  // Delete all business inventory for this batch
+  const businessInventory = await ctx.db
+    .query("inventory")
+    .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+      q.eq("batchId", batchId).eq("heldByType", "business")
+    )
+    .take(100);
+
+  for (const inv of businessInventory) {
+    await ctx.db.delete(inv._id);
+  }
+}

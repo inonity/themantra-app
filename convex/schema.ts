@@ -56,7 +56,8 @@ export default defineSchema({
     status: v.union(
       v.literal("upcoming"),
       v.literal("available"),
-      v.literal("depleted")
+      v.literal("depleted"),
+      v.literal("cancelled")
     ),
     originSource: v.optional(v.string()), // deprecated, kept optional for existing data
     updatedAt: v.optional(v.number()),

@@ -66,8 +66,8 @@ export function BatchFormDialog({
     batch ? String(batch.totalQuantity) : ""
   );
   const [status, setStatus] = useState<
-    "upcoming" | "available" | "depleted"
-  >(batch?.status ?? "available");
+    "upcoming" | "available" | "depleted" | "cancelled"
+  >(batch?.status ?? "upcoming");
   const [error, setError] = useState("");
 
   const activeProductId = fixedProductId ?? batch?.productId ?? (selectedProductId as Id<"products">);
@@ -111,7 +111,7 @@ export function BatchFormDialog({
     setExpectedReadyDate("");
     setExpectedReadyDateManuallyEdited(false);
     setTotalQuantity("");
-    setStatus("available");
+    setStatus("upcoming");
     setError("");
   }
 
@@ -246,7 +246,7 @@ export function BatchFormDialog({
           <Select
             value={status}
             onValueChange={(v) =>
-              setStatus(v as "upcoming" | "available" | "depleted")
+              setStatus(v as "upcoming" | "available" | "depleted" | "cancelled")
             }
           >
             <SelectTrigger>
@@ -255,11 +255,27 @@ export function BatchFormDialog({
               </SelectValue>
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
-              <SelectItem value="available" label="Available">Available</SelectItem>
-              <SelectItem value="depleted" label="Depleted">Depleted</SelectItem>
+              {!isEdit ? (
+                <>
+                  <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
+                  <SelectItem value="available" label="Available">Available</SelectItem>
+                </>
+              ) : (
+                <>
+                  <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
+                  <SelectItem value="available" label="Available">Available</SelectItem>
+                  <SelectItem value="depleted" label="Depleted">Depleted</SelectItem>
+                  <SelectItem value="cancelled" label="Cancelled">Cancelled</SelectItem>
+                </>
+              )}
             </SelectContent>
           </Select>
+          {!isEdit && (
+            <p className="text-xs text-muted-foreground">
+              Use <span className="font-medium">Upcoming</span> for batches still maturing.{" "}
+              <span className="font-medium">Available</span> adds stock to HQ inventory immediately.
+            </p>
+          )}
         </div>
 
         {error && (

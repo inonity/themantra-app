@@ -18,21 +18,40 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { toast } from "sonner";
 
-const statusVariant: Record<string, "default" | "secondary" | "destructive"> = {
+type BatchStatus = "upcoming" | "available" | "depleted" | "cancelled";
+
+const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   upcoming: "secondary",
   available: "default",
   depleted: "destructive",
+  cancelled: "outline",
 };
 
 function capitalize(s: string) {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-const allStatuses = ["upcoming", "available", "depleted"] as const;
+const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
+  upcoming: ["available", "cancelled"],
+  available: ["depleted", "cancelled"],
+  depleted: ["cancelled"],
+  cancelled: [],
+};
 
 export function BatchTable({ batches }: { batches: Doc<"batches">[] }) {
   const updateStatus = useMutation(api.batches.updateStatus);
+
+  async function handleStatusChange(batchId: Doc<"batches">["_id"], newStatus: BatchStatus) {
+    try {
+      await updateStatus({ id: batchId, status: newStatus });
+      toast.success(`Status changed to ${capitalize(newStatus)}`);
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : "Failed to update status";
+      toast.error(message);
+    }
+  }
 
   if (batches.length === 0) {
     return (
@@ -54,43 +73,47 @@ export function BatchTable({ batches }: { batches: Doc<"batches">[] }) {
         </TableRow>
       </TableHeader>
       <TableBody>
-        {batches.map((batch) => (
-          <TableRow key={batch._id}>
-            <TableCell className="font-medium">{batch.batchCode}</TableCell>
-            <TableCell>{batch.manufacturedDate}</TableCell>
-            <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>
-            <TableCell>{batch.totalQuantity}</TableCell>
-            <TableCell>
-              <DropdownMenu>
-                <DropdownMenuTrigger>
-                  <Badge
-                    variant={statusVariant[batch.status]}
-                    className="cursor-pointer"
-                  >
+        {batches.map((batch) => {
+          const allowedNext = ALLOWED_TRANSITIONS[batch.status as BatchStatus] ?? [];
+          return (
+            <TableRow key={batch._id}>
+              <TableCell className="font-medium">{batch.batchCode}</TableCell>
+              <TableCell>{batch.manufacturedDate}</TableCell>
+              <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>
+              <TableCell>{batch.totalQuantity}</TableCell>
+              <TableCell>
+                {allowedNext.length > 0 ? (
+                  <DropdownMenu>
+                    <DropdownMenuTrigger>
+                      <Badge
+                        variant={statusVariant[batch.status]}
+                        className="cursor-pointer"
+                      >
+                        {capitalize(batch.status)}
+                      </Badge>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent>
+                      {allowedNext.map((s) => (
+                        <DropdownMenuItem
+                          key={s}
+                          onClick={() => handleStatusChange(batch._id, s)}
+                        >
+                          <Badge variant={statusVariant[s]} className="mr-2">
+                            {capitalize(s)}
+                          </Badge>
+                        </DropdownMenuItem>
+                      ))}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                ) : (
+                  <Badge variant={statusVariant[batch.status]}>
                     {capitalize(batch.status)}
                   </Badge>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent>
-                  {allStatuses.map((s) => (
-                    <DropdownMenuItem
-                      key={s}
-                      onClick={() =>
-                        updateStatus({
-                          id: batch._id,
-                          status: s,
-                        })
-                      }
-                    >
-                      <Badge variant={statusVariant[s]} className="mr-2">
-                        {capitalize(s)}
-                      </Badge>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
-            </TableCell>
-          </TableRow>
-        ))}
+                )}
+              </TableCell>
+            </TableRow>
+          );
+        })}
       </TableBody>
     </Table>
   );
