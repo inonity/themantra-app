@@ -185,18 +185,11 @@ export const completeInvite = mutation({
       updatedAt: Date.now(),
     });
 
-    // Auto-create profile and pricing defaults for sales staff
+    // Auto-create profile for sales staff
     if (assignedRole === "sales") {
       await ctx.db.insert("agentProfiles", {
         agentId: user._id,
         defaultStockModel: "dropship",
-        updatedAt: Date.now(),
-      });
-      await ctx.db.insert("agentPricing", {
-        agentId: user._id,
-        stockModel: "dropship",
-        rateType: "percentage",
-        rateValue: 1.0,
         updatedAt: Date.now(),
       });
     }

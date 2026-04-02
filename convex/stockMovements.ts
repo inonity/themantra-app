@@ -30,8 +30,7 @@ export const transferToAgent = mutation({
     const resolved = await resolveAgentPrice(
       ctx,
       args.agentId,
-      batch.productId,
-      args.stockModel
+      batch.productId
     );
 
     // Find business inventory for this batch
@@ -133,8 +132,7 @@ export const transferBulkToAgent = mutation({
       const resolved = await resolveAgentPrice(
         ctx,
         args.agentId,
-        batch.productId,
-        args.stockModel
+        batch.productId
       );
 
       // Find business inventory

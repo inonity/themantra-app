@@ -225,19 +225,11 @@ export const getSettingsData = query({
         .unique();
     }
 
-    // Get agent pricing if seller
-    let agentPricing = null;
-    if (user.role === "agent" || user.role === "sales") {
-      agentPricing = await ctx.db
-        .query("agentPricing")
-        .withIndex("by_agentId", (q) => q.eq("agentId", userId))
-        .take(10);
+    // Get agent's assigned rate
+    let rate = null;
+    if (agentProfile?.rateId) {
+      rate = await ctx.db.get(agentProfile.rateId);
     }
-
-    // Get pricing defaults (fallback)
-    const pricingDefaults = await ctx.db
-      .query("pricingDefaults")
-      .take(200);
 
     // Get applicable offers
     const allOffers = await ctx.db
@@ -257,15 +249,14 @@ export const getSettingsData = query({
       const pricing = await ctx.db
         .query("offerPricing")
         .withIndex("by_offerId", (q) => q.eq("offerId", offer._id))
-        .take(10);
+        .take(50);
       offerPricingList.push(...pricing);
     }
 
     return {
       user,
       agentProfile,
-      agentPricing,
-      pricingDefaults,
+      rate,
       applicableOffers,
       offerPricing: offerPricingList,
     };

@@ -5,6 +5,7 @@ import { requireAuth, requireRole, isSellerRole } from "./helpers/auth";
 export const upsert = mutation({
   args: {
     agentId: v.id("users"),
+    rateId: v.optional(v.id("rates")),
     defaultStockModel: v.optional(
       v.union(
         v.literal("hold_paid"),
@@ -20,6 +21,12 @@ export const upsert = mutation({
     const agent = await ctx.db.get(args.agentId);
     if (!agent || !isSellerRole(agent.role)) throw new Error("Invalid agent");
 
+    // Validate rateId if provided
+    if (args.rateId) {
+      const rate = await ctx.db.get(args.rateId);
+      if (!rate) throw new Error("Rate not found");
+    }
+
     const existing = await ctx.db
       .query("agentProfiles")
       .withIndex("by_agentId", (q) => q.eq("agentId", args.agentId))
@@ -28,6 +35,7 @@ export const upsert = mutation({
     if (existing) {
       await ctx.db.replace(existing._id, {
         agentId: args.agentId,
+        rateId: args.rateId,
         defaultStockModel: args.defaultStockModel,
         notes: args.notes,
         updatedAt: Date.now(),
@@ -36,6 +44,7 @@ export const upsert = mutation({
     } else {
       return await ctx.db.insert("agentProfiles", {
         agentId: args.agentId,
+        rateId: args.rateId,
         defaultStockModel: args.defaultStockModel,
         notes: args.notes,
         updatedAt: Date.now(),

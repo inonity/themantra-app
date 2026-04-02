@@ -1,8 +1,6 @@
 import type { Id } from "../_generated/dataModel";
 import type { QueryCtx, MutationCtx } from "../_generated/server";
 
-type StockModel = "hold_paid" | "consignment" | "dropship";
-
 export interface ResolvedPrice {
   hqUnitPrice: number;
   retailPrice: number;
@@ -13,51 +11,27 @@ export interface ResolvedOfferPrice {
 }
 
 /**
- * Resolves the HQ price for an entire offer bundle.
+ * Resolves the HQ price for an entire offer bundle using the agent's rate.
  *
  * Cascade order:
- * 1. agentPricing.offerOverrides for (agentId, stockModel, offerId)
- * 2. offerPricing for (offerId, stockModel)
- * 3. Return null → caller falls through to per-product pricing
+ * 1. offerPricing for (offerId, rateId)
+ * 2. Return null → caller falls through to per-product pricing
  *
- * For percentage rates, the base is the offer's customer-facing bundle price
- * (what the customer actually pays), so 100% means HQ gets the full offer price.
+ * For percentage rates, the base is the offer's customer-facing bundle price.
  */
 export async function resolveOfferHqPrice(
   ctx: QueryCtx | MutationCtx,
   agentId: Id<"users">,
   offerId: Id<"offers">,
-  stockModel: StockModel,
   offerBundlePrice: number
 ): Promise<ResolvedOfferPrice | null> {
-  // 1. Check agentPricing for offer-specific override
-  const agentPricing = await ctx.db
-    .query("agentPricing")
-    .withIndex("by_agentId_and_stockModel", (q) =>
-      q.eq("agentId", agentId).eq("stockModel", stockModel)
-    )
-    .unique();
+  const rateId = await getAgentRateId(ctx, agentId);
+  if (!rateId) return null;
 
-  if (agentPricing?.offerOverrides) {
-    const override = agentPricing.offerOverrides.find(
-      (o) => o.offerId === offerId
-    );
-    if (override) {
-      return {
-        hqBundlePrice: applyRate(
-          offerBundlePrice,
-          override.rateType,
-          override.rateValue
-        ),
-      };
-    }
-  }
-
-  // 2. Check offerPricing table for (offerId, stockModel)
   const offerPricingRule = await ctx.db
     .query("offerPricing")
-    .withIndex("by_offerId_and_stockModel", (q) =>
-      q.eq("offerId", offerId).eq("stockModel", stockModel)
+    .withIndex("by_offerId_and_rateId", (q) =>
+      q.eq("offerId", offerId).eq("rateId", rateId)
     )
     .unique();
 
@@ -71,151 +45,74 @@ export async function resolveOfferHqPrice(
     };
   }
 
-  // 3. No offer-level pricing found
   return null;
 }
 
 /**
- * Resolves the HQ unit price for an agent + product + stock model combination.
+ * Resolves the HQ unit price for an agent + product using the agent's assigned rate.
  *
  * Cascade order (first match wins):
- * 1. agentPricing.productOverrides for (agentId, stockModel, productId)
- * 2. agentPricing.collectionOverrides for (agentId, stockModel, product.collection)
- * 3. agentPricing default rate for (agentId, stockModel)
- * 4. pricingDefaults for (stockModel, productId) — single product
- * 5. pricingDefaults for (stockModel, productIds containing productId) — multi-product
- * 6. pricingDefaults for (stockModel, collection matching product's collection)
- * 7. pricingDefaults for (stockModel, null) — global default for that model
- * 8. Fallback: product.price (full retail = 100%)
+ * 1. Rate's collectionRates for the product's collection
+ * 2. Rate's defaultRate
+ * 3. Fallback: product.price (full retail = 100%)
  *
  * For percentage rates, the base is always the product's retail price.
- * pricingDefaults are fallbacks used when no agentPricing exists.
  */
 export async function resolveAgentPrice(
   ctx: QueryCtx | MutationCtx,
   agentId: Id<"users">,
-  productId: Id<"products">,
-  stockModel: StockModel
+  productId: Id<"products">
 ): Promise<ResolvedPrice> {
   const product = await ctx.db.get(productId);
   if (!product) throw new Error("Product not found");
   const retailPrice = product.price;
 
-  // 1. Check agentPricing for product-specific override
-  const agentPricing = await ctx.db
-    .query("agentPricing")
-    .withIndex("by_agentId_and_stockModel", (q) =>
-      q.eq("agentId", agentId).eq("stockModel", stockModel)
-    )
-    .unique();
-
-  if (agentPricing?.productOverrides) {
-    const override = agentPricing.productOverrides.find(
-      (o) => o.productId === productId
-    );
-    if (override) {
-      return {
-        hqUnitPrice: applyRate(retailPrice, override.rateType, override.rateValue),
-        retailPrice,
-      };
-    }
+  const rateId = await getAgentRateId(ctx, agentId);
+  if (!rateId) {
+    // No rate assigned — full retail
+    return { hqUnitPrice: retailPrice, retailPrice };
   }
 
-  // 2. Check agentPricing for collection-level override
-  if (agentPricing?.collectionOverrides && product.collection) {
-    const collOverride = agentPricing.collectionOverrides.find(
-      (o) => o.collection === product.collection
-    );
-    if (collOverride) {
-      return {
-        hqUnitPrice: applyRate(retailPrice, collOverride.rateType, collOverride.rateValue),
-        retailPrice,
-      };
-    }
+  const rate = await ctx.db.get(rateId);
+  if (!rate) {
+    return { hqUnitPrice: retailPrice, retailPrice };
   }
 
-  // 3. Check agentPricing default rate for this stock model
-  if (agentPricing) {
-    return {
-      hqUnitPrice: applyRate(
-        retailPrice,
-        agentPricing.rateType,
-        agentPricing.rateValue
-      ),
-      retailPrice,
-    };
-  }
-
-  // 4. Check pricingDefaults for (stockModel, productId)
-  const productDefault = await ctx.db
-    .query("pricingDefaults")
-    .withIndex("by_stockModel_and_productId", (q) =>
-      q.eq("stockModel", stockModel).eq("productId", productId)
-    )
-    .unique();
-
-  if (productDefault) {
-    return {
-      hqUnitPrice: applyRate(retailPrice, productDefault.rateType, productDefault.rateValue),
-      retailPrice,
-    };
-  }
-
-  // 5. Check pricingDefaults for multi-product rules containing this productId
-  const stockModelDefaults = await ctx.db
-    .query("pricingDefaults")
-    .withIndex("by_stockModel", (q) => q.eq("stockModel", stockModel))
-    .take(200);
-
-  const multiProductMatch = stockModelDefaults.find(
-    (d) => d.productIds && d.productIds.includes(productId)
-  );
-
-  if (multiProductMatch) {
-    return {
-      hqUnitPrice: applyRate(retailPrice, multiProductMatch.rateType, multiProductMatch.rateValue),
-      retailPrice,
-    };
-  }
-
-  // 6. Check pricingDefaults for collection match
+  // 1. Check collectionRates for the product's collection
   if (product.collection) {
-    const collectionDefault = await ctx.db
-      .query("pricingDefaults")
-      .withIndex("by_stockModel_and_collection", (q) =>
-        q.eq("stockModel", stockModel).eq("collection", product.collection)
-      )
-      .unique();
-
-    if (collectionDefault) {
+    const collectionRate = rate.collectionRates.find(
+      (cr) => cr.collection === product.collection
+    );
+    if (collectionRate) {
       return {
-        hqUnitPrice: applyRate(
-          retailPrice,
-          collectionDefault.rateType,
-          collectionDefault.rateValue
-        ),
+        hqUnitPrice: applyRate(retailPrice, collectionRate.rateType, collectionRate.rateValue),
         retailPrice,
       };
     }
   }
 
-  // 7. Check pricingDefaults for (stockModel, global)
-  const globalDefault = await ctx.db
-    .query("pricingDefaults")
-    .withIndex("by_stockModel_and_productId", (q) =>
-      q.eq("stockModel", stockModel).eq("productId", undefined)
-    )
-    .unique();
-
-  if (globalDefault) {
+  // 2. Check defaultRate on the rate
+  if (rate.defaultRate) {
     return {
-      hqUnitPrice: applyRate(retailPrice, globalDefault.rateType, globalDefault.rateValue),
+      hqUnitPrice: applyRate(retailPrice, rate.defaultRate.rateType, rate.defaultRate.rateValue),
       retailPrice,
     };
   }
 
-  // 8. Fallback: full retail price
+  // 3. Fallback: full retail price
   return { hqUnitPrice: retailPrice, retailPrice };
+}
+
+/** Look up the agent's assigned rateId from their profile. */
+async function getAgentRateId(
+  ctx: QueryCtx | MutationCtx,
+  agentId: Id<"users">
+): Promise<Id<"rates"> | null> {
+  const profile = await ctx.db
+    .query("agentProfiles")
+    .withIndex("by_agentId", (q) => q.eq("agentId", agentId))
+    .unique();
+  return profile?.rateId ?? null;
 }
 
 function applyRate(

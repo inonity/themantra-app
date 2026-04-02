@@ -50,12 +50,6 @@ function CopyLinkButton({ token }: { token: string }) {
   );
 }
 
-const STOCK_MODEL_LABELS: Record<string, string> = {
-  hold_paid: "Hold & Paid",
-  consignment: "Consignment",
-  dropship: "Dropship",
-};
-
 function EmailStatusBadge({
   status,
   error,
@@ -117,12 +111,16 @@ export default function AgentsPage() {
   const salesStaff = useQuery(api.users.listSalesStaff);
   const invites = useQuery(api.agentInvites.list);
   const agentProfiles = useQuery(api.agentProfiles.listAll);
+  const rates = useQuery(api.rates.list);
   const revokeInvite = useMutation(api.agentInvites.revoke);
   const resendEmail = useMutation(api.agentInvites.resendInviteEmail);
 
   // Index profiles by agentId for quick lookup
   const profileMap = new Map(
     (agentProfiles ?? []).map((p) => [p.agentId, p])
+  );
+  const rateMap = new Map(
+    (rates ?? []).map((r) => [r._id, r.name])
   );
 
   const isLoading = agents === undefined || invites === undefined || salesStaff === undefined;
@@ -173,7 +171,7 @@ export default function AgentsPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead>Default Model</TableHead>
+                      <TableHead>Rate</TableHead>
                       <TableHead className="w-[100px]">Pricing</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -188,9 +186,9 @@ export default function AgentsPage() {
                           <TableCell>{agent.email ?? "—"}</TableCell>
                           <TableCell>{agent.phone ?? "—"}</TableCell>
                           <TableCell>
-                            {profile?.defaultStockModel ? (
+                            {profile?.rateId ? (
                               <Badge variant="outline">
-                                {STOCK_MODEL_LABELS[profile.defaultStockModel] ?? profile.defaultStockModel}
+                                {rateMap.get(profile.rateId) ?? "Unknown"}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-sm">—</span>
@@ -230,7 +228,7 @@ export default function AgentsPage() {
                       <TableHead>Name</TableHead>
                       <TableHead>Email</TableHead>
                       <TableHead>Phone</TableHead>
-                      <TableHead>Default Model</TableHead>
+                      <TableHead>Rate</TableHead>
                       <TableHead className="w-[100px]">Pricing</TableHead>
                     </TableRow>
                   </TableHeader>
@@ -245,9 +243,9 @@ export default function AgentsPage() {
                           <TableCell>{staff.email ?? "—"}</TableCell>
                           <TableCell>{staff.phone ?? "—"}</TableCell>
                           <TableCell>
-                            {profile?.defaultStockModel ? (
+                            {profile?.rateId ? (
                               <Badge variant="outline">
-                                {STOCK_MODEL_LABELS[profile.defaultStockModel] ?? profile.defaultStockModel}
+                                {rateMap.get(profile.rateId) ?? "Unknown"}
                               </Badge>
                             ) : (
                               <span className="text-muted-foreground text-sm">—</span>

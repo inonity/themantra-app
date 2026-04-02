@@ -101,10 +101,12 @@ export const recordB2CSale = mutation({
     const isLegacyPending = !isNewStyle && args.fulfillmentStatus === "pending_stock";
 
     // Validate saleDate if provided
+    // Allow up to 24h ahead to account for timezone differences (e.g. UTC+8 vs UTC server)
     if (args.saleDate) {
       const now = Date.now();
-      if (args.saleDate > now + 60000) throw new Error("Sale date cannot be in the future");
-      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (args.saleDate > now + oneDayMs) throw new Error("Sale date cannot be in the future");
+      const ninetyDaysMs = 90 * oneDayMs;
       if (now - args.saleDate > ninetyDaysMs) throw new Error("Sale date cannot be more than 90 days ago");
     }
 
@@ -253,7 +255,6 @@ export const recordB2CSale = mutation({
           ctx,
           userId,
           offerIdToStore,
-          stockModel,
           offer.bundlePrice
         );
 
@@ -268,7 +269,7 @@ export const recordB2CSale = mutation({
         if (remainder > 0) {
           for (const item of allPricingItems) {
             if (!hqPricePerProduct.has(item.productId)) {
-              const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+              const resolved = await resolveAgentPrice(ctx, userId, item.productId);
               hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
             }
           }
@@ -285,7 +286,7 @@ export const recordB2CSale = mutation({
     if (!usedOfferHqPricing) {
       for (const item of allPricingItems) {
         if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
           hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
         }
         totalHqPrice += item.quantity * hqPricePerProduct.get(item.productId)!;
@@ -295,11 +296,9 @@ export const recordB2CSale = mutation({
     totalHqPrice = Math.round(totalHqPrice * 100) / 100;
     const agentCommission = Math.round((totalSalePrice - totalHqPrice) * 100) / 100;
 
-    // Determine payment collector — only relevant for consignment/dropship
+    // Determine payment collector
     const paymentCollector = args.paymentCollector ?? "agent";
-    const hqCollects =
-      paymentCollector === "hq" &&
-      (stockModel === "consignment" || stockModel === "dropship");
+    const hqCollects = paymentCollector === "hq";
 
     const movedAt = Date.now();
     const saleDateValue = args.saleDate ?? movedAt;
@@ -388,7 +387,7 @@ export const recordB2CSale = mutation({
     // Ensure hqPricePerProduct is populated for all items (needed for lineItem snapshots)
     for (const item of allPricingItems) {
       if (!hqPricePerProduct.has(item.productId)) {
-        const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+        const resolved = await resolveAgentPrice(ctx, userId, item.productId);
         hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
       }
     }
@@ -494,7 +493,7 @@ export const recordB2CSale = mutation({
     if (fulfilledItems.length > 0) {
       for (const item of fulfilledItems) {
         if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
           hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
         }
       }
@@ -608,8 +607,7 @@ export const recordB2BPurchase = mutation({
       const resolved = await resolveAgentPrice(
         ctx,
         args.agentId,
-        batch.productId,
-        args.stockModel
+        batch.productId
       );
 
       itemDetails.push({
@@ -791,10 +789,12 @@ export const recordDropshipSale = mutation({
     if (!user) throw new Error("User not found");
 
     // Validate saleDate if provided
+    // Allow up to 24h ahead to account for timezone differences (e.g. UTC+8 vs UTC server)
     if (args.saleDate) {
       const now = Date.now();
-      if (args.saleDate > now + 60000) throw new Error("Sale date cannot be in the future");
-      const ninetyDaysMs = 90 * 24 * 60 * 60 * 1000;
+      const oneDayMs = 24 * 60 * 60 * 1000;
+      if (args.saleDate > now + oneDayMs) throw new Error("Sale date cannot be in the future");
+      const ninetyDaysMs = 90 * oneDayMs;
       if (now - args.saleDate > ninetyDaysMs) throw new Error("Sale date cannot be more than 90 days ago");
     }
 
@@ -922,7 +922,6 @@ export const recordDropshipSale = mutation({
           ctx,
           userId,
           offerIdToStore,
-          stockModel,
           offer.bundlePrice
         );
 
@@ -937,7 +936,7 @@ export const recordDropshipSale = mutation({
         if (remainder > 0) {
           for (const item of allPricingItems) {
             if (!hqPricePerProduct.has(item.productId)) {
-              const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+              const resolved = await resolveAgentPrice(ctx, userId, item.productId);
               hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
             }
           }
@@ -954,7 +953,7 @@ export const recordDropshipSale = mutation({
     if (!usedOfferHqPricing) {
       for (const item of allPricingItems) {
         if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
           hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
         }
         totalHqPrice += item.quantity * hqPricePerProduct.get(item.productId)!;
@@ -970,7 +969,7 @@ export const recordDropshipSale = mutation({
     // Ensure per-product HQ prices are resolved for stock movements
     for (const item of allPricingItems) {
       if (!hqPricePerProduct.has(item.productId)) {
-        const resolved = await resolveAgentPrice(ctx, userId, item.productId, stockModel);
+        const resolved = await resolveAgentPrice(ctx, userId, item.productId);
         hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
       }
     }
@@ -1350,8 +1349,7 @@ export const fulfillSale = mutation({
         const resolved = await resolveAgentPrice(
           ctx,
           sale.sellerId!,
-          item.productId,
-          stockModel
+          item.productId
         );
         hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
       }
@@ -1454,7 +1452,7 @@ export const fulfillLineItems = mutation({
       }
 
       // Create stock movement
-      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId, stockModel);
+      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId);
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: lineItem.productId,
@@ -1586,7 +1584,7 @@ export const hqTransferToAgent = mutation({
         });
       }
 
-      const resolved = await resolveAgentPrice(ctx, args.agentId, item.productId, stockModel);
+      const resolved = await resolveAgentPrice(ctx, args.agentId, item.productId);
 
       // 4. Create B2B stock movement (HQ → agent)
       await ctx.db.insert("stockMovements", {
@@ -1699,7 +1697,7 @@ export const selfFulfillFromHQ = mutation({
       }
 
       // Resolve pricing
-      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId, stockModel);
+      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId);
 
       // 2. Stock movement: business → agent (the "pull" from HQ)
       await ctx.db.insert("stockMovements", {

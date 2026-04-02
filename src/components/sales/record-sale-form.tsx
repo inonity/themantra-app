@@ -77,12 +77,6 @@ const SALE_CHANNEL_LABELS: Record<string, string> = {
   other: "Other",
 };
 
-const STOCK_MODEL_LABELS: Record<string, string> = {
-  hold_paid: "Hold & Paid",
-  consignment: "Consignment",
-  dropship: "Dropship",
-};
-
 const COLLECTOR_LABELS: Record<string, string> = {
   agent: "I collect from customer",
   hq: "HQ collects directly",
@@ -98,7 +92,10 @@ const PAYMENT_METHOD_LABELS: Record<string, string> = {
 
 function formatDateForInput(timestamp: number): string {
   const d = new Date(timestamp);
-  return d.toISOString().split("T")[0];
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
 function parseInputDateToTimestamp(dateStr: string): number {
@@ -149,7 +146,7 @@ export function RecordSaleForm({
 
   const [unifiedItems, setUnifiedItems] = useState<UnifiedLineItem[]>([]);
   const [saleChannel, setSaleChannel] = useState<string>("direct");
-  const [stockModel, setStockModel] = useState<string>(defaultModel);
+  const stockModel = defaultModel;
   const [paymentCollector, setPaymentCollector] = useState<"agent" | "hq">("agent");
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
@@ -834,97 +831,6 @@ export function RecordSaleForm({
                     <SelectItem value="tiktok">TikTok</SelectItem>
                     <SelectItem value="shopee">Shopee</SelectItem>
                     <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-2">
-                <Label>Stock Model</Label>
-                <Select
-                  value={stockModel}
-                  onValueChange={(v) => {
-                    if (!v) return;
-                    setStockModel(v);
-                    setSelectedOfferId("");
-                    setPaymentCollector("agent");
-
-                    // Re-detect fulfillment sources for existing items instead of clearing
-                    const newIsDropship = v === "dropship";
-                    const newActiveInventory = newIsDropship ? (businessInventory ?? []) : inventory;
-                    const newUsedInvIds = new Set<string>();
-
-                    setUnifiedItems((prev) =>
-                      prev.map((item) => {
-                        // Try to find matching inventory in the new active inventory
-                        const inv = newActiveInventory.find(
-                          (i) =>
-                            i.productId === item.productId &&
-                            i.quantity > 0 &&
-                            !newUsedInvIds.has(i._id)
-                        );
-
-                        if (inv) {
-                          newUsedInvIds.add(inv._id);
-                          const batch = batchMap.get(inv.batchId);
-                          return {
-                            ...item,
-                            source: newIsDropship ? "hq_transfer" as FulfillmentSource : "agent_stock" as FulfillmentSource,
-                            batchId: inv.batchId,
-                            inventoryId: inv._id,
-                            maxQuantity: inv.quantity,
-                            batchCode: batch?.batchCode ?? "?",
-                            quantity: Math.min(item.quantity, inv.quantity),
-                            hqBatchId: undefined,
-                            hqBatchCode: undefined,
-                            hqMaxQuantity: undefined,
-                          };
-                        }
-
-                        // No inventory available — re-detect source without inventory
-                        const product = productMap.get(item.productId);
-                        if (product?.status === "future_release") {
-                          const hqInv = (businessInventory ?? []).find(
-                            (i) => i.productId === item.productId && i.quantity > 0
-                          );
-                          return {
-                            ...item,
-                            source: (hqInv ? "hq_transfer" : "future_release") as FulfillmentSource,
-                            batchId: undefined,
-                            inventoryId: undefined,
-                            maxQuantity: undefined,
-                            batchCode: undefined,
-                            hqBatchId: undefined,
-                            hqBatchCode: undefined,
-                            hqMaxQuantity: undefined,
-                          };
-                        }
-
-                        const hqInv = (businessInventory ?? []).find(
-                          (i) => i.productId === item.productId && i.quantity > 0
-                        );
-                        return {
-                          ...item,
-                          source: (hqInv ? "hq_transfer" : "pending_batch") as FulfillmentSource,
-                          batchId: undefined,
-                          inventoryId: undefined,
-                          maxQuantity: undefined,
-                          batchCode: undefined,
-                          hqBatchId: undefined,
-                          hqBatchCode: undefined,
-                          hqMaxQuantity: undefined,
-                        };
-                      })
-                    );
-                  }}
-                >
-                  <SelectTrigger>
-                    <SelectValue>
-                      {STOCK_MODEL_LABELS[stockModel] ?? "Select model"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="hold_paid">Hold &amp; Paid</SelectItem>
-                    <SelectItem value="consignment">Consignment</SelectItem>
-                    <SelectItem value="dropship">Dropship</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

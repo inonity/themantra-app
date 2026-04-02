@@ -2,16 +2,10 @@ import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "./helpers/auth";
 
-const stockModelValidator = v.union(
-  v.literal("hold_paid"),
-  v.literal("consignment"),
-  v.literal("dropship")
-);
-
 export const upsert = mutation({
   args: {
     offerId: v.id("offers"),
-    stockModel: stockModelValidator,
+    rateId: v.id("rates"),
     rateType: v.union(v.literal("fixed"), v.literal("percentage")),
     rateValue: v.number(),
   },
@@ -21,16 +15,19 @@ export const upsert = mutation({
     const offer = await ctx.db.get(args.offerId);
     if (!offer) throw new Error("Offer not found");
 
+    const rate = await ctx.db.get(args.rateId);
+    if (!rate) throw new Error("Rate not found");
+
     const existing = await ctx.db
       .query("offerPricing")
-      .withIndex("by_offerId_and_stockModel", (q) =>
-        q.eq("offerId", args.offerId).eq("stockModel", args.stockModel)
+      .withIndex("by_offerId_and_rateId", (q) =>
+        q.eq("offerId", args.offerId).eq("rateId", args.rateId)
       )
       .unique();
 
     const data = {
       offerId: args.offerId,
-      stockModel: args.stockModel,
+      rateId: args.rateId,
       rateType: args.rateType,
       rateValue: args.rateValue,
       updatedBy: admin._id,
@@ -61,7 +58,7 @@ export const listByOffer = query({
     return await ctx.db
       .query("offerPricing")
       .withIndex("by_offerId", (q) => q.eq("offerId", args.offerId))
-      .take(10);
+      .take(50);
   },
 });
 

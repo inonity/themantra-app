@@ -9,7 +9,6 @@
  */
 
 import type * as agentInvites from "../agentInvites.js";
-import type * as agentPricing from "../agentPricing.js";
 import type * as agentProfiles from "../agentProfiles.js";
 import type * as agentSettlements from "../agentSettlements.js";
 import type * as auth from "../auth.js";
@@ -24,8 +23,8 @@ import type * as inventory from "../inventory.js";
 import type * as offerPricing from "../offerPricing.js";
 import type * as offers from "../offers.js";
 import type * as passwordChange from "../passwordChange.js";
-import type * as pricingDefaults from "../pricingDefaults.js";
 import type * as products from "../products.js";
+import type * as rates from "../rates.js";
 import type * as sales from "../sales.js";
 import type * as stockMovements from "../stockMovements.js";
 import type * as stockRequests from "../stockRequests.js";
@@ -39,7 +38,6 @@ import type {
 
 declare const fullApi: ApiFromModules<{
   agentInvites: typeof agentInvites;
-  agentPricing: typeof agentPricing;
   agentProfiles: typeof agentProfiles;
   agentSettlements: typeof agentSettlements;
   auth: typeof auth;
@@ -54,8 +52,8 @@ declare const fullApi: ApiFromModules<{
   offerPricing: typeof offerPricing;
   offers: typeof offers;
   passwordChange: typeof passwordChange;
-  pricingDefaults: typeof pricingDefaults;
   products: typeof products;
+  rates: typeof rates;
   sales: typeof sales;
   stockMovements: typeof stockMovements;
   stockRequests: typeof stockRequests;

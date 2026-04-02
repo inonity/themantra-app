@@ -273,21 +273,38 @@ export default defineSchema({
 
   offerPricing: defineTable({
     offerId: v.id("offers"),
-    stockModel: v.union(
-      v.literal("hold_paid"),
-      v.literal("consignment"),
-      v.literal("dropship")
-    ),
+    rateId: v.id("rates"),
     rateType: v.union(v.literal("fixed"), v.literal("percentage")),
     rateValue: v.number(),
     updatedBy: v.id("users"),
     updatedAt: v.optional(v.number()),
   })
-    .index("by_offerId_and_stockModel", ["offerId", "stockModel"])
-    .index("by_offerId", ["offerId"]),
+    .index("by_offerId_and_rateId", ["offerId", "rateId"])
+    .index("by_offerId", ["offerId"])
+    .index("by_rateId", ["rateId"]),
+
+  rates: defineTable({
+    name: v.string(),
+    collectionRates: v.array(
+      v.object({
+        collection: v.string(),
+        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+        rateValue: v.number(),
+      })
+    ),
+    defaultRate: v.optional(
+      v.object({
+        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+        rateValue: v.number(),
+      })
+    ),
+    createdBy: v.id("users"),
+    updatedAt: v.optional(v.number()),
+  }).index("by_name", ["name"]),
 
   agentProfiles: defineTable({
     agentId: v.id("users"),
+    rateId: v.optional(v.id("rates")),
     defaultStockModel: v.optional(
       v.union(
         v.literal("hold_paid"),
@@ -298,65 +315,6 @@ export default defineSchema({
     notes: v.optional(v.string()),
     updatedAt: v.optional(v.number()),
   }).index("by_agentId", ["agentId"]),
-
-  agentPricing: defineTable({
-    agentId: v.id("users"),
-    stockModel: v.union(
-      v.literal("hold_paid"),
-      v.literal("consignment"),
-      v.literal("dropship")
-    ),
-    rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-    rateValue: v.number(),
-    productOverrides: v.optional(
-      v.array(
-        v.object({
-          productId: v.id("products"),
-          rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-          rateValue: v.number(),
-        })
-      )
-    ),
-    collectionOverrides: v.optional(
-      v.array(
-        v.object({
-          collection: v.string(),
-          rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-          rateValue: v.number(),
-        })
-      )
-    ),
-    offerOverrides: v.optional(
-      v.array(
-        v.object({
-          offerId: v.id("offers"),
-          rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-          rateValue: v.number(),
-        })
-      )
-    ),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_agentId", ["agentId"])
-    .index("by_agentId_and_stockModel", ["agentId", "stockModel"]),
-
-  pricingDefaults: defineTable({
-    stockModel: v.union(
-      v.literal("hold_paid"),
-      v.literal("consignment"),
-      v.literal("dropship")
-    ),
-    productId: v.optional(v.id("products")),
-    productIds: v.optional(v.array(v.id("products"))),
-    collection: v.optional(v.string()),
-    rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-    rateValue: v.number(),
-    updatedBy: v.id("users"),
-    updatedAt: v.optional(v.number()),
-  })
-    .index("by_stockModel", ["stockModel"])
-    .index("by_stockModel_and_productId", ["stockModel", "productId"])
-    .index("by_stockModel_and_collection", ["stockModel", "collection"]),
 
   agentSettlements: defineTable({
     agentId: v.id("users"),
