@@ -239,7 +239,19 @@ export function BatchFormDialog({
             value={totalQuantity}
             onChange={(e) => setTotalQuantity(e.target.value)}
             required
+            disabled={isEdit && batch?.status !== "upcoming"}
           />
+          {isEdit && batch?.status !== "upcoming" ? (
+            <p className="text-xs text-muted-foreground">
+              Quantity is locked for active batches. Use <span className="font-medium">Adjust Stock</span> from the batch actions to add or deduct.
+            </p>
+          ) : (
+            <p className="text-xs text-muted-foreground">
+              {status === "upcoming"
+                ? "Expected stock count — may change when batch is activated."
+                : "Confirmed stock after filling into bottles."}
+            </p>
+          )}
         </div>
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
@@ -272,8 +284,8 @@ export function BatchFormDialog({
           </Select>
           {!isEdit && (
             <p className="text-xs text-muted-foreground">
-              Use <span className="font-medium">Upcoming</span> for batches still maturing.{" "}
-              <span className="font-medium">Available</span> adds stock to HQ inventory immediately.
+              <span className="font-medium">Upcoming</span> = expected stock for a batch still under production.{" "}
+              <span className="font-medium">Available</span> = confirmed stock after filling into bottles — adds to HQ inventory immediately.
             </p>
           )}
         </div>

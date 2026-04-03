@@ -24,6 +24,7 @@ import { useMutation } from "convex/react";
 import { PlusIcon, MoreHorizontalIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { BatchFormDialog } from "@/components/batches/batch-form-dialog";
+import { StockAdjustmentDialog } from "@/components/batches/stock-adjustment-dialog";
 import { useState } from "react";
 import { toast } from "sonner";
 
@@ -53,6 +54,7 @@ export default function BatchesPage() {
   const updateStatus = useMutation(api.batches.updateStatus);
 
   const [editingBatch, setEditingBatch] = useState<Doc<"batches"> | null>(null);
+  const [adjustingBatch, setAdjustingBatch] = useState<Doc<"batches"> | null>(null);
 
   const productMap = new Map(
     (products ?? []).map((p) => [p._id, p])
@@ -169,6 +171,11 @@ export default function BatchesPage() {
                           <DropdownMenuItem onClick={() => setEditingBatch(batch)}>
                             Edit
                           </DropdownMenuItem>
+                          {batch.status === "available" && (
+                            <DropdownMenuItem onClick={() => setAdjustingBatch(batch)}>
+                              Adjust Stock
+                            </DropdownMenuItem>
+                          )}
                         </DropdownMenuContent>
                       </DropdownMenu>
                     </TableCell>
@@ -187,6 +194,17 @@ export default function BatchesPage() {
             if (!open) setEditingBatch(null);
           }}
         />
+
+        {/* Stock adjustment dialog */}
+        {adjustingBatch && (
+          <StockAdjustmentDialog
+            batch={adjustingBatch}
+            open={!!adjustingBatch}
+            onOpenChange={(open) => {
+              if (!open) setAdjustingBatch(null);
+            }}
+          />
+        )}
       </div>
     </RoleGuard>
   );

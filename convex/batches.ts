@@ -178,6 +178,13 @@ export const update = mutation({
       throw new Error(`Batch code "${args.batchCode}" is already in use`);
     }
 
+    // Block quantity edits on non-upcoming batches
+    if (batch.status !== "upcoming" && args.totalQuantity !== batch.totalQuantity) {
+      throw new Error(
+        "Cannot edit quantity for an active batch. Use stock adjustment instead."
+      );
+    }
+
     // Validate status transition
     const previousStatus = batch.status;
     if (previousStatus !== args.status) {
@@ -258,6 +265,78 @@ export const updateStatus = mutation({
           quantity: batch.totalQuantity,
         });
       }
+    }
+  },
+});
+
+export const adjustStock = mutation({
+  args: {
+    id: v.id("batches"),
+    adjustment: v.number(), // positive = add, negative = deduct
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, "admin");
+
+    if (args.adjustment === 0) {
+      throw new Error("Adjustment amount cannot be zero.");
+    }
+
+    const batch = await ctx.db.get(args.id);
+    if (!batch) {
+      throw new Error("Batch not found");
+    }
+
+    if (batch.status !== "available") {
+      throw new Error(
+        "Stock adjustments can only be made on available (active) batches."
+      );
+    }
+
+    const newTotal = batch.totalQuantity + args.adjustment;
+    if (newTotal < 0) {
+      throw new Error(
+        `Cannot deduct ${Math.abs(args.adjustment)} — batch only has ${batch.totalQuantity} total.`
+      );
+    }
+
+    // Update batch totalQuantity
+    await ctx.db.patch(args.id, {
+      totalQuantity: newTotal,
+      updatedAt: Date.now(),
+    });
+
+    // Update business inventory to reflect the adjustment
+    const businessInventory = await ctx.db
+      .query("inventory")
+      .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+        q.eq("batchId", args.id).eq("heldByType", "business")
+      )
+      .take(1);
+
+    if (businessInventory.length > 0) {
+      const inv = businessInventory[0];
+      const newInvQty = inv.quantity + args.adjustment;
+      if (newInvQty < 0) {
+        throw new Error(
+          `Cannot deduct ${Math.abs(args.adjustment)} — business only holds ${inv.quantity} units.`
+        );
+      }
+      await ctx.db.patch(inv._id, {
+        quantity: newInvQty,
+        updatedAt: Date.now(),
+      });
+    } else {
+      // No business inventory record — only allow positive adjustments
+      if (args.adjustment < 0) {
+        throw new Error("No business inventory found for this batch.");
+      }
+      await ctx.db.insert("inventory", {
+        batchId: args.id,
+        productId: batch.productId,
+        heldByType: "business",
+        quantity: args.adjustment,
+      });
     }
   },
 });
