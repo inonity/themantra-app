@@ -128,14 +128,14 @@ export function OfferFormDialog({
           : undefined,
       productIds:
         productMode === "multiple" && selectedProductIds.length > 0
-          ? (selectedProductIds as any)
+          ? (selectedProductIds as Id<"products">[])
           : undefined,
       collection:
         productMode === "collection" && selectedCollection
           ? selectedCollection
           : undefined,
       agentIds:
-        selectedAgentIds.length > 0 ? (selectedAgentIds as any) : [],
+        selectedAgentIds.length > 0 ? (selectedAgentIds as Id<"users">[]) : [],
       isActive,
     };
 
@@ -270,7 +270,7 @@ export function OfferFormDialog({
                 <SelectTrigger>
                   <SelectValue placeholder="Select product...">
                     {singleProductId
-                      ? (productMap.get(singleProductId as any)?.name ?? "Select product...")
+                      ? (productMap.get(singleProductId as Id<"products">)?.name ?? "Select product...")
                       : undefined}
                   </SelectValue>
                 </SelectTrigger>
@@ -293,7 +293,7 @@ export function OfferFormDialog({
               {selectedProductIds.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {selectedProductIds.map((id) => {
-                    const product = productMap.get(id as any);
+                    const product = productMap.get(id as Id<"products">);
                     return (
                       <Badge key={id} variant="secondary" className="gap-1">
                         {product?.name ?? "Unknown"}
@@ -358,7 +358,7 @@ export function OfferFormDialog({
             {selectedAgentIds.length > 0 && (
               <div className="flex flex-wrap gap-1">
                 {selectedAgentIds.map((id) => {
-                  const agent = agentMap.get(id as any);
+                  const agent = agentMap.get(id as Id<"users">);
                   return (
                     <Badge key={id} variant="secondary" className="gap-1">
                       {agent?.name ?? "Unknown"}

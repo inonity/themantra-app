@@ -64,7 +64,7 @@ export default function AgentInventoryPage() {
   }
 
   for (const inv of inventory ?? []) {
-    let group = productGroups.get(inv.productId);
+    const group = productGroups.get(inv.productId);
     if (!group) {
       // Product not in list — skip
       continue;

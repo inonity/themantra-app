@@ -1,11 +1,17 @@
 "use client";
 
+import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth } from "convex/react";
 import { useRouter } from "next/navigation";
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
+import { useCurrentUser } from "@/hooks/useStoreUserEffect";
+
 export function AuthGuard({ children }: { children: React.ReactNode }) {
   const { isAuthenticated, isLoading } = useConvexAuth();
+  const user = useCurrentUser();
+  const { signOut } = useAuthActions();
   const router = useRouter();
+  const signingOut = useRef(false);
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -13,7 +19,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     }
   }, [isAuthenticated, isLoading, router]);
 
-  if (isLoading) {
+  // If authenticated but user record is missing (deleted user, stale session),
+  // sign out and redirect to login.
+  useEffect(() => {
+    if (isAuthenticated && user === null && !signingOut.current) {
+      signingOut.current = true;
+      signOut().then(() => router.push("/login"));
+    }
+  }, [isAuthenticated, user, signOut, router]);
+
+  if (isLoading || (isAuthenticated && user === undefined)) {
     return (
       <div className="flex min-h-screen items-center justify-center">
         <div className="text-muted-foreground">Loading…</div>
@@ -21,7 +36,7 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
     );
   }
 
-  if (!isAuthenticated) {
+  if (!isAuthenticated || user === null) {
     return null;
   }
 

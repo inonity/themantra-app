@@ -110,6 +110,7 @@ export const create = mutation({
     expectedReadyDate: v.optional(v.string()),
     totalQuantity: v.number(),
     status: batchStatusValidator,
+    notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
@@ -160,6 +161,7 @@ export const update = mutation({
     expectedReadyDate: v.optional(v.string()),
     totalQuantity: v.number(),
     status: batchStatusValidator,
+    notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");

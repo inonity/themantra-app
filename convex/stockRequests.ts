@@ -1,4 +1,5 @@
-import { query, mutation } from "./_generated/server";
+import { query, mutation, QueryCtx } from "./_generated/server";
+import { Doc } from "./_generated/dataModel";
 import { v } from "convex/values";
 import { requireAuth, requireRole } from "./helpers/auth";
 
@@ -100,8 +101,8 @@ export const listMy = query({
 });
 
 async function enrichRequests(
-  ctx: { db: any },
-  requests: any[]
+  ctx: QueryCtx,
+  requests: Doc<"stockRequests">[]
 ) {
   const enriched = [];
   for (const req of requests) {
@@ -114,7 +115,7 @@ async function enrichRequests(
       productStatus: product?.status ?? "unknown",
     });
   }
-  return enriched.sort((a: any, b: any) => b.createdAt - a.createdAt);
+  return enriched.sort((a, b) => b.createdAt - a.createdAt);
 }
 
 // Admin: list all pending requests (enriched with agent + product info)

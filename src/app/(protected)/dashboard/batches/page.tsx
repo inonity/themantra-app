@@ -108,7 +108,7 @@ export default function BatchesPage() {
                 <TableHead>Expected Maturation</TableHead>
                 <TableHead>Quantity</TableHead>
                 <TableHead>Status</TableHead>
-                <TableHead className="w-[50px]" />
+<TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -162,10 +162,8 @@ export default function BatchesPage() {
                     </TableCell>
                     <TableCell>
                       <DropdownMenu>
-                        <DropdownMenuTrigger>
-                          <Button variant="ghost" size="icon" className="h-8 w-8">
-                            <MoreHorizontalIcon className="h-4 w-4" />
-                          </Button>
+                        <DropdownMenuTrigger render={<Button variant="ghost" size="icon" className="h-8 w-8" />}>
+                          <MoreHorizontalIcon className="h-4 w-4" />
                         </DropdownMenuTrigger>
                         <DropdownMenuContent align="end">
                           <DropdownMenuItem onClick={() => setEditingBatch(batch)}>

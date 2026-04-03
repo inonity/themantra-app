@@ -59,6 +59,7 @@ export default defineSchema({
       v.literal("depleted"),
       v.literal("cancelled")
     ),
+    notes: v.optional(v.string()),
     originSource: v.optional(v.string()), // deprecated, kept optional for existing data
     updatedAt: v.optional(v.number()),
   })

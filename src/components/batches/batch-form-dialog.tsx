@@ -15,6 +15,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -68,6 +69,7 @@ export function BatchFormDialog({
   const [status, setStatus] = useState<
     "upcoming" | "available" | "depleted" | "cancelled"
   >(batch?.status ?? "upcoming");
+  const [notes, setNotes] = useState(batch?.notes ?? "");
   const [error, setError] = useState("");
 
   const activeProductId = fixedProductId ?? batch?.productId ?? (selectedProductId as Id<"products">);
@@ -80,6 +82,7 @@ export function BatchFormDialog({
   // Auto-fill batch code when product changes (create mode only)
   useEffect(() => {
     if (nextBatchInfo && !batchCodeManuallyEdited && !isEdit) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setBatchCode(nextBatchInfo.suggestedCode);
     }
   }, [nextBatchInfo, batchCodeManuallyEdited, isEdit]);
@@ -87,12 +90,14 @@ export function BatchFormDialog({
   // Sync form when batch prop changes (for edit mode)
   useEffect(() => {
     if (batch && open) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
       setSelectedProductId(batch.productId);
       setBatchCode(batch.batchCode);
       setManufacturedDate(batch.manufacturedDate);
       setExpectedReadyDate(batch.expectedReadyDate ?? "");
       setTotalQuantity(String(batch.totalQuantity));
       setStatus(batch.status);
+      setNotes(batch.notes ?? "");
     }
   }, [batch, open]);
 
@@ -112,6 +117,7 @@ export function BatchFormDialog({
     setExpectedReadyDateManuallyEdited(false);
     setTotalQuantity("");
     setStatus("upcoming");
+    setNotes("");
     setError("");
   }
 
@@ -133,6 +139,7 @@ export function BatchFormDialog({
           expectedReadyDate: expectedReadyDate || undefined,
           totalQuantity: parseInt(totalQuantity),
           status,
+          notes: notes || undefined,
         });
       } else {
         await createBatch({
@@ -142,6 +149,7 @@ export function BatchFormDialog({
           expectedReadyDate: expectedReadyDate || undefined,
           totalQuantity: parseInt(totalQuantity),
           status,
+          notes: notes || undefined,
         });
       }
       setOpen(false);
@@ -288,6 +296,17 @@ export function BatchFormDialog({
               <span className="font-medium">Available</span> = confirmed stock after filling into bottles — adds to HQ inventory immediately.
             </p>
           )}
+        </div>
+
+        <div className="space-y-2">
+          <Label htmlFor="notes">Notes</Label>
+          <Textarea
+            id="notes"
+            placeholder="Optional notes about this batch..."
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            rows={3}
+          />
         </div>
 
         {error && (

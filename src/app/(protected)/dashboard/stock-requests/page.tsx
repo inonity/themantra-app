@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
+import { Id } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -26,9 +27,9 @@ import {
 import { CheckIcon } from "lucide-react";
 
 type EnrichedRequest = {
-  _id: any;
-  agentId: any;
-  productId: any;
+  _id: Id<"stockRequests">;
+  agentId: Id<"users">;
+  productId: Id<"products">;
   quantity: number;
   notes?: string;
   status: "pending" | "fulfilled" | "cancelled";
