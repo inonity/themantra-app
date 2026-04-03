@@ -37,9 +37,10 @@ const STOCK_MODELS = [
   { value: "hold_paid", label: "Hold & Paid" },
   { value: "consignment", label: "Consignment" },
   { value: "presell", label: "Pre-sell" },
+  { value: "dropship", label: "Dropship" },
 ] as const;
 
-type StockModel = "hold_paid" | "consignment" | "presell";
+type StockModel = "hold_paid" | "consignment" | "presell" | "dropship";
 
 function formatRate(rateType: string, rateValue: number) {
   if (rateType === "percentage") {
