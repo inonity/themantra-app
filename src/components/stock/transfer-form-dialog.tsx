@@ -47,6 +47,10 @@ type ProductBlock = {
   batches: BatchLine[];
 };
 
+function getTodayMYT(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "Asia/Kuala_Lumpur" });
+}
+
 function genId() {
   return Math.random().toString(36).slice(2, 9);
 }
@@ -79,6 +83,7 @@ export function TransferFormDialog({
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [distributionDate, setDistributionDate] = useState(getTodayMYT());
   const [blocks, setBlocks] = useState<ProductBlock[]>([emptyProductBlock()]);
 
   const agents = (sellers ?? []).filter((s) => s.role === "agent");
@@ -139,6 +144,7 @@ export function TransferFormDialog({
     setAgentId("");
     setStockModel("hold_paid");
     setNotes("");
+    setDistributionDate(getTodayMYT());
     setError("");
     setBlocks([emptyProductBlock()]);
   }
@@ -225,6 +231,7 @@ export function TransferFormDialog({
 
   const canSubmit =
     agentId &&
+    distributionDate &&
     allItems.length > 0 &&
     allItems.every(
       (item) =>
@@ -238,10 +245,14 @@ export function TransferFormDialog({
     setSubmitting(true);
 
     try {
+      // Parse date as noon MYT to avoid timezone date-shift issues
+      const movedAt = new Date(`${distributionDate}T12:00:00+08:00`).getTime();
+
       await transferBulk({
         agentId: agentId as Id<"users">,
         stockModel,
         notes: notes || undefined,
+        movedAt,
         items: allItems,
       });
       setOpen(false);
@@ -354,6 +365,20 @@ export function TransferFormDialog({
                   : " — from agent profile defaults"}
               </p>
             )}
+          </div>
+
+          {/* Distribution date */}
+          <div className="space-y-2">
+            <Label htmlFor="distributionDate">Distribution Date</Label>
+            <Input
+              id="distributionDate"
+              type="date"
+              value={distributionDate}
+              onChange={(e) => setDistributionDate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              When the stock was/will be distributed (defaults to today MYT)
+            </p>
           </div>
 
           <div className="space-y-2">

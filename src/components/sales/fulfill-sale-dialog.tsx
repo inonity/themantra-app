@@ -5,6 +5,7 @@ import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -77,6 +78,13 @@ export function FulfillSaleDialog({
   );
   const [submitting, setSubmitting] = useState(false);
   const [open, setOpen] = useState(false);
+  const [fulfillmentDate, setFulfillmentDate] = useState(() => {
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, "0");
+    const d = String(now.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  });
 
   const batchMap = new Map((batches ?? []).map((b) => [b._id, b]));
 
@@ -135,6 +143,9 @@ export function FulfillSaleDialog({
     if (!canFulfill) return;
     setSubmitting(true);
     try {
+      // Parse selected date to timestamp (start of day in local timezone)
+      const fulfilledAt = new Date(fulfillmentDate + "T00:00:00").getTime();
+
       // Fulfill items from agent stock
       if (agentStockItems.length > 0) {
         if (isLegacy && agentStockItems.length === pendingItems.length) {
@@ -145,6 +156,7 @@ export function FulfillSaleDialog({
               productId: item.productId,
               quantity: item.quantity,
             })),
+            fulfilledAt,
           });
         } else {
           await fulfillLineItems({
@@ -154,6 +166,7 @@ export function FulfillSaleDialog({
               batchId: item.batchId!,
               quantity: item.quantity,
             })),
+            fulfilledAt,
           });
         }
       }
@@ -167,6 +180,7 @@ export function FulfillSaleDialog({
             batchId: item.batchId!,
             quantity: item.quantity,
           })),
+          fulfilledAt,
         });
       }
 
@@ -198,13 +212,29 @@ export function FulfillSaleDialog({
         </DialogHeader>
 
         <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label htmlFor="fulfillment-date" className="text-sm">Fulfillment Date</Label>
+            <Input
+              id="fulfillment-date"
+              type="date"
+              value={fulfillmentDate}
+              onChange={(e) => setFulfillmentDate(e.target.value)}
+            />
+          </div>
+
           {items.map((item, index) => {
             if (item.alreadyDone) {
+              const lineItem = (sale.lineItems ?? [])[item.lineItemIndex];
               return (
                 <div key={item.lineItemIndex} className="space-y-1 opacity-50">
                   <Label className="text-sm flex items-center gap-2">
                     {item.productName} — x{item.fulfilledQuantity}
                     <Badge variant="default" className="text-xs">Fulfilled</Badge>
+                    {lineItem?.fulfilledAt && (
+                      <span className="text-xs text-muted-foreground font-normal">
+                        {new Date(lineItem.fulfilledAt).toLocaleDateString()}
+                      </span>
+                    )}
                   </Label>
                 </div>
               );

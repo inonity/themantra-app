@@ -228,6 +228,11 @@ function PendingSalesSection({
                             {SOURCE_LABELS[source] ?? source}
                           </Badge>
                         )}
+                        {isDone && li.fulfilledAt && (
+                          <span className="text-xs text-muted-foreground">
+                            {new Date(li.fulfilledAt).toLocaleDateString()}
+                          </span>
+                        )}
                       </div>
                     );
                   })}

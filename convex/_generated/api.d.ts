@@ -26,6 +26,7 @@ import type * as passwordChange from "../passwordChange.js";
 import type * as products from "../products.js";
 import type * as rates from "../rates.js";
 import type * as sales from "../sales.js";
+import type * as seed from "../seed.js";
 import type * as stockMovements from "../stockMovements.js";
 import type * as stockRequests from "../stockRequests.js";
 import type * as users from "../users.js";
@@ -55,6 +56,7 @@ declare const fullApi: ApiFromModules<{
   products: typeof products;
   rates: typeof rates;
   sales: typeof sales;
+  seed: typeof seed;
   stockMovements: typeof stockMovements;
   stockRequests: typeof stockRequests;
   users: typeof users;

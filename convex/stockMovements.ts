@@ -104,6 +104,7 @@ export const transferBulkToAgent = mutation({
     agentId: v.id("users"),
     stockModel: v.union(v.literal("hold_paid"), v.literal("consignment"), v.literal("presell"), v.literal("dropship")),
     notes: v.optional(v.string()),
+    movedAt: v.optional(v.number()),
     items: v.array(
       v.object({
         batchId: v.id("batches"),
@@ -115,6 +116,8 @@ export const transferBulkToAgent = mutation({
     const user = await requireRole(ctx, "admin");
 
     if (args.items.length === 0) throw new Error("No items to transfer");
+
+    const movedAt = args.movedAt ?? Date.now();
 
     // Validate agent
     const agent = await ctx.db.get(args.agentId);
@@ -192,7 +195,7 @@ export const transferBulkToAgent = mutation({
         toPartyType: "agent",
         toPartyId: args.agentId,
         quantity: item.quantity,
-        movedAt: Date.now(),
+        movedAt,
         notes: args.notes,
         recordedBy: user._id,
         stockModel: args.stockModel,

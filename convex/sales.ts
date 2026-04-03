@@ -1286,6 +1286,7 @@ export const fulfillSale = mutation({
         quantity: v.number(),
       })
     ),
+    fulfilledAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -1331,7 +1332,7 @@ export const fulfillSale = mutation({
       }
     }
 
-    const movedAt = Date.now();
+    const movedAt = args.fulfilledAt ?? Date.now();
     const unitPrice = sale.totalAmount / sale.totalQuantity;
     const stockModel = sale.stockModel ?? "hold_paid";
     const inventoryStockModel =
@@ -1414,6 +1415,7 @@ export const fulfillLineItems = mutation({
         quantity: v.number(),
       })
     ),
+    fulfilledAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -1430,7 +1432,7 @@ export const fulfillLineItems = mutation({
     }
     if (!sale.lineItems) throw new Error("Sale has no line items");
 
-    const movedAt = Date.now();
+    const movedAt = args.fulfilledAt ?? Date.now();
     const unitPrice = sale.totalAmount / sale.totalQuantity;
     const stockModel = sale.stockModel ?? "hold_paid";
     const sellerId = sale.sellerId!;
@@ -1641,6 +1643,7 @@ export const selfFulfillFromHQ = mutation({
         quantity: v.number(),
       })
     ),
+    fulfilledAt: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -1661,7 +1664,7 @@ export const selfFulfillFromHQ = mutation({
     }
     if (!sale.lineItems) throw new Error("Sale has no line items");
 
-    const movedAt = Date.now();
+    const movedAt = args.fulfilledAt ?? Date.now();
     const unitPrice = sale.totalAmount / sale.totalQuantity;
     const stockModel = sale.stockModel ?? "hold_paid";
     const sellerId = sale.sellerId!;
