@@ -6,8 +6,8 @@ export const record = mutation({
   args: {
     customerDetail: v.object({
       name: v.string(),
-      phone: v.string(),
-      email: v.string(),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
     }),
     items: v.array(
       v.object({

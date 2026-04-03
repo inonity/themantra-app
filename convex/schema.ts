@@ -81,8 +81,8 @@ export default defineSchema({
     customerDetail: v.optional(
       v.object({
         name: v.string(),
-        phone: v.string(),
-        email: v.string(),
+        phone: v.optional(v.string()),
+        email: v.optional(v.string()),
       })
     ),
 
@@ -393,8 +393,8 @@ export default defineSchema({
     agentId: v.id("users"),
     customerDetail: v.object({
       name: v.string(),
-      phone: v.string(),
-      email: v.string(),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
     }),
     items: v.array(
       v.object({

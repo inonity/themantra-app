@@ -825,25 +825,23 @@ export function RecordSaleForm({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="customerPhone">Phone</Label>
+              <Label htmlFor="customerPhone">Phone (optional)</Label>
               <Input
                 id="customerPhone"
                 type="tel"
                 value={customerPhone}
                 onChange={(e) => setCustomerPhone(e.target.value)}
                 placeholder="Phone number"
-                required
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="customerEmail">Email</Label>
+              <Label htmlFor="customerEmail">Email (optional)</Label>
               <Input
                 id="customerEmail"
                 type="email"
                 value={customerEmail}
                 onChange={(e) => setCustomerEmail(e.target.value)}
                 placeholder="Email address"
-                required
               />
             </div>
           </div>
@@ -1465,8 +1463,6 @@ export function RecordSaleForm({
             !hasItems ||
             !saleChannel ||
             !customerName ||
-            !customerPhone ||
-            !customerEmail ||
             (needsProofOfPayment && !paymentProofFile) ||
             submitting ||
             uploadingProof

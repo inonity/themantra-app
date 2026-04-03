@@ -73,8 +73,8 @@ export const recordB2CSale = mutation({
     ),
     customerDetail: v.object({
       name: v.string(),
-      phone: v.string(),
-      email: v.string(),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
     }),
     stockModel: v.optional(stockModelValidator),
     paymentCollector: v.optional(v.union(v.literal("agent"), v.literal("hq"))),
@@ -775,8 +775,8 @@ export const recordPresellSale = mutation({
     ),
     customerDetail: v.object({
       name: v.string(),
-      phone: v.string(),
-      email: v.string(),
+      phone: v.optional(v.string()),
+      email: v.optional(v.string()),
     }),
     dropshipCollector: v.union(v.literal("agent"), v.literal("hq")),
     offerId: v.optional(v.id("offers")),
