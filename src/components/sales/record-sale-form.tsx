@@ -222,8 +222,8 @@ export function RecordSaleForm({
   useEffect(() => {
     if (interest && !interestPreFilled && allProducts && batches) {
       setCustomerName(interest.customerDetail.name);
-      setCustomerPhone(interest.customerDetail.phone);
-      setCustomerEmail(interest.customerDetail.email);
+      setCustomerPhone(interest.customerDetail.phone ?? "");
+      setCustomerEmail(interest.customerDetail.email ?? "");
       if (interest.notes) setNotes(interest.notes);
 
       const pMap = new Map(allProducts.map((p) => [p._id, p]));
