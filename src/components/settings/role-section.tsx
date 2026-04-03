@@ -9,7 +9,8 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 const STOCK_MODEL_LABELS: Record<string, string> = {
   hold_paid: "Hold & Paid",
   consignment: "Consignment",
-  dropship: "Dropship",
+  presell: "Pre-sell",
+  dropship: "Pre-sell", // legacy
 };
 
 const ROLE_LABELS: Record<string, string> = {

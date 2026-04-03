@@ -52,7 +52,7 @@ import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, Cr
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 
-type FulfillmentSource = "agent_stock" | "hq_transfer" | "pending_batch" | "future_release";
+type FulfillmentSource = "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
 
 interface UnifiedLineItem {
   productId: Id<"products">;
@@ -104,7 +104,8 @@ function parseInputDateToTimestamp(dateStr: string): number {
 
 const SOURCE_BADGES: Record<FulfillmentSource, { label: string; variant: "default" | "secondary" | "outline" | "destructive"; tooltip: string }> = {
   agent_stock: { label: "In Stock", variant: "default", tooltip: "You have this item in your own stock. It will be deducted from your inventory when the sale is recorded." },
-  hq_transfer: { label: "HQ Transfer", variant: "secondary", tooltip: "This item will be fulfilled from HQ stock. Admin will process the transfer to the customer on your behalf." },
+  hq_transfer: { label: "Pending HQ Transfer", variant: "secondary", tooltip: "This item will be sourced from HQ stock. HQ will transfer the product to you, and you will deliver it to the customer." },
+  hq_direct: { label: "Fulfilled by HQ", variant: "secondary", tooltip: "This item will be fulfilled directly by HQ. HQ will ship the product to the customer on your behalf." },
   pending_batch: { label: "Pending Batch", variant: "outline", tooltip: "This product has an upcoming batch being prepared. The sale will be fulfilled once the batch is ready and stock is available." },
   future_release: { label: "Future Release", variant: "destructive", tooltip: "This product hasn't been manufactured yet. The sale is a pre-order and will be fulfilled when the product is released." },
 };
@@ -123,7 +124,7 @@ export function RecordSaleForm({
   userRole?: string;
 }) {
   const recordSale = useMutation(api.sales.recordB2CSale);
-  const recordDropship = useMutation(api.sales.recordDropshipSale);
+  const recordPresell = useMutation(api.sales.recordPresellSale);
   const selfFulfillFromHQ = useMutation(api.sales.selfFulfillFromHQ);
   const markConverted = useMutation(api.interests.markConverted);
   const products = useQuery(api.products.listSellable);
@@ -138,10 +139,11 @@ export function RecordSaleForm({
     interestId ? { interestId } : "skip"
   );
 
-  const defaultModel = (agentProfile?.defaultStockModel ?? "hold_paid") as
+  const rawModel = agentProfile?.defaultStockModel ?? "hold_paid";
+  const defaultModel = (rawModel === "dropship" ? "presell" : rawModel) as
     | "hold_paid"
     | "consignment"
-    | "dropship";
+    | "presell";
 
   const [unifiedItems, setUnifiedItems] = useState<UnifiedLineItem[]>([]);
   const [saleChannel, setSaleChannel] = useState<string>("direct");
@@ -166,9 +168,9 @@ export function RecordSaleForm({
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
-  const isDropship = stockModel === "dropship";
+  const isPresell = stockModel === "presell";
   const isConsignment = stockModel === "consignment";
-  const showCollectorOption = isDropship || isConsignment;
+  const showCollectorOption = isPresell || isConsignment;
 
   const isNonCashPayment = paymentMethod === "qr" || paymentMethod === "bank_transfer";
   const isHqCollector = paymentCollector === "hq";
@@ -177,7 +179,7 @@ export function RecordSaleForm({
   // Use allProducts for product map (includes all statuses for display), sellable for dropdown
   const productMap = new Map((allProducts ?? []).map((p) => [p._id, p]));
   const batchMap = new Map((batches ?? []).map((b) => [b._id, b]));
-  const activeInventory = isDropship ? (businessInventory ?? []) : inventory;
+  const activeInventory = isPresell ? (businessInventory ?? []) : inventory;
 
   // Auto-detect fulfillment source for a product
   function detectSource(productId: Id<"products">): {
@@ -431,7 +433,7 @@ export function RecordSaleForm({
     if (inv) {
       const product = productMap.get(inv.productId);
       const batch = batchMap.get(inv.batchId);
-      const source: FulfillmentSource = isDropship ? "hq_transfer" : "agent_stock";
+      const source: FulfillmentSource = isPresell ? "hq_transfer" : "agent_stock";
       setUnifiedItems([
         ...unifiedItems,
         {
@@ -448,7 +450,7 @@ export function RecordSaleForm({
   }
 
   function addFromOwnInventory(value: string) {
-    // Add from salesperson's own inventory (even in dropship mode)
+    // Add from salesperson's own inventory (even in pre-sell mode)
     const inv = inventory.find((i) => i._id === value);
     if (inv) {
       const product = productMap.get(inv.productId);
@@ -647,7 +649,7 @@ export function RecordSaleForm({
               productId: li.productId,
               quantity: 1,
               inBundle: inBundle || undefined,
-              ...(isDropship ? { fulfillmentSource: "agent_stock" as const } : {}),
+              ...(isPresell ? { fulfillmentSource: "agent_stock" as const } : {}),
             });
           }
         } else {
@@ -671,8 +673,8 @@ export function RecordSaleForm({
 
       let saleId: Id<"sales">;
 
-      if (isDropship) {
-        saleId = await recordDropship({
+      if (isPresell) {
+        saleId = await recordPresell({
           fulfilledItems: fulfilledItems.length > 0 ? fulfilledItems : undefined,
           pendingItems: pendingItems.length > 0 ? pendingItems : undefined,
           saleChannel: channel,
@@ -692,7 +694,7 @@ export function RecordSaleForm({
           pendingItems: pendingItems.length > 0 ? pendingItems : undefined,
           saleChannel: channel,
           customerDetail,
-          stockModel: stockModel as "hold_paid" | "consignment" | "dropship",
+          stockModel: stockModel as "hold_paid" | "consignment" | "presell",
           paymentCollector: isConsignment ? paymentCollector : undefined,
           offerId,
           notes: notes || undefined,
@@ -761,16 +763,16 @@ export function RecordSaleForm({
     (inv) => inv.quantity > 0 && (usedInventoryCounts.get(inv._id) ?? 0) < inv.quantity
   );
 
-  // Agent's own inventory (available even in dropship mode)
-  const availableAgentInventory = isDropship
+  // Agent's own inventory (available even in pre-sell mode)
+  const availableAgentInventory = isPresell
     ? inventory.filter(
         (inv) => inv.quantity > 0 && (usedInventoryCounts.get(inv._id) ?? 0) < inv.quantity
       )
     : [];
 
-  // HQ inventory available for auto-fulfill (salesperson only, non-dropship)
+  // HQ inventory available for auto-fulfill (salesperson only, non-presell)
   const isSalesperson = userRole === "sales";
-  const availableHQInventory = isSalesperson && !isDropship
+  const availableHQInventory = isSalesperson && !isPresell
     ? (businessInventory ?? []).filter(
         (inv) => inv.quantity > 0 && (usedHQBatchCounts.get(inv.batchId) ?? 0) < inv.quantity
       )
@@ -1114,15 +1116,15 @@ export function RecordSaleForm({
                 })()}
 
                 {/* Add from agent's own inventory (all modes) */}
-                {(isDropship ? availableAgentInventory : availableInventory).length > 0 && (
+                {(isPresell ? availableAgentInventory : availableInventory).length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
-                      <Select value="" onValueChange={(v) => v && (isDropship ? addFromOwnInventory(v) : addItem(v))}>
+                      <Select value="" onValueChange={(v) => v && (isPresell ? addFromOwnInventory(v) : addItem(v))}>
                         <SelectTrigger className="w-full md:w-[350px]">
                           <SelectValue placeholder="Add from your inventory..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {(isDropship ? availableAgentInventory : availableInventory).map((inv) => {
+                          {(isPresell ? availableAgentInventory : availableInventory).map((inv) => {
                             const product = productMap.get(inv.productId);
                             const batch = batchMap.get(inv.batchId);
                             const remaining = inv.quantity - (usedInventoryCounts.get(inv._id) ?? 0);
@@ -1139,8 +1141,8 @@ export function RecordSaleForm({
                   </TableRow>
                 )}
 
-                {/* Add from HQ inventory — auto-fulfill (non-dropship: pull from HQ + fulfill in 1 click) */}
-                {!isDropship && availableHQInventory.length > 0 && (
+                {/* Add from HQ inventory — auto-fulfill (non-presell: pull from HQ + fulfill in 1 click) */}
+                {!isPresell && availableHQInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
@@ -1164,8 +1166,8 @@ export function RecordSaleForm({
                   </TableRow>
                 )}
 
-                {/* Add from HQ inventory (dropship — pending hq_transfer) */}
-                {isDropship && availableInventory.length > 0 && (
+                {/* Add from HQ inventory (pre-sell — pending hq_transfer) */}
+                {isPresell && availableInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && addItem(v)}>

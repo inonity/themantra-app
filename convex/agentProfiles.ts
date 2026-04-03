@@ -10,7 +10,8 @@ export const upsert = mutation({
       v.union(
         v.literal("hold_paid"),
         v.literal("consignment"),
-        v.literal("dropship")
+        v.literal("presell"),
+        v.literal("dropship") // legacy
       )
     ),
     notes: v.optional(v.string()),

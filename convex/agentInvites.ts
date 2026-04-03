@@ -189,7 +189,7 @@ export const completeInvite = mutation({
     if (assignedRole === "sales") {
       await ctx.db.insert("agentProfiles", {
         agentId: user._id,
-        defaultStockModel: "dropship",
+        defaultStockModel: "presell",
         updatedAt: Date.now(),
       });
     }

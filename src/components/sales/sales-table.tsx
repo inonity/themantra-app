@@ -62,13 +62,15 @@ function FulfillmentBadge({ status }: { status?: string }) {
 const SOURCE_BADGE_STYLES: Record<string, string> = {
   agent_stock: "text-green-600 border-green-300",
   hq_transfer: "text-orange-600 border-orange-300",
+  hq_direct: "text-blue-600 border-blue-300",
   pending_batch: "text-yellow-600 border-yellow-300",
   future_release: "text-purple-600 border-purple-300",
 };
 
 const SOURCE_LABELS: Record<string, string> = {
   agent_stock: "Fulfilled",
-  hq_transfer: "HQ Transfer",
+  hq_transfer: "Pending HQ Transfer",
+  hq_direct: "Fulfilled by HQ",
   pending_batch: "Pending Batch",
   future_release: "Future Release",
 };

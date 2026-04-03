@@ -46,7 +46,8 @@ import { useState } from "react";
 
 const SOURCE_LABELS: Record<string, string> = {
   agent_stock: "In Stock",
-  hq_transfer: "HQ Transfer",
+  hq_transfer: "Pending HQ Transfer",
+  hq_direct: "Fulfilled by HQ",
   pending_batch: "Pending Batch",
   future_release: "Future Release",
 };
@@ -54,6 +55,7 @@ const SOURCE_LABELS: Record<string, string> = {
 const SOURCE_STYLES: Record<string, string> = {
   agent_stock: "bg-green-100 text-green-700",
   hq_transfer: "text-orange-600 border-orange-300",
+  hq_direct: "text-blue-600 border-blue-300",
   pending_batch: "text-yellow-600 border-yellow-300",
   future_release: "text-purple-600 border-purple-300",
 };

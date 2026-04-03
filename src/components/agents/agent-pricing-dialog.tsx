@@ -36,10 +36,10 @@ import { SaveIcon } from "lucide-react";
 const STOCK_MODELS = [
   { value: "hold_paid", label: "Hold & Paid" },
   { value: "consignment", label: "Consignment" },
-  { value: "dropship", label: "Dropship" },
+  { value: "presell", label: "Pre-sell" },
 ] as const;
 
-type StockModel = "hold_paid" | "consignment" | "dropship";
+type StockModel = "hold_paid" | "consignment" | "presell";
 
 function formatRate(rateType: string, rateValue: number) {
   if (rateType === "percentage") {

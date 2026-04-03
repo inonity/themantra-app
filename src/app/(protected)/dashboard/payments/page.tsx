@@ -92,8 +92,9 @@ function stockModelLabel(model?: string) {
       return "Hold & Paid";
     case "consignment":
       return "Consignment";
+    case "presell":
     case "dropship":
-      return "Dropship";
+      return "Pre-sell";
     default:
       return "—";
   }

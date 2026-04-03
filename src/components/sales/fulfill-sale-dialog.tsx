@@ -178,7 +178,8 @@ export function FulfillSaleDialog({
 
   const SOURCE_LABELS: Record<string, string> = {
     agent_stock: "In Stock",
-    hq_transfer: "HQ Transfer",
+    hq_transfer: "Pending HQ Transfer",
+    hq_direct: "Fulfilled by HQ",
     pending_batch: "Pending Batch",
     future_release: "Future Release",
   };
@@ -190,8 +191,9 @@ export function FulfillSaleDialog({
         <DialogHeader>
           <DialogTitle>Fulfill Sale</DialogTitle>
           <DialogDescription>
-            Select batches for items you can fulfill now. You can also pull
-            stock directly from HQ.
+            {isSalesperson
+              ? "Select batches for items you can fulfill now. You can also pull stock directly from HQ."
+              : "Select batches from your inventory to fulfill items."}
           </DialogDescription>
         </DialogHeader>
 
@@ -238,7 +240,7 @@ export function FulfillSaleDialog({
                         Stock now available in your inventory!
                       </p>
                     )}
-                    {!hasAgentStock && hasHQStock && (
+                    {!hasAgentStock && hasHQStock && isSalesperson && (
                       <p className="text-xs text-blue-600">
                         Not in your stock — pull directly from HQ
                       </p>
@@ -290,8 +292,12 @@ export function FulfillSaleDialog({
                 ) : (
                   <p className="text-xs text-muted-foreground">
                     {item.fulfillmentSource === "future_release"
-                      ? "Product not yet available — no stock at HQ or in your inventory"
-                      : "No batch with sufficient stock available (yours or HQ)"}
+                      ? isSalesperson
+                        ? "Product not yet available — no stock at HQ or in your inventory"
+                        : "Product not yet available — no stock in your inventory"
+                      : isSalesperson
+                        ? "No batch with sufficient stock available (yours or HQ)"
+                        : "No batch with sufficient stock in your inventory"}
                   </p>
                 )}
               </div>

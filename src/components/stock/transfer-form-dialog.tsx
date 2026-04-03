@@ -31,7 +31,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react";
 const stockModelLabels: Record<string, string> = {
   hold_paid: "Hold & Paid",
   consignment: "Consignment",
-  dropship: "Dropship",
+  presell: "Pre-sell",
 };
 
 type BatchLine = {
@@ -72,7 +72,7 @@ export function TransferFormDialog({
 
   const [open, setOpen] = useState(false);
   const [agentId, setAgentId] = useState<string>("");
-  const [stockModel, setStockModel] = useState<"hold_paid" | "consignment" | "dropship">(
+  const [stockModel, setStockModel] = useState<"hold_paid" | "consignment" | "presell">(
     "hold_paid"
   );
   const [notes, setNotes] = useState("");
@@ -278,7 +278,7 @@ export function TransferFormDialog({
                   setAgentId(v ?? "");
                   const seller = (sellers ?? []).find((s) => s._id === v);
                   if (seller?.role === "sales") {
-                    setStockModel("dropship");
+                    setStockModel("presell");
                   }
                 }}
               >
@@ -333,7 +333,7 @@ export function TransferFormDialog({
               <Select
                 value={stockModel}
                 onValueChange={(v) =>
-                  setStockModel(v as "hold_paid" | "consignment" | "dropship")
+                  setStockModel(v as "hold_paid" | "consignment" | "presell")
                 }
               >
                 <SelectTrigger>
@@ -344,7 +344,7 @@ export function TransferFormDialog({
                 <SelectContent>
                   <SelectItem value="hold_paid">Hold &amp; Paid</SelectItem>
                   <SelectItem value="consignment">Consignment</SelectItem>
-                  <SelectItem value="dropship">Dropship</SelectItem>
+                  <SelectItem value="presell">Pre-sell</SelectItem>
                 </SelectContent>
               </Select>
             </div>

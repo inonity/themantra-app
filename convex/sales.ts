@@ -8,12 +8,14 @@ import { addSaleToSettlement } from "./agentSettlements";
 const stockModelValidator = v.union(
   v.literal("hold_paid"),
   v.literal("consignment"),
-  v.literal("dropship")
+  v.literal("presell"),
+  v.literal("dropship") // legacy — kept for existing records
 );
 
 const fulfillmentSourceValidator = v.union(
   v.literal("agent_stock"),
   v.literal("hq_transfer"),
+  v.literal("hq_direct"),
   v.literal("pending_batch"),
   v.literal("future_release")
 );
@@ -114,7 +116,7 @@ export const recordB2CSale = mutation({
 
     // Normalize into fulfilledItems + pendingItems
     let fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; inBundle?: boolean }[] = [];
-    let pendingItems: { productId: Id<"products">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release"; inBundle?: boolean }[] = [];
+    let pendingItems: { productId: Id<"products">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] = [];
 
     if (isNewStyle) {
       fulfilledItems = args.fulfilledItems ?? [];
@@ -401,7 +403,7 @@ export const recordB2CSale = mutation({
       unitPrice: number;
       productName: string;
       productPrice: number;
-      fulfillmentSource: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release";
+      fulfillmentSource: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
       fulfilledQuantity: number;
       batchId?: Id<"batches">;
       fulfilledAt?: number;
@@ -653,8 +655,8 @@ export const recordB2BPurchase = mutation({
 
     // Process each item: transfer inventory + create movement
     for (const detail of itemDetails) {
-      // Dropship doesn't transfer physical inventory
-      if (args.stockModel !== "dropship") {
+      // Pre-sell doesn't transfer physical inventory
+      if (args.stockModel !== "presell" && args.stockModel !== "dropship") {
         const businessInventory = await ctx.db
           .query("inventory")
           .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
@@ -731,7 +733,7 @@ export const recordB2BPurchase = mutation({
   },
 });
 
-export const recordDropshipSale = mutation({
+export const recordPresellSale = mutation({
   args: {
     // Legacy: single items array (all fulfilled)
     items: v.optional(v.array(
@@ -758,6 +760,7 @@ export const recordDropshipSale = mutation({
         fulfillmentSource: v.union(
           v.literal("agent_stock"),
           v.literal("hq_transfer"),
+          v.literal("hq_direct"),
           v.literal("pending_batch"),
           v.literal("future_release")
         ),
@@ -809,7 +812,7 @@ export const recordDropshipSale = mutation({
     }
 
     // Normalize into fulfilledItems + pendingItems (support legacy `items` arg)
-    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release"; inBundle?: boolean }[] =
+    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] =
       args.fulfilledItems ?? args.items?.map((i) => ({ ...i, fulfillmentSource: undefined })) ?? [];
     const pendingItems = args.pendingItems ?? [];
 
@@ -823,7 +826,7 @@ export const recordDropshipSale = mutation({
       ...pendingItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
     ];
     const totalQuantity = allPricingItems.reduce((sum, item) => sum + item.quantity, 0);
-    const stockModel = "dropship" as const;
+    const stockModel = "presell" as const;
 
     // Look up product prices and names
     const productPrices = new Map<string, number>();
@@ -995,7 +998,7 @@ export const recordDropshipSale = mutation({
       unitPrice: number;
       productName: string;
       productPrice: number;
-      fulfillmentSource: "agent_stock" | "hq_transfer" | "pending_batch" | "future_release";
+      fulfillmentSource: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
       fulfilledQuantity: number;
       batchId?: Id<"batches">;
       fulfilledAt?: number;
@@ -1112,7 +1115,7 @@ export const recordDropshipSale = mutation({
           await ctx.db.patch(agentInv._id, { quantity: newQty, updatedAt: Date.now() });
         }
       } else {
-        // Deduct from business inventory (original dropship behavior)
+        // Deduct from business inventory (pre-sell behavior)
         const businessInventory = await ctx.db
           .query("inventory")
           .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
@@ -1174,6 +1177,9 @@ export const recordDropshipSale = mutation({
     return saleId;
   },
 });
+
+// Legacy alias — kept for existing references
+export const recordDropshipSale = recordPresellSale;
 
 export const markPaid = mutation({
   args: {
@@ -1428,8 +1434,8 @@ export const fulfillLineItems = mutation({
     const unitPrice = sale.totalAmount / sale.totalQuantity;
     const stockModel = sale.stockModel ?? "hold_paid";
     const sellerId = sale.sellerId!;
-    const inventoryStockModel: "hold_paid" | "consignment" | "dropship" | undefined =
-      stockModel === "hold_paid" || stockModel === "consignment" || stockModel === "dropship"
+    const inventoryStockModel: "hold_paid" | "consignment" | "presell" | "dropship" | undefined =
+      stockModel === "hold_paid" || stockModel === "consignment" || stockModel === "presell" || stockModel === "dropship"
         ? stockModel
         : undefined;
 

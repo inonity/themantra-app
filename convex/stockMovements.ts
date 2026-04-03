@@ -102,7 +102,7 @@ export const transferToAgent = mutation({
 export const transferBulkToAgent = mutation({
   args: {
     agentId: v.id("users"),
-    stockModel: v.union(v.literal("hold_paid"), v.literal("consignment"), v.literal("dropship")),
+    stockModel: v.union(v.literal("hold_paid"), v.literal("consignment"), v.literal("presell"), v.literal("dropship")),
     notes: v.optional(v.string()),
     items: v.array(
       v.object({

@@ -19,7 +19,8 @@ import { FacetedFilter, RangeFilter } from "./faceted-filter";
 const stockModelLabels: Record<string, string> = {
   hold_paid: "Hold & Paid",
   consignment: "Consignment",
-  dropship: "Dropship",
+  presell: "Pre-sell",
+  dropship: "Pre-sell", // legacy
 };
 
 type HolderGroup = {

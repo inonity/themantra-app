@@ -135,7 +135,8 @@ export default defineSchema({
       v.union(
         v.literal("hold_paid"),
         v.literal("consignment"),
-        v.literal("dropship")
+        v.literal("presell"),
+        v.literal("dropship") // legacy — kept for existing records
       )
     ),
     hqPrice: v.optional(v.number()),
@@ -176,6 +177,7 @@ export default defineSchema({
             v.union(
               v.literal("agent_stock"),
               v.literal("hq_transfer"),
+              v.literal("hq_direct"),
               v.literal("pending_batch"),
               v.literal("future_release")
             )
@@ -219,7 +221,8 @@ export default defineSchema({
       v.union(
         v.literal("hold_paid"),
         v.literal("consignment"),
-        v.literal("dropship")
+        v.literal("presell"),
+        v.literal("dropship") // legacy — kept for existing records
       )
     ),
     hqUnitPrice: v.optional(v.number()),
@@ -237,7 +240,7 @@ export default defineSchema({
     heldById: v.optional(v.id("users")), // agentId when heldByType is "agent"
     quantity: v.number(),
     stockModel: v.optional(
-      v.union(v.literal("hold_paid"), v.literal("consignment"), v.literal("dropship"))
+      v.union(v.literal("hold_paid"), v.literal("consignment"), v.literal("presell"), v.literal("dropship"))
     ),
     updatedAt: v.optional(v.number()),
     // NOTE: "distributor" and "stockist" heldByType values planned for future
@@ -311,7 +314,8 @@ export default defineSchema({
       v.union(
         v.literal("hold_paid"),
         v.literal("consignment"),
-        v.literal("dropship")
+        v.literal("presell"),
+        v.literal("dropship") // legacy — kept for existing records
       )
     ),
     notes: v.optional(v.string()),
