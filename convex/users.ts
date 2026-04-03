@@ -274,6 +274,21 @@ export const listSellers = query({
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "sales"))
       .take(100);
-    return [...agents, ...salesStaff];
+    const allSellers = [...agents, ...salesStaff];
+
+    // Attach defaultStockModel from agentProfiles
+    const enriched = await Promise.all(
+      allSellers.map(async (seller) => {
+        const profile = await ctx.db
+          .query("agentProfiles")
+          .withIndex("by_agentId", (q) => q.eq("agentId", seller._id))
+          .unique();
+        return {
+          ...seller,
+          defaultStockModel: profile?.defaultStockModel ?? undefined,
+        };
+      })
+    );
+    return enriched;
   },
 });

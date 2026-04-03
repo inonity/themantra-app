@@ -165,7 +165,7 @@ export default function StockPage() {
             <TransferFormDialog products={products}>
               <Button>
                 <ArrowRightLeftIcon className="h-4 w-4 mr-2" />
-                Transfer to Agent
+                Distribute Stock
               </Button>
             </TransferFormDialog>
           )}

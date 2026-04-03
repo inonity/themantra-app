@@ -26,6 +26,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 
 const stockModelLabels: Record<string, string> = {
@@ -265,89 +266,94 @@ export function TransferFormDialog({
       <DialogTrigger render={children} />
       <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Transfer Stock to Agent</DialogTitle>
+          <DialogTitle>Distribute Stock</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Agent + Stock Model */}
-          <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label>Agent</Label>
-              <Select
-                value={agentId}
-                onValueChange={(v) => {
-                  setAgentId(v ?? "");
-                  const seller = (sellers ?? []).find((s) => s._id === v);
-                  if (seller?.role === "sales") {
-                    setStockModel("presell");
-                  }
-                }}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select agent">
-                    {selectedAgent
-                      ? selectedAgent.nickname ||
-                        selectedAgent.name ||
-                        selectedAgent.email ||
-                        "Unnamed Agent"
-                      : undefined}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  {agents.length === 0 && salesStaff.length === 0 ? (
-                    <SelectItem value="_none" disabled>
-                      No agents found
-                    </SelectItem>
-                  ) : (
-                    <>
-                      {agents.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Agents</SelectLabel>
-                          {agents.map((a) => (
-                            <SelectItem key={a._id} value={a._id}>
-                              {a.nickname || a.name || a.email || "Unnamed Agent"}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                      {agents.length > 0 && salesStaff.length > 0 && (
-                        <SelectSeparator />
-                      )}
-                      {salesStaff.length > 0 && (
-                        <SelectGroup>
-                          <SelectLabel>Sales</SelectLabel>
-                          {salesStaff.map((s) => (
-                            <SelectItem key={s._id} value={s._id}>
-                              {s.nickname || s.name || s.email || "Unnamed Salesperson"}
-                            </SelectItem>
-                          ))}
-                        </SelectGroup>
-                      )}
-                    </>
-                  )}
-                </SelectContent>
-              </Select>
-            </div>
-
-            <div className="space-y-2">
-              <Label>Stock Model</Label>
-              <Select
-                value={stockModel}
-                onValueChange={(v) =>
-                  setStockModel(v as "hold_paid" | "consignment" | "presell")
+          {/* Agent */}
+          <div className="space-y-2">
+            <Label>Recipient</Label>
+            <Select
+              value={agentId}
+              onValueChange={(v) => {
+                setAgentId(v ?? "");
+                const seller = (sellers ?? []).find((s) => s._id === v);
+                if (seller?.role === "sales") {
+                  setStockModel("presell");
+                } else if (seller) {
+                  const defaultModel = seller.defaultStockModel;
+                  setStockModel(
+                    defaultModel === "dropship" ? "presell" :
+                    defaultModel ?? "consignment"
+                  );
                 }
-              >
-                <SelectTrigger>
-                  <SelectValue>
-                    {stockModelLabels[stockModel]}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="hold_paid">Hold &amp; Paid</SelectItem>
-                  <SelectItem value="consignment">Consignment</SelectItem>
-                  <SelectItem value="presell">Pre-sell</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+              }}
+            >
+              <SelectTrigger>
+                <SelectValue placeholder="Select recipient">
+                  {selectedAgent
+                    ? selectedAgent.nickname ||
+                      selectedAgent.name ||
+                      selectedAgent.email ||
+                      "Unnamed"
+                    : undefined}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {agents.length === 0 && salesStaff.length === 0 ? (
+                  <SelectItem value="_none" disabled>
+                    No agents found
+                  </SelectItem>
+                ) : (
+                  <>
+                    {agents.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>
+                          Agents — external partners, stock on consignment
+                        </SelectLabel>
+                        {agents.map((a) => (
+                          <SelectItem key={a._id} value={a._id}>
+                            <div className="flex items-center gap-2">
+                              <span>{a.nickname || a.name || a.email || "Unnamed"}</span>
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0">
+                                Agent
+                              </Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                    {salesStaff.length > 0 && agents.length > 0 && (
+                      <SelectSeparator />
+                    )}
+                    {salesStaff.length > 0 && (
+                      <SelectGroup>
+                        <SelectLabel>
+                          Salespersons — HQ employees with direct stock access
+                        </SelectLabel>
+                        {salesStaff.map((s) => (
+                          <SelectItem key={s._id} value={s._id}>
+                            <div className="flex items-center gap-2">
+                              <span>{s.nickname || s.name || s.email || "Unnamed"}</span>
+                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                                Sales
+                              </Badge>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectGroup>
+                    )}
+                  </>
+                )}
+              </SelectContent>
+            </Select>
+            {agentId && (
+              <p className="text-xs text-muted-foreground">
+                Stock model: <span className="font-medium">{stockModelLabels[stockModel] ?? stockModel}</span>
+                {selectedAgent?.role === "sales"
+                  ? " — salespersons always use Pre-sell"
+                  : " — from agent profile defaults"}
+              </p>
+            )}
           </div>
 
           <div className="space-y-2">
