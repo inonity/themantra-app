@@ -37,6 +37,7 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
   SidebarRail,
+  useSidebar,
 } from "@/components/ui/sidebar"
 import {
   DropdownMenu,
@@ -170,6 +171,11 @@ export function AppSidebar() {
   const user = useCurrentUser()
   const pathname = usePathname()
   const { signOut } = useAuthActions()
+  const { isMobile, setOpenMobile } = useSidebar()
+
+  function closeMobile() {
+    if (isMobile) setOpenMobile(false)
+  }
 
   const navItems =
     user?.role === "admin"
@@ -210,6 +216,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     render={<Link href="/dashboard/record-sale" />}
                     className="bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground"
+                    onClick={closeMobile}
                   >
                     <PlusCircleIcon data-icon="inline-start" />
                     <span>Add Sale</span>
@@ -222,6 +229,7 @@ export function AppSidebar() {
                     render={<Link href="/dashboard/record-interest" />}
                     isActive={pathname === "/dashboard/record-interest"}
                     className="border border-border hover:bg-accent"
+                    onClick={closeMobile}
                   >
                     <HeartIcon data-icon="inline-start" />
                     <span>Record Interest</span>
@@ -240,6 +248,7 @@ export function AppSidebar() {
                   <SidebarMenuButton
                     render={<Link href={item.url} />}
                     isActive={pathname === item.url}
+                    onClick={closeMobile}
                   >
                     <item.icon data-icon="inline-start" />
                     <span>{item.title}</span>

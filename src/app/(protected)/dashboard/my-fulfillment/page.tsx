@@ -400,9 +400,9 @@ export default function MyFulfillmentPage() {
   return (
     <RoleGuard allowed={["agent", "sales"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
               Fulfillment
             </h1>
             <p className="text-muted-foreground">
@@ -410,7 +410,7 @@ export default function MyFulfillmentPage() {
               HQ.
             </p>
           </div>
-          <Button onClick={() => setRequestOpen(true)}>
+          <Button className="w-full sm:w-auto" onClick={() => setRequestOpen(true)}>
             <PlusIcon className="h-4 w-4 mr-2" />
             Request Stock
           </Button>

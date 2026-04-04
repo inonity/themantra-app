@@ -152,9 +152,9 @@ export default function StockPage() {
     <RoleGuard allowed={["admin"]}>
       <div className="space-y-8">
         {/* Header */}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
               Stock Management
             </h1>
             <p className="text-muted-foreground">
@@ -163,7 +163,7 @@ export default function StockPage() {
           </div>
           {products && (
             <TransferFormDialog products={products}>
-              <Button>
+              <Button className="w-full sm:w-auto">
                 <ArrowRightLeftIcon className="h-4 w-4 mr-2" />
                 Distribute Stock
               </Button>

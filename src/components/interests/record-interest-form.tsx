@@ -9,12 +9,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import {
-  Card,
-  CardContent,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
   Select,
   SelectContent,
@@ -110,10 +105,7 @@ export function RecordInterestForm() {
 
   return (
     <form onSubmit={handleSubmit}>
-      <Card className="max-w-3xl">
-        <CardHeader>
-          <CardTitle>Record Customer Interest</CardTitle>
-        </CardHeader>
+      <Card className="max-w-3xl mx-auto">
         <CardContent className="space-y-6">
           {/* Customer Details */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">

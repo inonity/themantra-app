@@ -35,10 +35,10 @@ export default function ProductDetailPage() {
               <ArrowLeftIcon className="h-4 w-4 mr-1" />
               Back to Products
             </Link>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <div className="flex items-center gap-3">
-                  <h1 className="text-3xl font-semibold tracking-tight">
+                <div className="flex flex-wrap items-center gap-2">
+                  <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
                     {product.name}
                   </h1>
                   <Badge variant="outline">{product.shortCode}</Badge>
@@ -61,7 +61,7 @@ export default function ProductDetailPage() {
                 </p>
               </div>
               <BatchFormDialog productId={productId}>
-                <Button>
+                <Button className="w-full sm:w-auto">
                   <PlusIcon className="h-4 w-4 mr-2" />
                   Add Batch
                 </Button>

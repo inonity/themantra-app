@@ -4,6 +4,8 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { RoleGuard } from "@/components/role-guard";
 import { InterestsTable } from "@/components/interests/interests-table";
+import { Button } from "@/components/ui/button";
+import { PlusIcon } from "lucide-react";
 import Link from "next/link";
 
 export default function InterestsPage() {
@@ -15,21 +17,19 @@ export default function InterestsPage() {
   return (
     <RoleGuard allowed={["agent", "sales"]}>
       <div className="space-y-6">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">
+            <h1 className="text-2xl sm:text-3xl font-semibold tracking-tight">
               Customer Interests
             </h1>
             <p className="text-muted-foreground">
               Track customer interest and convert to sales when ready.
             </p>
           </div>
-          <Link
-            href="/dashboard/record-interest"
-            className="inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-primary text-primary-foreground text-sm font-medium h-8 gap-1.5 px-2.5 hover:bg-primary/80 transition-all"
-          >
+          <Button render={<Link href="/dashboard/record-interest" />} className="w-full sm:w-auto">
+            <PlusIcon className="h-4 w-4 mr-2" />
             Record Interest
-          </Link>
+          </Button>
         </div>
 
         {isLoading ? (
