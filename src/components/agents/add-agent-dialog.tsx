@@ -16,6 +16,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { CheckIcon, CopyIcon } from "lucide-react";
 import { getErrorMessage } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 export function AddAgentDialog({
   children,
@@ -89,7 +90,7 @@ export function AddAgentDialog({
       <DialogContent>
         <DialogHeader>
           <DialogTitle>
-            {inviteLink ? "Invite Created" : role === "sales" ? "Add Sales Staff" : "Add Agent"}
+            {inviteLink ? "Invite Created" : "Add Agent"}
           </DialogTitle>
         </DialogHeader>
 
@@ -142,7 +143,7 @@ export function AddAgentDialog({
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="name">Full Name</Label>
+              <Label htmlFor="name">Name</Label>
               <Input
                 id="name"
                 value={name}
@@ -152,12 +153,11 @@ export function AddAgentDialog({
             </div>
             <div className="space-y-2">
               <Label htmlFor="phone">Phone Number (WhatsApp)</Label>
-              <Input
+              <PhoneInput
                 id="phone"
-                type="tel"
                 value={phone}
-                onChange={(e) => setPhone(e.target.value)}
-                placeholder="e.g. +60123456789"
+                onChange={setPhone}
+                placeholder="123456789"
                 required
               />
             </div>

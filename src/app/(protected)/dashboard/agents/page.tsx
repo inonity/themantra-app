@@ -16,6 +16,12 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs";
+import {
   CopyIcon,
   CheckIcon,
   PlusIcon,
@@ -125,155 +131,157 @@ export default function AgentsPage() {
 
   const isLoading = agents === undefined || invites === undefined || salesStaff === undefined;
 
+  const agentsCount = (agents?.length ?? 0) + (salesStaff?.length ?? 0);
+  const invitesCount = invites?.length ?? 0;
+
   return (
     <RoleGuard allowed={["admin"]}>
-      <div className="space-y-8">
+      <div className="space-y-6">
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-3xl font-semibold tracking-tight">Team</h1>
+            <h1 className="text-3xl font-semibold tracking-tight">Agents</h1>
             <p className="text-muted-foreground">
               Manage your agents, sales staff, and send invites.
             </p>
           </div>
-          <div className="flex gap-2">
-            <AddAgentDialog>
-              <Button>
-                <PlusIcon className="mr-2 h-4 w-4" />
-                Add Agent
-              </Button>
-            </AddAgentDialog>
-            <AddAgentDialog defaultRole="sales">
-              <Button variant="outline">
-                <PlusIcon className="mr-2 h-4 w-4" />
-                Add Sales Staff
-              </Button>
-            </AddAgentDialog>
-          </div>
+          <AddAgentDialog>
+            <Button>
+              <PlusIcon className="mr-2 h-4 w-4" />
+              Add Agent
+            </Button>
+          </AddAgentDialog>
         </div>
 
         {isLoading ? (
           <div className="text-muted-foreground">Loading...</div>
         ) : (
-          <>
-            {/* Active Agents */}
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">
-                Active Agents ({agents.length})
-              </h2>
-              {agents.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No agents yet. Add one using the button above.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead className="w-[100px]">Pricing</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {agents.map((agent) => {
-                      const profile = profileMap.get(agent._id);
-                      return (
-                        <TableRow key={agent._id}>
-                          <TableCell className="font-medium">
-                            {agent.nickname ?? agent.name ?? agent.email ?? "—"}
-                          </TableCell>
-                          <TableCell>{agent.email ?? "—"}</TableCell>
-                          <TableCell>{agent.phone ?? "—"}</TableCell>
-                          <TableCell>
-                            {profile?.rateId ? (
-                              <Badge variant="outline">
-                                {rateMap.get(profile.rateId) ?? "Unknown"}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <AgentPricingDialog
-                              agentId={agent._id}
-                              agentName={agent.nickname ?? agent.name ?? agent.email ?? "Agent"}
-                            >
-                              <Button variant="ghost" size="sm" title="Pricing">
-                                <DollarSignIcon className="h-4 w-4" />
-                              </Button>
-                            </AgentPricingDialog>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
+          <Tabs defaultValue="agents">
+            <TabsList>
+              <TabsTrigger value="agents">
+                Agents {agentsCount > 0 && <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">{agentsCount}</span>}
+              </TabsTrigger>
+              <TabsTrigger value="invitations">
+                Invitations {invitesCount > 0 && <span className="ml-1.5 rounded-full bg-muted px-1.5 py-0.5 text-xs">{invitesCount}</span>}
+              </TabsTrigger>
+            </TabsList>
 
-            {/* Sales Staff */}
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">
-                Sales Staff ({salesStaff.length})
-              </h2>
-              {salesStaff.length === 0 ? (
-                <p className="text-muted-foreground text-sm">
-                  No sales staff yet. Add one using the button above.
-                </p>
-              ) : (
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Name</TableHead>
-                      <TableHead>Email</TableHead>
-                      <TableHead>Phone</TableHead>
-                      <TableHead>Rate</TableHead>
-                      <TableHead className="w-[100px]">Pricing</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {salesStaff.map((staff) => {
-                      const profile = profileMap.get(staff._id);
-                      return (
-                        <TableRow key={staff._id}>
-                          <TableCell className="font-medium">
-                            {staff.nickname ?? staff.name ?? staff.email ?? "—"}
-                          </TableCell>
-                          <TableCell>{staff.email ?? "—"}</TableCell>
-                          <TableCell>{staff.phone ?? "—"}</TableCell>
-                          <TableCell>
-                            {profile?.rateId ? (
-                              <Badge variant="outline">
-                                {rateMap.get(profile.rateId) ?? "Unknown"}
-                              </Badge>
-                            ) : (
-                              <span className="text-muted-foreground text-sm">—</span>
-                            )}
-                          </TableCell>
-                          <TableCell>
-                            <AgentPricingDialog
-                              agentId={staff._id}
-                              agentName={staff.nickname ?? staff.name ?? staff.email ?? "Sales"}
-                            >
-                              <Button variant="ghost" size="sm" title="Pricing">
-                                <DollarSignIcon className="h-4 w-4" />
-                              </Button>
-                            </AgentPricingDialog>
-                          </TableCell>
-                        </TableRow>
-                      );
-                    })}
-                  </TableBody>
-                </Table>
-              )}
-            </div>
+            <TabsContent value="agents" className="space-y-8 mt-6">
+              {/* Active Agents */}
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold">
+                  Active Agents ({agents.length})
+                </h2>
+                {agents.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No agents yet. Add one using the button above.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Rate</TableHead>
+                        <TableHead className="w-[60px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {agents.map((agent) => {
+                        const profile = profileMap.get(agent._id);
+                        return (
+                          <TableRow key={agent._id}>
+                            <TableCell className="font-medium">
+                              {agent.nickname ?? agent.name ?? agent.email ?? "—"}
+                            </TableCell>
+                            <TableCell>{agent.email ?? "—"}</TableCell>
+                            <TableCell>{agent.phone ?? "—"}</TableCell>
+                            <TableCell>
+                              {profile?.rateId ? (
+                                <Badge variant="outline">
+                                  {rateMap.get(profile.rateId) ?? "Unknown"}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <AgentPricingDialog
+                                agentId={agent._id}
+                                agentName={agent.nickname ?? agent.name ?? agent.email ?? "Agent"}
+                              >
+                                <Button variant="ghost" size="sm" title="Rate">
+                                  <DollarSignIcon className="h-4 w-4" />
+                                </Button>
+                              </AgentPricingDialog>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
 
-            {/* Invitations */}
-            <div className="space-y-4">
-              <h2 className="text-xl font-semibold">
-                Invitations ({invites.length})
-              </h2>
+              {/* Sales Staff */}
+              <div className="space-y-4">
+                <h2 className="text-xl font-semibold">
+                  Sales Staff ({salesStaff.length})
+                </h2>
+                {salesStaff.length === 0 ? (
+                  <p className="text-muted-foreground text-sm">
+                    No sales staff yet. Add one using the button above.
+                  </p>
+                ) : (
+                  <Table>
+                    <TableHeader>
+                      <TableRow>
+                        <TableHead>Name</TableHead>
+                        <TableHead>Email</TableHead>
+                        <TableHead>Phone</TableHead>
+                        <TableHead>Rate</TableHead>
+                        <TableHead className="w-[60px]"></TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {salesStaff.map((staff) => {
+                        const profile = profileMap.get(staff._id);
+                        return (
+                          <TableRow key={staff._id}>
+                            <TableCell className="font-medium">
+                              {staff.nickname ?? staff.name ?? staff.email ?? "—"}
+                            </TableCell>
+                            <TableCell>{staff.email ?? "—"}</TableCell>
+                            <TableCell>{staff.phone ?? "—"}</TableCell>
+                            <TableCell>
+                              {profile?.rateId ? (
+                                <Badge variant="outline">
+                                  {rateMap.get(profile.rateId) ?? "Unknown"}
+                                </Badge>
+                              ) : (
+                                <span className="text-muted-foreground text-sm">—</span>
+                              )}
+                            </TableCell>
+                            <TableCell>
+                              <AgentPricingDialog
+                                agentId={staff._id}
+                                agentName={staff.nickname ?? staff.name ?? staff.email ?? "Sales"}
+                              >
+                                <Button variant="ghost" size="sm" title="Rate">
+                                  <DollarSignIcon className="h-4 w-4" />
+                                </Button>
+                              </AgentPricingDialog>
+                            </TableCell>
+                          </TableRow>
+                        );
+                      })}
+                    </TableBody>
+                  </Table>
+                )}
+              </div>
+            </TabsContent>
+
+            <TabsContent value="invitations" className="mt-6">
               {invites.length === 0 ? (
                 <p className="text-muted-foreground text-sm">
                   No invitations yet.
@@ -374,8 +382,8 @@ export default function AgentsPage() {
                   </TableBody>
                 </Table>
               )}
-            </div>
-          </>
+            </TabsContent>
+          </Tabs>
         )}
       </div>
     </RoleGuard>

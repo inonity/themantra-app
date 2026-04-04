@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/table";
 import { Separator } from "@/components/ui/separator";
 import { TrashIcon } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 interface InterestLineItem {
   productId: Id<"products">;
@@ -128,12 +129,10 @@ export function RecordInterestForm() {
             </div>
             <div className="space-y-2">
               <Label htmlFor="customerPhone">Phone (optional)</Label>
-              <Input
+              <PhoneInput
                 id="customerPhone"
-                type="tel"
                 value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="Phone number"
+                onChange={setCustomerPhone}
               />
             </div>
             <div className="space-y-2">

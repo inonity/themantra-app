@@ -51,6 +51,7 @@ import {
 import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, CreditCardIcon, CalendarIcon, TagIcon, PlusIcon, MinusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 type FulfillmentSource = "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
 
@@ -826,12 +827,10 @@ export function RecordSaleForm({
             </div>
             <div className="space-y-2">
               <Label htmlFor="customerPhone">Phone (optional)</Label>
-              <Input
+              <PhoneInput
                 id="customerPhone"
-                type="tel"
                 value={customerPhone}
-                onChange={(e) => setCustomerPhone(e.target.value)}
-                placeholder="Phone number"
+                onChange={setCustomerPhone}
               />
             </div>
             <div className="space-y-2">

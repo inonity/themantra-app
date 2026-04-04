@@ -109,7 +109,7 @@ export function AgentPricingDialog({
       <DialogTrigger render={children} />
       <DialogContent className="max-h-[90vh] overflow-y-auto max-w-lg">
         <DialogHeader>
-          <DialogTitle>Pricing — {agentName}</DialogTitle>
+          <DialogTitle>Rate — {agentName}</DialogTitle>
         </DialogHeader>
 
         <div className="space-y-6">
@@ -125,7 +125,9 @@ export function AgentPricingDialog({
               onValueChange={(v) => v && setSelectedRateId(v)}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select a rate..." />
+                <SelectValue placeholder="Select a rate...">
+                  {selectedRate ? selectedRate.name : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {rates.map((r) => (
@@ -160,7 +162,8 @@ export function AgentPricingDialog({
                         </TableCell>
                       </TableRow>
                     ))}
-                    {selectedRate.defaultRate && (
+                    {selectedRate.defaultRate &&
+                      !(selectedRate.defaultRate.rateType === "percentage" && selectedRate.defaultRate.rateValue === 1) && (
                       <TableRow>
                         <TableCell>
                           <span className="text-muted-foreground italic">
@@ -197,7 +200,9 @@ export function AgentPricingDialog({
               }
             >
               <SelectTrigger className="w-48">
-                <SelectValue placeholder="Select..." />
+                <SelectValue placeholder="Select...">
+                  {defaultStockModel ? STOCK_MODELS.find((m) => m.value === defaultStockModel)?.label : null}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {STOCK_MODELS.map((m) => (

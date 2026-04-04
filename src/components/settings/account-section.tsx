@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { UpdateEmailDialog } from "@/components/settings/update-email-dialog";
 import { UpdatePasswordDialog } from "@/components/settings/update-password-dialog";
 import { PencilIcon, CheckIcon, XIcon, MailIcon, ClockIcon } from "lucide-react";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 export function AccountSection({ user }: { user: Doc<"users"> }) {
   const updateProfile = useMutation(api.users.updateProfile);
@@ -189,19 +190,17 @@ export function AccountSection({ user }: { user: Doc<"users"> }) {
             <Label className="text-muted-foreground text-xs">Phone Number</Label>
             {editingPhone ? (
               <div className="flex items-center gap-2">
-                <Input
+                <PhoneInput
                   value={phoneValue}
-                  onChange={(e) => setPhoneValue(e.target.value)}
-                  className="h-8"
-                  autoFocus
+                  onChange={setPhoneValue}
                 />
-                <Button size="icon" variant="ghost" className="h-8 w-8" onClick={handleSavePhone}>
+                <Button size="icon" variant="ghost" className="h-8 w-8 shrink-0" onClick={handleSavePhone}>
                   <CheckIcon className="h-4 w-4" />
                 </Button>
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="h-8 w-8"
+                  className="h-8 w-8 shrink-0"
                   onClick={() => {
                     setEditingPhone(false);
                     setPhoneValue(user.phone ?? "");
