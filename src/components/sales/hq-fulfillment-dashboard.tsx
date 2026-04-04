@@ -3,8 +3,10 @@
 import { useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
-import { useState } from "react";
+import { Fragment, useState, useMemo } from "react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Card,
   CardContent,
@@ -19,13 +21,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { FacetedFilter } from "@/components/stock/faceted-filter";
+import { ChevronDownIcon, ChevronRightIcon, XIcon } from "lucide-react";
 
 type DashboardItem = {
   saleId: Id<"sales">;
@@ -68,7 +65,23 @@ type ProductGroup = {
 type AgentGroup = {
   sellerId: Id<"users">;
   sellerName: string;
+  totalNeeded: number;
   products: ProductGroup[];
+};
+
+const SOURCE_STYLES: Record<string, string> = {
+  hq_transfer: "text-orange-600 border-orange-300",
+  hq_direct: "text-blue-600 border-blue-300",
+  pending_batch: "text-yellow-600 border-yellow-300",
+  future_release: "text-purple-600 border-purple-300",
+};
+
+const SOURCE_LABELS: Record<string, string> = {
+  agent_stock: "Agent Stock",
+  hq_transfer: "Pending HQ Transfer",
+  hq_direct: "Fulfilled by HQ",
+  pending_batch: "No Batch",
+  future_release: "Future Release",
 };
 
 function buildAgentGroups(items: DashboardItem[]): AgentGroup[] {
@@ -82,6 +95,7 @@ function buildAgentGroups(items: DashboardItem[]): AgentGroup[] {
       agentMap.set(agentKey, {
         sellerId: item.sellerId,
         sellerName: item.sellerName,
+        totalNeeded: 0,
         products: [],
       });
     }
@@ -102,6 +116,7 @@ function buildAgentGroups(items: DashboardItem[]): AgentGroup[] {
 
     const remaining = item.quantity - item.fulfilledQuantity;
     productGroup.totalNeeded += remaining;
+    agent.totalNeeded += remaining;
     productGroup.sales.push({
       saleId: item.saleId,
       lineItemIndex: item.lineItemIndex,
@@ -124,21 +139,6 @@ function buildAgentGroups(items: DashboardItem[]): AgentGroup[] {
   }
   return groups;
 }
-
-const SOURCE_STYLES: Record<string, string> = {
-  hq_transfer: "text-orange-600 border-orange-300",
-  hq_direct: "text-blue-600 border-blue-300",
-  pending_batch: "text-yellow-600 border-yellow-300",
-  future_release: "text-purple-600 border-purple-300",
-};
-
-const SOURCE_LABELS: Record<string, string> = {
-  agent_stock: "Agent Stock",
-  hq_transfer: "Pending HQ Transfer",
-  hq_direct: "Fulfilled by HQ",
-  pending_batch: "No Batch",
-  future_release: "Future Release",
-};
 
 function SummaryCards({ items }: { items: DashboardItem[] }) {
   const ready = items.filter((i) => i.category === "ready").length;
@@ -192,138 +192,287 @@ function SummaryCards({ items }: { items: DashboardItem[] }) {
   );
 }
 
-function AgentProductSection({ agent }: { agent: AgentGroup }) {
-  return (
-    <Card>
-      <CardHeader className="pb-3">
-        <CardTitle className="text-base">{agent.sellerName}</CardTitle>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        {agent.products.map((product) => (
-          <div key={product.productId} className="space-y-2">
-            <div className="flex items-center gap-2">
-              <span className="font-medium text-sm">{product.productName}</span>
-              <Badge variant="outline" className="text-xs">
-                {product.totalNeeded} needed
-              </Badge>
-            </div>
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Customer</TableHead>
-                  <TableHead>Qty Needed</TableHead>
-                  <TableHead>Source</TableHead>
-                  <TableHead>Sale Date</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {product.sales.map((sale) => (
-                  <TableRow key={`${sale.saleId}-${sale.lineItemIndex}`}>
-                    <TableCell>{sale.customerName}</TableCell>
-                    <TableCell>
-                      {sale.quantity - sale.fulfilledQuantity}
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant="outline"
-                        className={
-                          SOURCE_STYLES[sale.fulfillmentSource] ?? ""
-                        }
-                      >
-                        {SOURCE_LABELS[sale.fulfillmentSource] ??
-                          sale.fulfillmentSource}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      {new Date(sale.saleDate).toLocaleDateString()}
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </div>
-        ))}
-      </CardContent>
-    </Card>
-  );
-}
-
 export function HqFulfillmentDashboard() {
   const dashboardItems = useQuery(api.sales.getPendingFulfillmentDashboard);
-  const [filterAgent, setFilterAgent] = useState<string>("all");
-  const [filterProduct, setFilterProduct] = useState<string>("all");
+
+  const [search, setSearch] = useState("");
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(
+    new Set()
+  );
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(
+    new Set()
+  );
+
+  const [expandedAgents, setExpandedAgents] = useState<Set<string>>(new Set());
+  const [expandedProducts, setExpandedProducts] = useState<Set<string>>(
+    new Set()
+  );
+
+  const agentOptions = useMemo(() => {
+    if (!dashboardItems) return [];
+    const seen = new Map<string, string>();
+    for (const item of dashboardItems) {
+      if (item.sellerId && !seen.has(item.sellerId)) {
+        seen.set(item.sellerId, item.sellerName);
+      }
+    }
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [dashboardItems]);
+
+  const productOptions = useMemo(() => {
+    if (!dashboardItems) return [];
+    const seen = new Map<string, string>();
+    for (const item of dashboardItems) {
+      if (!seen.has(item.productId)) {
+        seen.set(item.productId, item.productName);
+      }
+    }
+    return Array.from(seen.entries())
+      .map(([value, label]) => ({ value, label }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [dashboardItems]);
+
+  const sourceOptions = useMemo(() => {
+    if (!dashboardItems) return [];
+    const seen = new Set<string>();
+    for (const item of dashboardItems) {
+      seen.add(item.fulfillmentSource);
+    }
+    return Array.from(seen)
+      .map((value) => ({ value, label: SOURCE_LABELS[value] ?? value }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [dashboardItems]);
+
+  const hasActiveFilters =
+    search !== "" ||
+    selectedAgents.size > 0 ||
+    selectedProducts.size > 0 ||
+    selectedSources.size > 0;
+
+  function clearFilters() {
+    setSearch("");
+    setSelectedAgents(new Set());
+    setSelectedProducts(new Set());
+    setSelectedSources(new Set());
+  }
+
+  const filtered = useMemo(() => {
+    if (!dashboardItems) return [];
+    const term = search.toLowerCase();
+    return dashboardItems.filter((item) => {
+      if (
+        term &&
+        !item.sellerName.toLowerCase().includes(term) &&
+        !item.productName.toLowerCase().includes(term) &&
+        !item.customerName.toLowerCase().includes(term)
+      )
+        return false;
+      if (selectedAgents.size > 0 && (!item.sellerId || !selectedAgents.has(item.sellerId)))
+        return false;
+      if (selectedProducts.size > 0 && !selectedProducts.has(item.productId))
+        return false;
+      if (selectedSources.size > 0 && !selectedSources.has(item.fulfillmentSource))
+        return false;
+      return true;
+    });
+  }, [dashboardItems, search, selectedAgents, selectedProducts, selectedSources]);
+
+  const allGroups = useMemo(() => buildAgentGroups(filtered), [filtered]);
+
+  function toggleAgent(agentId: string) {
+    setExpandedAgents((prev) => {
+      const next = new Set(prev);
+      if (next.has(agentId)) next.delete(agentId);
+      else next.add(agentId);
+      return next;
+    });
+  }
+
+  function toggleProduct(key: string) {
+    setExpandedProducts((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
 
   if (dashboardItems === undefined) {
     return <div className="text-muted-foreground">Loading...</div>;
   }
 
-  const agents = [...new Set(dashboardItems.map((i) => i.sellerName))].sort();
-  const productNames = [
-    ...new Set(dashboardItems.map((i) => i.productName)),
-  ].sort();
-
-  const filtered = dashboardItems.filter((item) => {
-    if (filterAgent !== "all" && item.sellerName !== filterAgent) return false;
-    if (filterProduct !== "all" && item.productName !== filterProduct)
-      return false;
-    return true;
-  });
-
-  const allGroups = buildAgentGroups(filtered);
-
   return (
     <div className="space-y-6">
       <SummaryCards items={filtered} />
 
-      {/* Filters */}
-      <div className="flex gap-3">
-        <Select
-          value={filterAgent}
-          onValueChange={(v) => {
-            if (v) setFilterAgent(v);
-          }}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All Agents" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" label="All Agents">All Agents</SelectItem>
-            {agents.map((a) => (
-              <SelectItem key={a} value={a}>
-                {a}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-        <Select
-          value={filterProduct}
-          onValueChange={(v) => {
-            if (v) setFilterProduct(v);
-          }}
-        >
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="All Products" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all" label="All Products">All Products</SelectItem>
-            {productNames.map((p) => (
-              <SelectItem key={p} value={p}>
-                {p}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Toolbar */}
+      <div className="flex flex-1 flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search agents, products, customers..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-[200px] lg:w-[280px]"
+        />
+        <FacetedFilter
+          title="Agent"
+          options={agentOptions}
+          selected={selectedAgents}
+          onSelectionChange={setSelectedAgents}
+        />
+        <FacetedFilter
+          title="Product"
+          options={productOptions}
+          selected={selectedProducts}
+          onSelectionChange={setSelectedProducts}
+        />
+        <FacetedFilter
+          title="Source"
+          options={sourceOptions}
+          selected={selectedSources}
+          onSelectionChange={setSelectedSources}
+        />
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={clearFilters}
+            className="h-8"
+          >
+            Reset
+            <XIcon className="size-4" />
+          </Button>
+        )}
       </div>
 
-      {allGroups.length > 0 ? (
-        <div className="space-y-3">
-          {allGroups.map((agent) => (
-            <AgentProductSection key={agent.sellerId} agent={agent} />
-          ))}
+      {/* Table */}
+      {allGroups.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          {hasActiveFilters
+            ? "No fulfillment items match the current filters."
+            : "No pending fulfillment items."}
         </div>
       ) : (
-        <div className="text-center py-12 text-muted-foreground">
-          No pending fulfillment items.
+        <div className="rounded-md border">
+          <Table>
+            <TableHeader className="bg-muted/50">
+              <TableRow>
+                <TableHead className="w-[40px]" />
+                <TableHead>Agent / Product / Customer</TableHead>
+                <TableHead>Qty Needed</TableHead>
+                <TableHead>Source</TableHead>
+                <TableHead>Sale Date</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {allGroups.length === 0 && (
+                <TableRow>
+                  <TableCell
+                    colSpan={5}
+                    className="text-center py-12 text-muted-foreground"
+                  >
+                    No pending fulfillment items.
+                  </TableCell>
+                </TableRow>
+              )}
+              {allGroups.map((agent) => {
+                const isAgentExpanded = expandedAgents.has(agent.sellerId);
+                return (
+                  <Fragment key={agent.sellerId}>
+                    {/* Agent row */}
+                    <TableRow
+                      className="cursor-pointer hover:bg-muted/50"
+                      onClick={() => toggleAgent(agent.sellerId)}
+                    >
+                      <TableCell className="w-[40px]">
+                        {isAgentExpanded ? (
+                          <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                        ) : (
+                          <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </TableCell>
+                      <TableCell className="font-semibold">
+                        {agent.sellerName}
+                      </TableCell>
+                      <TableCell className="font-semibold">
+                        {agent.totalNeeded}
+                      </TableCell>
+                      <TableCell />
+                      <TableCell />
+                    </TableRow>
+
+                    {isAgentExpanded &&
+                      agent.products.map((product) => {
+                        const productKey = `${agent.sellerId}_${product.productId}`;
+                        const isProductExpanded =
+                          expandedProducts.has(productKey);
+                        return (
+                          <Fragment key={product.productId}>
+                            {/* Product row */}
+                            <TableRow
+                              className="bg-muted/30 cursor-pointer hover:bg-muted/50"
+                              onClick={() => toggleProduct(productKey)}
+                            >
+                              <TableCell className="pl-6">
+                                {isProductExpanded ? (
+                                  <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                ) : (
+                                  <ChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                )}
+                              </TableCell>
+                              <TableCell className="pl-8 text-sm font-medium">
+                                {product.productName}
+                              </TableCell>
+                              <TableCell className="text-sm font-semibold">
+                                {product.totalNeeded}
+                              </TableCell>
+                              <TableCell />
+                              <TableCell />
+                            </TableRow>
+
+                            {isProductExpanded &&
+                              product.sales.map((sale) => (
+                                <TableRow
+                                  key={`${sale.saleId}-${sale.lineItemIndex}`}
+                                  className="bg-muted/15"
+                                >
+                                  <TableCell />
+                                  <TableCell className="pl-14 text-sm text-muted-foreground">
+                                    {sale.customerName}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    {sale.quantity - sale.fulfilledQuantity}
+                                  </TableCell>
+                                  <TableCell>
+                                    <Badge
+                                      variant="outline"
+                                      className={
+                                        SOURCE_STYLES[
+                                          sale.fulfillmentSource
+                                        ] ?? ""
+                                      }
+                                    >
+                                      {SOURCE_LABELS[sale.fulfillmentSource] ??
+                                        sale.fulfillmentSource}
+                                    </Badge>
+                                  </TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">
+                                    {new Date(
+                                      sale.saleDate
+                                    ).toLocaleDateString()}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                          </Fragment>
+                        );
+                      })}
+                  </Fragment>
+                );
+              })}
+            </TableBody>
+          </Table>
         </div>
       )}
     </div>
