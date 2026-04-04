@@ -25,24 +25,31 @@ import { PlusIcon, MoreHorizontalIcon, ChevronDownIcon } from "lucide-react";
 import Link from "next/link";
 import { BatchFormDialog } from "@/components/batches/batch-form-dialog";
 import { StockAdjustmentDialog } from "@/components/batches/stock-adjustment-dialog";
+import { ReleaseUnitsDialog } from "@/components/batches/release-units-dialog";
 import { useState } from "react";
 import { toast } from "sonner";
 
-type BatchStatus = "upcoming" | "available" | "depleted" | "cancelled";
+type BatchStatus = "upcoming" | "partial" | "available" | "depleted" | "cancelled";
 
 const statusVariant: Record<string, "default" | "secondary" | "destructive" | "outline"> = {
   upcoming: "secondary",
+  partial: "secondary",
   available: "default",
   depleted: "destructive",
   cancelled: "outline",
 };
 
-function capitalize(s: string) {
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
+const statusLabel: Record<string, string> = {
+  upcoming: "Upcoming",
+  partial: "Partial",
+  available: "Available",
+  depleted: "Depleted",
+  cancelled: "Cancelled",
+};
 
 const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
   upcoming: ["available", "cancelled"],
+  partial: ["available", "cancelled"],
   available: ["depleted", "cancelled"],
   depleted: ["cancelled"],
   cancelled: [],
@@ -55,6 +62,7 @@ export default function BatchesPage() {
 
   const [editingBatch, setEditingBatch] = useState<Doc<"batches"> | null>(null);
   const [adjustingBatch, setAdjustingBatch] = useState<Doc<"batches"> | null>(null);
+  const [releasingBatch, setReleasingBatch] = useState<Doc<"batches"> | null>(null);
 
   const productMap = new Map(
     (products ?? []).map((p) => [p._id, p])
@@ -62,14 +70,18 @@ export default function BatchesPage() {
 
   const isLoading = batches === undefined || products === undefined;
 
-  async function handleStatusChange(batchId: Doc<"batches">["_id"], newStatus: BatchStatus) {
-    try {
-      await updateStatus({ id: batchId, status: newStatus });
-      toast.success(`Status changed to ${capitalize(newStatus)}`);
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : "Failed to update status";
-      toast.error(message);
+  function handleStatusChange(batch: Doc<"batches">, newStatus: BatchStatus) {
+    // upcoming/partial → available always goes through the release dialog
+    if ((batch.status === "upcoming" || batch.status === "partial") && newStatus === "available") {
+      setReleasingBatch(batch);
+      return;
     }
+    updateStatus({ id: batch._id, status: newStatus })
+      .then(() => toast.success(`Status changed to ${statusLabel[newStatus]}`))
+      .catch((err: unknown) => {
+        const message = err instanceof Error ? err.message : "Failed to update status";
+        toast.error(message);
+      });
   }
 
   return (
@@ -108,13 +120,15 @@ export default function BatchesPage() {
                 <TableHead>Expected Maturation</TableHead>
                 <TableHead>Quantity</TableHead>
                 <TableHead>Status</TableHead>
-<TableHead className="w-[50px]" />
+                <TableHead className="w-[50px]" />
               </TableRow>
             </TableHeader>
             <TableBody>
               {batches.map((batch) => {
                 const product = productMap.get(batch.productId);
                 const allowedNext = ALLOWED_TRANSITIONS[batch.status as BatchStatus] ?? [];
+                const isPartial = batch.status === "partial";
+                const released = batch.releasedQuantity ?? 0;
                 return (
                   <TableRow key={batch._id}>
                     <TableCell className="font-medium">
@@ -128,7 +142,13 @@ export default function BatchesPage() {
                     <TableCell>{batch.batchCode}</TableCell>
                     <TableCell>{batch.manufacturedDate}</TableCell>
                     <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>
-                    <TableCell>{batch.totalQuantity}</TableCell>
+                    <TableCell>
+                      {isPartial ? (
+                        <span>{released} / {batch.totalQuantity}</span>
+                      ) : (
+                        batch.totalQuantity
+                      )}
+                    </TableCell>
                     <TableCell>
                       {allowedNext.length > 0 ? (
                         <DropdownMenu>
@@ -137,7 +157,7 @@ export default function BatchesPage() {
                               variant={statusVariant[batch.status]}
                               className="cursor-pointer gap-1"
                             >
-                              {capitalize(batch.status)}
+                              {statusLabel[batch.status] ?? batch.status}
                               <ChevronDownIcon className="h-3 w-3" />
                             </Badge>
                           </DropdownMenuTrigger>
@@ -145,10 +165,10 @@ export default function BatchesPage() {
                             {allowedNext.map((s) => (
                               <DropdownMenuItem
                                 key={s}
-                                onClick={() => handleStatusChange(batch._id, s)}
+                                onClick={() => handleStatusChange(batch, s)}
                               >
                                 <Badge variant={statusVariant[s]} className="mr-2">
-                                  {capitalize(s)}
+                                  {statusLabel[s]}
                                 </Badge>
                               </DropdownMenuItem>
                             ))}
@@ -156,7 +176,7 @@ export default function BatchesPage() {
                         </DropdownMenu>
                       ) : (
                         <Badge variant={statusVariant[batch.status]}>
-                          {capitalize(batch.status)}
+                          {statusLabel[batch.status] ?? batch.status}
                         </Badge>
                       )}
                     </TableCell>
@@ -169,9 +189,14 @@ export default function BatchesPage() {
                           <DropdownMenuItem onClick={() => setEditingBatch(batch)}>
                             Edit
                           </DropdownMenuItem>
-                          {batch.status === "available" && (
+                          {(batch.status === "available" || batch.status === "partial") && (
                             <DropdownMenuItem onClick={() => setAdjustingBatch(batch)}>
                               Adjust Stock
+                            </DropdownMenuItem>
+                          )}
+                          {batch.status === "partial" && (
+                            <DropdownMenuItem onClick={() => setReleasingBatch(batch)}>
+                              Release More
                             </DropdownMenuItem>
                           )}
                         </DropdownMenuContent>
@@ -200,6 +225,17 @@ export default function BatchesPage() {
             open={!!adjustingBatch}
             onOpenChange={(open) => {
               if (!open) setAdjustingBatch(null);
+            }}
+          />
+        )}
+
+        {/* Release units dialog */}
+        {releasingBatch && (
+          <ReleaseUnitsDialog
+            batch={releasingBatch}
+            open={!!releasingBatch}
+            onOpenChange={(open) => {
+              if (!open) setReleasingBatch(null);
             }}
           />
         )}

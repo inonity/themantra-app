@@ -55,10 +55,14 @@ export default defineSchema({
     totalQuantity: v.number(),
     status: v.union(
       v.literal("upcoming"),
+      v.literal("partial"),   // some units released, batch still maturing
       v.literal("available"),
       v.literal("depleted"),
       v.literal("cancelled")
     ),
+    // How many units have been released to business inventory so far.
+    // Only meaningful for partial/available batches; absent = 0 for upcoming.
+    releasedQuantity: v.optional(v.number()),
     notes: v.optional(v.string()),
     originSource: v.optional(v.string()), // deprecated, kept optional for existing data
     updatedAt: v.optional(v.number()),

@@ -612,7 +612,7 @@ export const recordB2BPurchase = mutation({
     for (const item of args.items) {
       const batch = await ctx.db.get(item.batchId);
       if (!batch) throw new Error("Batch not found");
-      if (batch.status !== "available") throw new Error("Batch is not available");
+      if (batch.status !== "available" && batch.status !== "partial") throw new Error("Batch is not available");
 
       const resolved = await resolveAgentPrice(
         ctx,
@@ -1886,7 +1886,7 @@ export const getPendingFulfillmentDashboard = query({
       const enriched: { batchId: Id<"batches">; batchCode: string; quantity: number }[] = [];
       for (const rec of bizRecords) {
         const batch = await ctx.db.get(rec.batchId);
-        if (batch && batch.status === "available") {
+        if (batch && (batch.status === "available" || batch.status === "partial")) {
           enriched.push({ batchId: rec.batchId, batchCode: batch.batchCode, quantity: rec.quantity });
         }
       }
@@ -1993,7 +1993,7 @@ export const getAvailableStockForPending = query({
       for (const inv of bizInventory) {
         if (inv.quantity <= 0) continue;
         const batch = await ctx.db.get(inv.batchId);
-        if (!batch || batch.status !== "available") continue;
+        if (!batch || (batch.status !== "available" && batch.status !== "partial")) continue;
         batches.push({
           batchId: inv.batchId,
           batchCode: batch.batchCode,
@@ -2013,7 +2013,7 @@ export const getAvailableStockForPending = query({
         for (const inv of agentInv) {
           if (inv.productId !== li.productId || inv.quantity <= 0) continue;
           const batch = await ctx.db.get(inv.batchId);
-          if (!batch || batch.status !== "available") continue;
+          if (!batch || (batch.status !== "available" && batch.status !== "partial")) continue;
           // Avoid duplicates
           if (!batches.some((b) => b.batchId === inv.batchId && b.holder === "Agent")) {
             batches.push({

@@ -67,7 +67,7 @@ export function BatchFormDialog({
     batch ? String(batch.totalQuantity) : ""
   );
   const [status, setStatus] = useState<
-    "upcoming" | "available" | "depleted" | "cancelled"
+    "upcoming" | "partial" | "available" | "depleted" | "cancelled"
   >(batch?.status ?? "upcoming");
   const [notes, setNotes] = useState(batch?.notes ?? "");
   const [error, setError] = useState("");
@@ -243,13 +243,17 @@ export function BatchFormDialog({
           <Input
             id="totalQuantity"
             type="number"
-            min="1"
+            min={isEdit && batch?.status === "partial" ? (batch.releasedQuantity ?? 1) : 1}
             value={totalQuantity}
             onChange={(e) => setTotalQuantity(e.target.value)}
             required
-            disabled={isEdit && batch?.status !== "upcoming"}
+            disabled={isEdit && batch?.status !== "upcoming" && batch?.status !== "partial"}
           />
-          {isEdit && batch?.status !== "upcoming" ? (
+          {isEdit && batch?.status === "partial" ? (
+            <p className="text-xs text-muted-foreground">
+              {batch.releasedQuantity ?? 0} units already released — total cannot go below this.
+            </p>
+          ) : isEdit && batch?.status !== "upcoming" ? (
             <p className="text-xs text-muted-foreground">
               Quantity is locked for active batches. Use <span className="font-medium">Adjust Stock</span> from the batch actions to add or deduct.
             </p>
@@ -263,38 +267,51 @@ export function BatchFormDialog({
         </div>
         <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
-          <Select
-            value={status}
-            onValueChange={(v) =>
-              setStatus(v as "upcoming" | "available" | "depleted" | "cancelled")
-            }
-          >
-            <SelectTrigger>
-              <SelectValue>
-                {status.charAt(0).toUpperCase() + status.slice(1)}
-              </SelectValue>
-            </SelectTrigger>
-            <SelectContent>
-              {!isEdit ? (
-                <>
-                  <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
-                  <SelectItem value="available" label="Available">Available</SelectItem>
-                </>
-              ) : (
-                <>
-                  <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
-                  <SelectItem value="available" label="Available">Available</SelectItem>
-                  <SelectItem value="depleted" label="Depleted">Depleted</SelectItem>
-                  <SelectItem value="cancelled" label="Cancelled">Cancelled</SelectItem>
-                </>
+          {isEdit && batch?.status === "partial" ? (
+            <>
+              <div className="flex h-9 items-center rounded-md border bg-muted px-3 text-sm text-muted-foreground">
+                Partial
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Status is managed via <span className="font-medium">Release More</span> or the status dropdown in the batch table.
+              </p>
+            </>
+          ) : (
+            <>
+              <Select
+                value={status}
+                onValueChange={(v) =>
+                  setStatus(v as "upcoming" | "available" | "depleted" | "cancelled")
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {status.charAt(0).toUpperCase() + status.slice(1)}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {!isEdit ? (
+                    <>
+                      <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
+                      <SelectItem value="available" label="Available">Available</SelectItem>
+                    </>
+                  ) : (
+                    <>
+                      <SelectItem value="upcoming" label="Upcoming">Upcoming</SelectItem>
+                      <SelectItem value="available" label="Available">Available</SelectItem>
+                      <SelectItem value="depleted" label="Depleted">Depleted</SelectItem>
+                      <SelectItem value="cancelled" label="Cancelled">Cancelled</SelectItem>
+                    </>
+                  )}
+                </SelectContent>
+              </Select>
+              {!isEdit && (
+                <p className="text-xs text-muted-foreground">
+                  <span className="font-medium">Upcoming</span> = expected stock for a batch still under production.{" "}
+                  <span className="font-medium">Available</span> = confirmed stock after filling into bottles — adds to HQ inventory immediately.
+                </p>
               )}
-            </SelectContent>
-          </Select>
-          {!isEdit && (
-            <p className="text-xs text-muted-foreground">
-              <span className="font-medium">Upcoming</span> = expected stock for a batch still under production.{" "}
-              <span className="font-medium">Available</span> = confirmed stock after filling into bottles — adds to HQ inventory immediately.
-            </p>
+            </>
           )}
         </div>
 

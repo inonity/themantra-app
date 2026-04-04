@@ -93,7 +93,7 @@ export function TransferFormDialog({
   const availableBatchesByProduct = useMemo(() => {
     const map = new Map<string, Doc<"batches">[]>();
     for (const b of allBatches ?? []) {
-      if (b.status !== "available") continue;
+      if (b.status !== "available" && b.status !== "partial") continue;
       const list = map.get(b.productId) ?? [];
       list.push(b);
       map.set(b.productId, list);

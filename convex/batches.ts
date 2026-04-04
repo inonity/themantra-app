@@ -4,19 +4,22 @@ import { requireRole } from "./helpers/auth";
 
 const batchStatusValidator = v.union(
   v.literal("upcoming"),
+  v.literal("partial"),
   v.literal("available"),
   v.literal("depleted"),
   v.literal("cancelled")
 );
 
-type BatchStatus = "upcoming" | "available" | "depleted" | "cancelled";
+type BatchStatus = "upcoming" | "partial" | "available" | "depleted" | "cancelled";
 
-// Allowed status transitions
+// Allowed status transitions (used by updateStatus and update mutations)
+// Note: upcoming→partial is handled internally by releaseUnits, not via direct transition
 const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
   upcoming: ["available", "cancelled"],
+  partial: ["available", "cancelled"],
   available: ["depleted", "cancelled"],
   depleted: ["cancelled"],
-  cancelled: [], // terminal state
+  cancelled: [],
 };
 
 function validateTransition(from: BatchStatus, to: BatchStatus): string | null {
@@ -180,8 +183,21 @@ export const update = mutation({
       throw new Error(`Batch code "${args.batchCode}" is already in use`);
     }
 
-    // Block quantity edits on non-upcoming batches
-    if (batch.status !== "upcoming" && args.totalQuantity !== batch.totalQuantity) {
+    // Quantity edit rules:
+    // - upcoming: freely editable
+    // - partial: editable but must be >= already-released amount
+    // - available/depleted/cancelled: locked (use Adjust Stock for available)
+    if (batch.status === "partial") {
+      const released = batch.releasedQuantity ?? 0;
+      if (args.totalQuantity < released) {
+        throw new Error(
+          `Cannot set quantity below ${released} — that many units have already been released.`
+        );
+      }
+    } else if (
+      batch.status !== "upcoming" &&
+      args.totalQuantity !== batch.totalQuantity
+    ) {
       throw new Error(
         "Cannot edit quantity for an active batch. Use stock adjustment instead."
       );
@@ -200,10 +216,40 @@ export const update = mutation({
     }
 
     const { id, ...fields } = args;
+
+    // partial→available: release any remaining units to business inventory
+    if (previousStatus === "partial" && args.status === "available") {
+      const alreadyReleased = batch.releasedQuantity ?? 0;
+      const remaining = args.totalQuantity - alreadyReleased;
+      if (remaining > 0) {
+        const existingInventory = await ctx.db
+          .query("inventory")
+          .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+            q.eq("batchId", id).eq("heldByType", "business")
+          )
+          .take(1);
+        if (existingInventory.length > 0) {
+          await ctx.db.patch(existingInventory[0]._id, {
+            quantity: existingInventory[0].quantity + remaining,
+            updatedAt: Date.now(),
+          });
+        } else {
+          await ctx.db.insert("inventory", {
+            batchId: id,
+            productId: batch.productId,
+            heldByType: "business",
+            quantity: remaining,
+          });
+        }
+      }
+      await ctx.db.patch(id, { ...fields, releasedQuantity: args.totalQuantity, updatedAt: Date.now() });
+      return;
+    }
+
     await ctx.db.patch(id, { ...fields, updatedAt: Date.now() });
 
-    // If transitioning to available, create business inventory (only if none exists)
-    if (previousStatus !== "available" && args.status === "available") {
+    // upcoming→available: create full business inventory (only if none exists)
+    if (previousStatus === "upcoming" && args.status === "available") {
       const existingInventory = await ctx.db
         .query("inventory")
         .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
@@ -246,19 +292,53 @@ export const updateStatus = mutation({
     // Handle cancellation: clean up business inventory
     if (args.status === "cancelled") {
       await handleCancellation(ctx, args.id);
+      await ctx.db.patch(args.id, { status: args.status, updatedAt: Date.now() });
+      return;
+    }
+
+    // partial→available: release remaining units to business inventory
+    if (previousStatus === "partial" && args.status === "available") {
+      const alreadyReleased = batch.releasedQuantity ?? 0;
+      const remaining = batch.totalQuantity - alreadyReleased;
+      if (remaining > 0) {
+        const existingInventory = await ctx.db
+          .query("inventory")
+          .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+            q.eq("batchId", args.id).eq("heldByType", "business")
+          )
+          .take(1);
+        if (existingInventory.length > 0) {
+          await ctx.db.patch(existingInventory[0]._id, {
+            quantity: existingInventory[0].quantity + remaining,
+            updatedAt: Date.now(),
+          });
+        } else {
+          await ctx.db.insert("inventory", {
+            batchId: args.id,
+            productId: batch.productId,
+            heldByType: "business",
+            quantity: remaining,
+          });
+        }
+      }
+      await ctx.db.patch(args.id, {
+        status: "available",
+        releasedQuantity: batch.totalQuantity,
+        updatedAt: Date.now(),
+      });
+      return;
     }
 
     await ctx.db.patch(args.id, { status: args.status, updatedAt: Date.now() });
 
-    // If transitioning to available, create business inventory (only if none exists)
-    if (args.status === "available") {
+    // upcoming→available: create full business inventory
+    if (previousStatus === "upcoming" && args.status === "available") {
       const existingInventory = await ctx.db
         .query("inventory")
         .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
           q.eq("batchId", args.id).eq("heldByType", "business")
         )
         .take(1);
-
       if (existingInventory.length === 0) {
         await ctx.db.insert("inventory", {
           batchId: args.id,
@@ -268,6 +348,67 @@ export const updateStatus = mutation({
         });
       }
     }
+  },
+});
+
+// Release a specific number of units from an upcoming or partial batch.
+// Sets status to "partial" if not all units released, "available" if all released.
+export const releaseUnits = mutation({
+  args: {
+    id: v.id("batches"),
+    quantity: v.number(),
+  },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, "admin");
+
+    if (args.quantity <= 0) throw new Error("Quantity must be positive.");
+
+    const batch = await ctx.db.get(args.id);
+    if (!batch) throw new Error("Batch not found");
+
+    if (batch.status !== "upcoming" && batch.status !== "partial") {
+      throw new Error("Can only release units from upcoming or partial batches.");
+    }
+
+    const alreadyReleased = batch.releasedQuantity ?? 0;
+    const remaining = batch.totalQuantity - alreadyReleased;
+
+    if (args.quantity > remaining) {
+      throw new Error(
+        `Cannot release ${args.quantity} — only ${remaining} unit${remaining !== 1 ? "s" : ""} remaining.`
+      );
+    }
+
+    const newReleased = alreadyReleased + args.quantity;
+    const newStatus: BatchStatus = newReleased >= batch.totalQuantity ? "available" : "partial";
+
+    // Update or create business inventory
+    const existingInventory = await ctx.db
+      .query("inventory")
+      .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+        q.eq("batchId", args.id).eq("heldByType", "business")
+      )
+      .take(1);
+
+    if (existingInventory.length > 0) {
+      await ctx.db.patch(existingInventory[0]._id, {
+        quantity: existingInventory[0].quantity + args.quantity,
+        updatedAt: Date.now(),
+      });
+    } else {
+      await ctx.db.insert("inventory", {
+        batchId: args.id,
+        productId: batch.productId,
+        heldByType: "business",
+        quantity: args.quantity,
+      });
+    }
+
+    await ctx.db.patch(args.id, {
+      releasedQuantity: newReleased,
+      status: newStatus,
+      updatedAt: Date.now(),
+    });
   },
 });
 
@@ -289,9 +430,9 @@ export const adjustStock = mutation({
       throw new Error("Batch not found");
     }
 
-    if (batch.status !== "available") {
+    if (batch.status !== "available" && batch.status !== "partial") {
       throw new Error(
-        "Stock adjustments can only be made on available (active) batches."
+        "Stock adjustments can only be made on available or partial batches."
       );
     }
 
