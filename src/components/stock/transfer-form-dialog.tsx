@@ -199,10 +199,11 @@ export function TransferFormDialog({
       }}
     >
       <DialogTrigger render={children} />
-      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto overflow-x-hidden">
+      <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Distribute Stock</DialogTitle>
         </DialogHeader>
+        <div className="max-h-[75vh] overflow-y-auto overflow-x-hidden -mx-4 px-4">
         <form onSubmit={handleSubmit} className="space-y-5">
           {/* Recipient */}
           <div className="space-y-2">
@@ -317,7 +318,7 @@ export function TransferFormDialog({
           {/* Products table */}
           <div className="space-y-2">
             <Label>Products</Label>
-            <div className="rounded-md border overflow-x-auto">
+            <div className="w-full rounded-md border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -500,6 +501,7 @@ export function TransferFormDialog({
             </Button>
           </div>
         </form>
+        </div>
       </DialogContent>
     </Dialog>
   );
