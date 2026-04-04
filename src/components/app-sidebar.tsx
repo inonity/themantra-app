@@ -75,7 +75,7 @@ const adminNav = [
   },
   {
     title: "Rates",
-    url: "/dashboard/pricing",
+    url: "/dashboard/rates",
     icon: PercentIcon,
   },
   {

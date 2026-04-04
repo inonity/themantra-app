@@ -161,9 +161,22 @@ function RateForm({
         )}
         {rows.map((row, idx) => (
           <div key={idx} className="flex items-center gap-2">
-            <Badge variant="outline" className="shrink-0">
-              {row.collection}
-            </Badge>
+            <Select
+              value={row.collection}
+              onValueChange={(v) => v && updateRow(idx, { collection: v })}
+            >
+              <SelectTrigger className="w-[140px]">
+                <SelectValue>{row.collection}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value={row.collection}>{row.collection}</SelectItem>
+                {(collections?.filter((c) => !usedCollections.has(c) || c === row.collection) ?? [])
+                  .filter((c) => c !== row.collection)
+                  .map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+              </SelectContent>
+            </Select>
             <Select
               value={row.rateType}
               onValueChange={(v) =>
@@ -171,11 +184,13 @@ function RateForm({
               }
             >
               <SelectTrigger className="w-[130px]">
-                <SelectValue />
+                <SelectValue>
+                  {row.rateType === "percentage" ? "Percentage" : "Fixed (RM)"}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="percentage">%</SelectItem>
-                <SelectItem value="fixed">RM fixed</SelectItem>
+                <SelectItem value="percentage">Percentage</SelectItem>
+                <SelectItem value="fixed">Fixed (RM)</SelectItem>
               </SelectContent>
             </Select>
             <Input
