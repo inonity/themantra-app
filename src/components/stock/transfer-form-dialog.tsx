@@ -27,6 +27,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "@/components/ui/table";
 import { PlusIcon, Trash2Icon } from "lucide-react";
 
 const stockModelLabels: Record<string, string> = {
@@ -35,16 +43,11 @@ const stockModelLabels: Record<string, string> = {
   presell: "Pre-sell",
 };
 
-type BatchLine = {
-  id: string;
-  batchId: string;
-  quantity: string;
-};
-
-type ProductBlock = {
+type TransferRow = {
   id: string;
   productId: string;
-  batches: BatchLine[];
+  batchId: string;
+  quantity: string;
 };
 
 function getTodayMYT(): string {
@@ -55,12 +58,8 @@ function genId() {
   return Math.random().toString(36).slice(2, 9);
 }
 
-function emptyBatchLine(): BatchLine {
-  return { id: genId(), batchId: "", quantity: "" };
-}
-
-function emptyProductBlock(): ProductBlock {
-  return { id: genId(), productId: "", batches: [emptyBatchLine()] };
+function emptyRow(): TransferRow {
+  return { id: genId(), productId: "", batchId: "", quantity: "" };
 }
 
 export function TransferFormDialog({
@@ -84,7 +83,7 @@ export function TransferFormDialog({
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [distributionDate, setDistributionDate] = useState(getTodayMYT());
-  const [blocks, setBlocks] = useState<ProductBlock[]>([emptyProductBlock()]);
+  const [rows, setRows] = useState<TransferRow[]>([emptyRow()]);
 
   const agents = (sellers ?? []).filter((s) => s.role === "agent");
   const salesStaff = (sellers ?? []).filter((s) => s.role === "sales");
@@ -115,7 +114,6 @@ export function TransferFormDialog({
     [allBatches]
   );
 
-  // Total business stock per product (only available batches with stock)
   const productTotalStock = useMemo(() => {
     const map = new Map<string, number>();
     for (const [productId, batches] of availableBatchesByProduct) {
@@ -128,17 +126,11 @@ export function TransferFormDialog({
     return map;
   }, [availableBatchesByProduct, businessStockByBatch]);
 
-  // Track used productIds and batchIds
-  const usedProductIds = useMemo(
-    () => new Set(blocks.filter((b) => b.productId).map((b) => b.productId)),
-    [blocks]
+  // All batch IDs already selected across all rows (to prevent duplicates)
+  const usedBatchIds = useMemo(
+    () => new Set(rows.filter((r) => r.batchId).map((r) => r.batchId)),
+    [rows]
   );
-
-  function usedBatchIdsForBlock(blockId: string) {
-    const block = blocks.find((b) => b.id === blockId);
-    if (!block) return new Set<string>();
-    return new Set(block.batches.filter((bl) => bl.batchId).map((bl) => bl.batchId));
-  }
 
   function resetForm() {
     setAgentId("");
@@ -146,88 +138,25 @@ export function TransferFormDialog({
     setNotes("");
     setDistributionDate(getTodayMYT());
     setError("");
-    setBlocks([emptyProductBlock()]);
+    setRows([emptyRow()]);
   }
 
-  // Product block operations
-  function setProductId(blockId: string, productId: string) {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.id === blockId
-          ? { ...b, productId, batches: [emptyBatchLine()] }
-          : b
-      )
+  function updateRow(id: string, patch: Partial<TransferRow>) {
+    setRows((prev) =>
+      prev.map((r) => (r.id === id ? { ...r, ...patch } : r))
     );
   }
 
-  function removeBlock(blockId: string) {
-    setBlocks((prev) => prev.filter((b) => b.id !== blockId));
+  function removeRow(id: string) {
+    setRows((prev) => prev.filter((r) => r.id !== id));
   }
 
-  function addBlock() {
-    setBlocks((prev) => [...prev, emptyProductBlock()]);
-  }
-
-  // Batch line operations
-  function setBatchId(blockId: string, lineId: string, batchId: string) {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.id === blockId
-          ? {
-              ...b,
-              batches: b.batches.map((bl) =>
-                bl.id === lineId ? { ...bl, batchId, quantity: "" } : bl
-              ),
-            }
-          : b
-      )
-    );
-  }
-
-  function setQuantity(blockId: string, lineId: string, quantity: string) {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.id === blockId
-          ? {
-              ...b,
-              batches: b.batches.map((bl) =>
-                bl.id === lineId ? { ...bl, quantity } : bl
-              ),
-            }
-          : b
-      )
-    );
-  }
-
-  function addBatchLine(blockId: string) {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.id === blockId
-          ? { ...b, batches: [...b.batches, emptyBatchLine()] }
-          : b
-      )
-    );
-  }
-
-  function removeBatchLine(blockId: string, lineId: string) {
-    setBlocks((prev) =>
-      prev.map((b) =>
-        b.id === blockId
-          ? { ...b, batches: b.batches.filter((bl) => bl.id !== lineId) }
-          : b
-      )
-    );
-  }
-
-  // Flatten blocks into items for submission
-  const allItems = blocks.flatMap((block) =>
-    block.batches
-      .filter((bl) => bl.batchId && bl.quantity)
-      .map((bl) => ({
-        batchId: bl.batchId as Id<"batches">,
-        quantity: parseInt(bl.quantity),
-      }))
-  );
+  const allItems = rows
+    .filter((r) => r.batchId && r.quantity)
+    .map((r) => ({
+      batchId: r.batchId as Id<"batches">,
+      quantity: parseInt(r.quantity),
+    }));
 
   const canSubmit =
     agentId &&
@@ -243,11 +172,8 @@ export function TransferFormDialog({
     e.preventDefault();
     setError("");
     setSubmitting(true);
-
     try {
-      // Parse date as noon MYT to avoid timezone date-shift issues
       const movedAt = new Date(`${distributionDate}T12:00:00+08:00`).getTime();
-
       await transferBulk({
         agentId: agentId as Id<"users">,
         stockModel,
@@ -258,9 +184,7 @@ export function TransferFormDialog({
       setOpen(false);
       resetForm();
     } catch (err: unknown) {
-      const message =
-        err instanceof Error ? err.message : "Failed to transfer stock";
-      setError(message);
+      setError(err instanceof Error ? err.message : "Failed to transfer stock");
     } finally {
       setSubmitting(false);
     }
@@ -275,12 +199,12 @@ export function TransferFormDialog({
       }}
     >
       <DialogTrigger render={children} />
-      <DialogContent className="sm:max-w-md max-h-[85vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Distribute Stock</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-5">
-          {/* Agent */}
+          {/* Recipient */}
           <div className="space-y-2">
             <Label>Recipient</Label>
             <Select
@@ -333,9 +257,7 @@ export function TransferFormDialog({
                         ))}
                       </SelectGroup>
                     )}
-                    {salesStaff.length > 0 && agents.length > 0 && (
-                      <SelectSeparator />
-                    )}
+                    {salesStaff.length > 0 && agents.length > 0 && <SelectSeparator />}
                     {salesStaff.length > 0 && (
                       <SelectGroup>
                         <SelectLabel>
@@ -359,7 +281,8 @@ export function TransferFormDialog({
             </Select>
             {agentId && (
               <p className="text-xs text-muted-foreground">
-                Stock model: <span className="font-medium">{stockModelLabels[stockModel] ?? stockModel}</span>
+                Stock model:{" "}
+                <span className="font-medium">{stockModelLabels[stockModel] ?? stockModel}</span>
                 {selectedAgent?.role === "sales"
                   ? " — salespersons always use Pre-sell"
                   : " — from agent profile defaults"}
@@ -391,251 +314,183 @@ export function TransferFormDialog({
             />
           </div>
 
-          {/* Product blocks */}
-          <div className="space-y-4">
+          {/* Products table */}
+          <div className="space-y-2">
             <Label>Products</Label>
-            {blocks.map((block) => {
-              const product = block.productId
-                ? products.find((p) => p._id === block.productId)
-                : null;
-              const batches = block.productId
-                ? availableBatchesByProduct.get(block.productId) ?? []
-                : [];
-              const usedBatchIds = usedBatchIdsForBlock(block.id);
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Product</TableHead>
+                    <TableHead>Batch</TableHead>
+                    <TableHead className="w-[120px]">Qty / Stock</TableHead>
+                    <TableHead className="w-[40px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rows.map((row) => {
+                    const batchesForProduct = row.productId
+                      ? (availableBatchesByProduct.get(row.productId) ?? [])
+                      : [];
 
-              // Sum of quantities for this product block
-              const totalQty = block.batches.reduce(
-                (sum, bl) => sum + (bl.quantity ? parseInt(bl.quantity) || 0 : 0),
-                0
-              );
+                    const selectableBatches = batchesForProduct.filter(
+                      (b) =>
+                        (businessStockByBatch.get(b._id) ?? 0) > 0 &&
+                        (!usedBatchIds.has(b._id) || b._id === row.batchId)
+                    );
 
-              return (
-                <div
-                  key={block.id}
-                  className="rounded-lg border p-3 space-y-1"
-                >
-                  {/* Product row */}
-                  <div className="flex items-center gap-3">
-                    <div className="flex-1 min-w-0">
-                      <Select
-                        value={block.productId}
-                        onValueChange={(v) => setProductId(block.id, v ?? "")}
-                      >
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select product">
-                            {product?.name}
-                          </SelectValue>
-                        </SelectTrigger>
-                        <SelectContent alignItemWithTrigger={false}>
-                          {products
-                            .filter((p) => {
-                              const isAvailable =
-                                p.status === "active" ||
-                                p.status === "future_release";
-                              // Hide already-chosen products (except current block's own)
-                              if (
-                                p._id !== block.productId &&
-                                usedProductIds.has(p._id)
-                              )
-                                return false;
-                              // Only show products that have available batches
-                              const hasBatches =
-                                (availableBatchesByProduct.get(p._id) ?? []).length > 0;
-                              return isAvailable || !hasBatches ? true : true;
-                            })
-                            .map((p) => {
-                              const stock = productTotalStock.get(p._id) ?? 0;
-                              const isOutOfStock = stock === 0;
-                              const isUnavailable =
-                                p.status !== "active" &&
-                                p.status !== "future_release";
+                    const selectedBatch = row.batchId
+                      ? batchMap.get(row.batchId as Id<"batches">)
+                      : null;
+                    const stock = row.batchId
+                      ? (businessStockByBatch.get(row.batchId) ?? 0)
+                      : 0;
 
-                              return (
-                                <SelectItem
-                                  key={p._id}
-                                  value={p._id}
-                                  disabled={isOutOfStock || isUnavailable}
-                                >
-                                  <span
-                                    className={
-                                      isOutOfStock || isUnavailable
-                                        ? "line-through opacity-50"
-                                        : ""
-                                    }
+                    return (
+                      <TableRow key={row.id}>
+                        {/* Product */}
+                        <TableCell className="align-top py-2">
+                          <Select
+                            value={row.productId}
+                            onValueChange={(v) =>
+                              updateRow(row.id, { productId: v ?? "", batchId: "", quantity: "" })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Select product">
+                                {row.productId
+                                  ? products.find((p) => p._id === row.productId)?.name
+                                  : undefined}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent alignItemWithTrigger={false}>
+                              {products.map((p) => {
+                                const totalStock = productTotalStock.get(p._id) ?? 0;
+                                const isOutOfStock = totalStock === 0;
+                                const isUnavailable =
+                                  p.status !== "active" && p.status !== "future_release";
+                                return (
+                                  <SelectItem
+                                    key={p._id}
+                                    value={p._id}
+                                    disabled={isOutOfStock || isUnavailable}
                                   >
-                                    {p.name}
-                                    {p.status === "future_release"
-                                      ? " (Future)"
-                                      : ""}
-                                    {isUnavailable
-                                      ? ` (${p.status})`
-                                      : ""}
-                                  </span>
+                                    <span
+                                      className={
+                                        isOutOfStock || isUnavailable
+                                          ? "line-through opacity-50"
+                                          : ""
+                                      }
+                                    >
+                                      {p.name}
+                                      {p.status === "future_release" ? " (Future)" : ""}
+                                      {isUnavailable ? ` (${p.status})` : ""}
+                                    </span>
+                                  </SelectItem>
+                                );
+                              })}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+
+                        {/* Batch */}
+                        <TableCell className="align-top py-2">
+                          <Select
+                            value={row.batchId}
+                            disabled={!row.productId}
+                            onValueChange={(v) =>
+                              updateRow(row.id, { batchId: v ?? "", quantity: "" })
+                            }
+                          >
+                            <SelectTrigger className="h-8 text-sm">
+                              <SelectValue placeholder="Select batch">
+                                {selectedBatch?.batchCode}
+                              </SelectValue>
+                            </SelectTrigger>
+                            <SelectContent alignItemWithTrigger={false}>
+                              {selectableBatches.length === 0 ? (
+                                <SelectItem value="_none" disabled>
+                                  No batches available
                                 </SelectItem>
-                              );
-                            })}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {totalQty > 0 && (
-                      <span className="text-sm font-medium tabular-nums shrink-0">
-                        {totalQty} units
-                      </span>
-                    )}
-                    {blocks.length > 1 && (
+                              ) : (
+                                selectableBatches.map((b) => (
+                                  <SelectItem key={b._id} value={b._id}>
+                                    <div className="flex items-center justify-between w-full gap-4">
+                                      <span className="truncate">{b.batchCode}</span>
+                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                        {businessStockByBatch.get(b._id) ?? 0} in stock
+                                      </span>
+                                    </div>
+                                  </SelectItem>
+                                ))
+                              )}
+                            </SelectContent>
+                          </Select>
+                        </TableCell>
+
+                        {/* Qty / Stock */}
+                        <TableCell className="align-top py-2">
+                          <div className="flex items-center gap-1">
+                            <Input
+                              type="number"
+                              min="1"
+                              max={stock || undefined}
+                              value={row.quantity}
+                              onChange={(e) =>
+                                updateRow(row.id, { quantity: e.target.value })
+                              }
+                              placeholder="0"
+                              className="h-8 text-sm w-[54px]"
+                              disabled={!row.batchId}
+                            />
+                            <span className="text-xs text-muted-foreground">/</span>
+                            <span className="text-xs text-muted-foreground tabular-nums">
+                              {row.batchId ? stock : "—"}
+                            </span>
+                          </div>
+                        </TableCell>
+
+                        {/* Delete */}
+                        <TableCell className="align-top py-2">
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            className="h-8 w-8 p-0"
+                            disabled={rows.length === 1}
+                            onClick={() => removeRow(row.id)}
+                          >
+                            <Trash2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+
+                  {/* Add row */}
+                  <TableRow>
+                    <TableCell colSpan={4} className="py-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
-                        className="h-8 w-8 p-0 shrink-0"
-                        onClick={() => removeBlock(block.id)}
+                        className="h-7 text-xs"
+                        onClick={() => setRows((prev) => [...prev, emptyRow()])}
                       >
-                        <Trash2Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                        <PlusIcon className="h-3 w-3 mr-1" />
+                        Add row
                       </Button>
-                    )}
-                  </div>
-
-                  {/* Batch lines (indented) */}
-                  {block.productId && (
-                    <div className="pl-6 space-y-2">
-                      {block.batches.map((line) => {
-                        const batch = line.batchId
-                          ? batchMap.get(line.batchId as Id<"batches">)
-                          : null;
-                        const stock = line.batchId
-                          ? businessStockByBatch.get(line.batchId) ?? 0
-                          : 0;
-
-                        // Available batches: in-stock, not already chosen in this block
-                        const selectableBatches = batches.filter(
-                          (b) =>
-                            (businessStockByBatch.get(b._id) ?? 0) > 0 &&
-                            (!usedBatchIds.has(b._id) || b._id === line.batchId)
-                        );
-
-                        return (
-                          <div
-                            key={line.id}
-                            className="flex items-center gap-2"
-                          >
-                            {/* Batch select */}
-                            <div className="flex-1 min-w-0">
-                              <Select
-                                value={line.batchId}
-                                onValueChange={(v) =>
-                                  setBatchId(block.id, line.id, v ?? "")
-                                }
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select batch">
-                                    {batch?.batchCode}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent alignItemWithTrigger={false}>
-                                  {selectableBatches.length === 0 ? (
-                                    <SelectItem value="_none" disabled>
-                                      No batches available
-                                    </SelectItem>
-                                  ) : (
-                                    selectableBatches.map((b) => (
-                                      <SelectItem key={b._id} value={b._id}>
-                                        <div className="flex items-center justify-between w-full gap-4">
-                                          <span className="truncate">{b.batchCode}</span>
-                                          <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                            {businessStockByBatch.get(b._id) ?? 0} in stock
-                                          </span>
-                                        </div>
-                                      </SelectItem>
-                                    ))
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </div>
-
-                            {/* Qty / Stock */}
-                            <div className="flex items-center gap-0.5 shrink-0 w-[90px]">
-                              <Input
-                                type="number"
-                                min="1"
-                                max={stock || undefined}
-                                value={line.quantity}
-                                onChange={(e) =>
-                                  setQuantity(
-                                    block.id,
-                                    line.id,
-                                    e.target.value
-                                  )
-                                }
-                                placeholder="0"
-                                className="h-8 text-sm w-[50px]"
-                                disabled={!line.batchId}
-                              />
-                              <span className="text-xs text-muted-foreground">
-                                /
-                              </span>
-                              <span className="text-xs text-muted-foreground tabular-nums">
-                                {line.batchId ? stock : "—"}
-                              </span>
-                            </div>
-
-                            {/* Remove batch line */}
-                            {block.batches.length > 1 && (
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="sm"
-                                className="h-8 w-8 p-0 shrink-0"
-                                onClick={() =>
-                                  removeBatchLine(block.id, line.id)
-                                }
-                              >
-                                <Trash2Icon className="h-3 w-3 text-muted-foreground" />
-                              </Button>
-                            )}
-                          </div>
-                        );
-                      })}
-
-                      {/* Add batch button — only if more batches available */}
-                      {batches.filter(
-                        (b) =>
-                          (businessStockByBatch.get(b._id) ?? 0) > 0 &&
-                          !usedBatchIds.has(b._id)
-                      ).length > 0 && (
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="sm"
-                          className="h-7 text-xs"
-                          onClick={() => addBatchLine(block.id)}
-                        >
-                          <PlusIcon className="h-3 w-3 mr-1" />
-                          Add batch
-                        </Button>
-                      )}
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={addBlock}
-            >
-              <PlusIcon className="h-3.5 w-3.5 mr-1" />
-              Add product
-            </Button>
+                    </TableCell>
+                  </TableRow>
+                </TableBody>
+              </Table>
+            </div>
           </div>
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end gap-2">
-            <DialogClose
-              render={<Button type="button" variant="outline" />}
-            >
+            <DialogClose render={<Button type="button" variant="outline" />}>
               Cancel
             </DialogClose>
             <Button type="submit" disabled={!canSubmit || submitting}>
