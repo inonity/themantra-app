@@ -887,29 +887,6 @@ export function RecordSaleForm({
               </Select>
             </div>
           </div>
-          {showCollectorOption && (
-            <div className="space-y-2">
-              <Label>Who Collects Payment?</Label>
-              <Select
-                value={paymentCollector}
-                onValueChange={(v) => {
-                  if (v) setPaymentCollector(v as "agent" | "hq");
-                }}
-              >
-                <SelectTrigger className="md:w-[300px]">
-                  <SelectValue>
-                    {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
-                  </SelectValue>
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="agent">
-                    I collect from customer
-                  </SelectItem>
-                  <SelectItem value="hq">HQ collects directly</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          )}
           <div className="space-y-2">
             <Label htmlFor="notes">Notes (optional)</Label>
             <Textarea
@@ -1304,6 +1281,29 @@ export function RecordSaleForm({
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {showCollectorOption && (
+                <div className="space-y-2">
+                  <Label>Who Collects Payment?</Label>
+                  <Select
+                    value={paymentCollector}
+                    onValueChange={(v) => {
+                      if (v) setPaymentCollector(v as "agent" | "hq");
+                    }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue>
+                        {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="agent">
+                        I collect from customer
+                      </SelectItem>
+                      <SelectItem value="hq">HQ collects directly</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className="space-y-2">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
                 <Select
