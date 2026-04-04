@@ -18,16 +18,12 @@ export function SalesAnalytics({
   const totalRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
   const avgRevenue = totalSales > 0 ? totalRevenue / totalSales : 0;
 
-  const unpaidCount = sales.filter(
-    (s) => s.paymentStatus === "unpaid" || s.paymentStatus === "partial"
-  ).length;
-
   const pendingFulfillment = sales.filter(
     (s) => s.fulfillmentStatus === "pending_stock"
   ).length;
 
   return (
-    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-6">
+    <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
       <Card>
         <CardHeader>
           <CardTitle className="text-sm font-medium text-muted-foreground">
@@ -69,19 +65,6 @@ export function SalesAnalytics({
         <CardContent>
           <div className="text-3xl font-bold">
             RM{avgRevenue.toFixed(2)}
-          </div>
-        </CardContent>
-      </Card>
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm font-medium text-muted-foreground">
-            Unpaid
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="text-3xl font-bold">{unpaidCount}</div>
-          <div className="text-sm text-muted-foreground">
-            {unpaidCount === 0 ? "All settled" : "pending payment"}
           </div>
         </CardContent>
       </Card>

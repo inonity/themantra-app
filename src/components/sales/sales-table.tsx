@@ -18,8 +18,10 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon } from "lucide-react";
 import { Fragment, useState } from "react";
+import { Input } from "@/components/ui/input";
+import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filter";
 
 const PAYMENT_LABELS: Record<string, string> = {
   paid: "Paid",
@@ -558,6 +560,16 @@ export function SalesTable({
   const offerMap = new Map((offers ?? []).map((o) => [o._id, o]));
 
   const [expandedSales, setExpandedSales] = useState<Set<string>>(new Set());
+  const [search, setSearch] = useState("");
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
+  const [selectedBatches, setSelectedBatches] = useState<Set<string>>(new Set());
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<Set<string>>(new Set());
+  const [selectedFulfillmentStatuses, setSelectedFulfillmentStatuses] = useState<Set<string>>(new Set());
+  const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<Set<string>>(new Set());
+  const [selectedCollectors, setSelectedCollectors] = useState<Set<string>>(new Set());
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
 
   function toggleExpanded(saleId: string) {
     setExpandedSales((prev) => {
@@ -571,6 +583,90 @@ export function SalesTable({
     });
   }
 
+  const hasActiveFilters =
+    search !== "" ||
+    selectedAgents.size > 0 ||
+    selectedProducts.size > 0 ||
+    selectedBatches.size > 0 ||
+    selectedPaymentStatuses.size > 0 ||
+    selectedFulfillmentStatuses.size > 0 ||
+    selectedPaymentMethods.size > 0 ||
+    selectedCollectors.size > 0 ||
+    dateFrom !== "" ||
+    dateTo !== "";
+
+  function clearFilters() {
+    setSearch("");
+    setSelectedAgents(new Set());
+    setSelectedProducts(new Set());
+    setSelectedBatches(new Set());
+    setSelectedPaymentStatuses(new Set());
+    setSelectedFulfillmentStatuses(new Set());
+    setSelectedPaymentMethods(new Set());
+    setSelectedCollectors(new Set());
+    setDateFrom("");
+    setDateTo("");
+  }
+
+  const agentOptions = (agents ?? []).map((a) => ({
+    label: a.nickname || a.name || a.email || "Unnamed",
+    value: a._id,
+  }));
+
+  const productOptions = products.map((p) => ({ label: p.name, value: p._id }));
+
+  const batchOptionsForProducts =
+    selectedProducts.size === 0
+      ? batches
+      : batches.filter((b) => selectedProducts.has(b.productId));
+
+  const batchOptions = batchOptionsForProducts.map((b) => ({
+    label: b.batchCode,
+    value: b._id,
+  }));
+
+  const filteredSales = sales.filter((sale) => {
+    if (search) {
+      const term = search.toLowerCase();
+      const customerName = sale.customerDetail?.name?.toLowerCase() ?? "";
+      const customerPhone = sale.customerDetail?.phone?.toLowerCase() ?? "";
+      if (!customerName.includes(term) && !customerPhone.includes(term))
+        return false;
+    }
+    if (selectedAgents.size > 0 && !selectedAgents.has(sale.sellerId ?? ""))
+      return false;
+    if (selectedProducts.size > 0) {
+      const items = sale.lineItems;
+      if (!items || !items.some((li) => selectedProducts.has(li.productId)))
+        return false;
+    }
+    if (selectedBatches.size > 0) {
+      const items = sale.lineItems;
+      if (!items || !items.some((li) => li.batchId && selectedBatches.has(li.batchId)))
+        return false;
+    }
+    if (selectedPaymentStatuses.size > 0 && !selectedPaymentStatuses.has(sale.paymentStatus))
+      return false;
+    if (
+      selectedFulfillmentStatuses.size > 0 &&
+      !selectedFulfillmentStatuses.has(sale.fulfillmentStatus ?? "")
+    )
+      return false;
+    if (selectedPaymentMethods.size > 0 && !selectedPaymentMethods.has(sale.paymentMethod ?? ""))
+      return false;
+    if (selectedCollectors.size > 0 && !selectedCollectors.has(sale.paymentCollector ?? ""))
+      return false;
+    if (dateFrom) {
+      const from = new Date(dateFrom).getTime();
+      if (sale.saleDate < from) return false;
+    }
+    if (dateTo) {
+      const to = new Date(dateTo).getTime() + 86_400_000;
+      if (sale.saleDate >= to) return false;
+    }
+    return true;
+  });
+
   if (sales.length === 0) {
     return (
       <div className="text-center py-12 text-muted-foreground">
@@ -580,21 +676,119 @@ export function SalesTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-[40px]" />
-          <TableHead>Date</TableHead>
-          <TableHead>Customer</TableHead>
-          {showAgent && <TableHead>Agent</TableHead>}
-          <TableHead>Items</TableHead>
-          <TableHead>Channel</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead className="text-right">Amount</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sales.map((sale) => {
+    <div className="space-y-3">
+      {/* Filter bar */}
+      <div className="flex flex-1 flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search customer..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-[150px] lg:w-[220px]"
+        />
+        {showAgent && (
+          <FacetedFilter
+            title="Agent"
+            options={agentOptions}
+            selected={selectedAgents}
+            onSelectionChange={setSelectedAgents}
+          />
+        )}
+        <FacetedFilter
+          title="Product"
+          options={productOptions}
+          selected={selectedProducts}
+          onSelectionChange={(next) => {
+            setSelectedProducts(next);
+            setSelectedBatches(new Set());
+          }}
+        />
+        <FacetedFilter
+          title="Batch"
+          options={batchOptions}
+          selected={selectedBatches}
+          onSelectionChange={setSelectedBatches}
+        />
+        <FacetedFilter
+          title="Payment"
+          options={[
+            { label: "Paid", value: "paid" },
+            { label: "Partial", value: "partial" },
+            { label: "Unpaid", value: "unpaid" },
+          ]}
+          selected={selectedPaymentStatuses}
+          onSelectionChange={setSelectedPaymentStatuses}
+        />
+        <FacetedFilter
+          title="Fulfillment"
+          options={[
+            { label: "Fulfilled", value: "fulfilled" },
+            { label: "Partial", value: "partial" },
+            { label: "Pending Stock", value: "pending_stock" },
+          ]}
+          selected={selectedFulfillmentStatuses}
+          onSelectionChange={setSelectedFulfillmentStatuses}
+        />
+        <FacetedFilter
+          title="Payment Type"
+          options={[
+            { label: "Cash", value: "cash" },
+            { label: "QR Payment", value: "qr" },
+            { label: "Bank Transfer", value: "bank_transfer" },
+            { label: "Online", value: "online" },
+            { label: "Other", value: "other" },
+          ]}
+          selected={selectedPaymentMethods}
+          onSelectionChange={setSelectedPaymentMethods}
+        />
+        <FacetedFilter
+          title="Collected By"
+          options={[
+            { label: "Agent collected", value: "agent" },
+            { label: "HQ collected", value: "hq" },
+          ]}
+          selected={selectedCollectors}
+          onSelectionChange={setSelectedCollectors}
+        />
+        <DateRangeFilter
+          title="Date"
+          from={dateFrom}
+          to={dateTo}
+          onFromChange={setDateFrom}
+          onToChange={setDateTo}
+        />
+        {hasActiveFilters && (
+          <Button variant="ghost" size="sm" onClick={clearFilters}>
+            <XIcon className="h-4 w-4 mr-1" />
+            Clear
+          </Button>
+        )}
+      </div>
+
+      <Table>
+        <TableHeader>
+          <TableRow>
+            <TableHead className="w-[40px]" />
+            <TableHead>Date</TableHead>
+            <TableHead>Customer</TableHead>
+            {showAgent && <TableHead>Agent</TableHead>}
+            <TableHead>Items</TableHead>
+            <TableHead>Channel</TableHead>
+            <TableHead>Status</TableHead>
+            <TableHead className="text-right">Amount</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {filteredSales.length === 0 ? (
+            <TableRow>
+              <TableCell
+                colSpan={showAgent ? 8 : 7}
+                className="py-12 text-center text-muted-foreground"
+              >
+                No sales match the selected filters.
+              </TableCell>
+            </TableRow>
+          ) : null}
+          {filteredSales.map((sale) => {
           const isExpanded = expandedSales.has(sale._id);
           const agent = sale.sellerId ? agentMap.get(sale.sellerId) : null;
           const offer = sale.offerId ? offerMap.get(sale.offerId) : null;
@@ -677,7 +871,8 @@ export function SalesTable({
             </Fragment>
           );
         })}
-      </TableBody>
-    </Table>
+        </TableBody>
+      </Table>
+    </div>
   );
 }

@@ -42,6 +42,14 @@ interface RangeFilterProps {
   onMaxChange: (value: string) => void;
 }
 
+interface DateRangeFilterProps {
+  title: string;
+  from: string;
+  to: string;
+  onFromChange: (value: string) => void;
+  onToChange: (value: string) => void;
+}
+
 export function RangeFilter({
   title,
   min,
@@ -108,6 +116,80 @@ export function RangeFilter({
               onChange={(e) => onMaxChange(e.target.value)}
               className="h-8"
             />
+          </div>
+          {hasValue && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={clear}
+              className="w-full h-7 text-xs"
+            >
+              Clear
+            </Button>
+          )}
+        </div>
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+export function DateRangeFilter({
+  title,
+  from,
+  to,
+  onFromChange,
+  onToChange,
+}: DateRangeFilterProps) {
+  const [open, setOpen] = useState(false);
+  const hasValue = from !== "" || to !== "";
+
+  function clear() {
+    onFromChange("");
+    onToChange("");
+  }
+
+  const label = from && to ? `${from} – ${to}` : from ? `From ${from}` : to ? `Until ${to}` : null;
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={
+          <Button variant="outline" size="sm" className="h-8 border-dashed" />
+        }
+      >
+        <CirclePlusIcon className="size-4" />
+        {title}
+        {hasValue && label && (
+          <>
+            <Separator orientation="vertical" className="mx-2 h-4" />
+            <Badge variant="secondary" className="rounded-sm px-1 font-normal">
+              {label}
+            </Badge>
+          </>
+        )}
+      </PopoverTrigger>
+      <PopoverContent className="w-[220px] p-3" align="start">
+        <div className="space-y-3">
+          <p className="text-xs font-medium text-muted-foreground">{title}</p>
+          <div className="space-y-2">
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">From</p>
+              <Input
+                type="date"
+                value={from}
+                onChange={(e) => onFromChange(e.target.value)}
+                className="h-8"
+              />
+            </div>
+            <div className="space-y-1">
+              <p className="text-xs text-muted-foreground">To</p>
+              <Input
+                type="date"
+                value={to}
+                onChange={(e) => onToChange(e.target.value)}
+                className="h-8"
+              />
+            </div>
           </div>
           {hasValue && (
             <Button
