@@ -7,6 +7,7 @@ import { useState } from "react";
 import {
   Dialog,
   DialogContent,
+  DialogFooter,
   DialogHeader,
   DialogTitle,
   DialogTrigger,
@@ -78,6 +79,7 @@ export function OfferPricingDialog({
         rateValue: rateType === "percentage" ? value / 100 : value,
       });
       setRateValue("");
+      setSelectedRateId("");
     } finally {
       setSaving(false);
     }
@@ -100,6 +102,69 @@ export function OfferPricingDialog({
         <p className="text-sm text-muted-foreground">
           Set what agents pay HQ for this bundle offer, per rate tier.
         </p>
+
+        {availableRates.length > 0 && (
+          <form id="pricing-form" onSubmit={handleSubmit} className="grid grid-cols-2 gap-3">
+            <div className="flex flex-col gap-1.5">
+              <Label>Rate</Label>
+              <Select
+                value={selectedRateId}
+                onValueChange={(v) => v && setSelectedRateId(v)}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select rate...">
+                    {selectedRateId
+                      ? (availableRates.find((r) => r._id === selectedRateId)?.name ?? "Select rate...")
+                      : "Select rate..."}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRates.map((r) => (
+                    <SelectItem key={r._id} value={r._id}>
+                      {r.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label>Rate Type</Label>
+              <Select
+                value={rateType}
+                onValueChange={(v) =>
+                  v && setRateType(v as "fixed" | "percentage")
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue>
+                    {rateType === "fixed" ? "Fixed (RM)" : "Percentage"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="fixed">Fixed (RM)</SelectItem>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="col-span-2 flex flex-col gap-1.5">
+              <Label>
+                {rateType === "percentage"
+                  ? "% of Bundle Retail"
+                  : "HQ Price (RM)"}
+              </Label>
+              <Input
+                type="number"
+                step={rateType === "percentage" ? "1" : "0.01"}
+                placeholder={
+                  rateType === "percentage" ? "e.g. 60" : "e.g. 60.00"
+                }
+                value={rateValue}
+                onChange={(e) => setRateValue(e.target.value)}
+                required
+              />
+            </div>
+          </form>
+        )}
 
         {pricingRules && pricingRules.length > 0 && (
           <Table>
@@ -136,76 +201,34 @@ export function OfferPricingDialog({
           </Table>
         )}
 
-        {pricingRules?.length === 0 && (
+        {pricingRules?.length === 0 && availableRates.length === 0 && (
           <div className="text-sm text-muted-foreground text-center py-4">
             No HQ pricing set. Agents will be charged per-product rates from
             their assigned rate.
           </div>
         )}
 
-        {availableRates.length > 0 && (
-          <form
-            onSubmit={handleSubmit}
-            className="grid grid-cols-4 gap-3 items-end pt-2"
-          >
-            <div>
-              <Label>Rate</Label>
-              <Select
-                value={selectedRateId}
-                onValueChange={(v) => v && setSelectedRateId(v)}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select rate..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableRates.map((r) => (
-                    <SelectItem key={r._id} value={r._id}>
-                      {r.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>Rate Type</Label>
-              <Select
-                value={rateType}
-                onValueChange={(v) =>
-                  v && setRateType(v as "fixed" | "percentage")
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="fixed">Fixed (RM)</SelectItem>
-                  <SelectItem value="percentage">Percentage</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div>
-              <Label>
-                {rateType === "percentage"
-                  ? "% of Bundle Retail"
-                  : "HQ Price (RM)"}
-              </Label>
-              <Input
-                type="number"
-                step={rateType === "percentage" ? "1" : "0.01"}
-                placeholder={
-                  rateType === "percentage" ? "e.g. 60" : "e.g. 60.00"
-                }
-                value={rateValue}
-                onChange={(e) => setRateValue(e.target.value)}
-                required
-              />
-            </div>
-            <Button type="submit" disabled={saving || !selectedRateId}>
-              <SaveIcon className="h-4 w-4 mr-1" />
-              Add
-            </Button>
-          </form>
+        {pricingRules?.length === 0 && availableRates.length > 0 && (
+          <div className="text-sm text-muted-foreground text-center py-2">
+            No pricing rules added yet.
+          </div>
         )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setOpen(false)}>
+            Close
+          </Button>
+          {availableRates.length > 0 && (
+            <Button
+              type="submit"
+              form="pricing-form"
+              disabled={saving || !selectedRateId}
+            >
+              <SaveIcon className="h-4 w-4 mr-1" />
+              Add Pricing Rule
+            </Button>
+          )}
+        </DialogFooter>
       </DialogContent>
     </Dialog>
   );
