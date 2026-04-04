@@ -308,7 +308,7 @@ export function AppSidebar() {
                   </div>
                 </div>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem render={<Link href="/dashboard/settings" />}>
+                <DropdownMenuItem render={<Link href="/dashboard/settings" />} onClick={closeMobile}>
                   <Settings />
                   Settings
                 </DropdownMenuItem>

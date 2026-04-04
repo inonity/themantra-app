@@ -164,7 +164,7 @@ export function BatchFormDialog({
   const selectedProduct = products?.find((p) => p._id === selectedProductId);
 
   const dialogContent = (
-    <DialogContent>
+    <DialogContent className="max-h-[90vh] overflow-y-auto">
       <DialogHeader>
         <DialogTitle>{isEdit ? "Edit Batch" : "Create Batch"}</DialogTitle>
       </DialogHeader>

@@ -160,12 +160,12 @@ function RateForm({
           </p>
         )}
         {rows.map((row, idx) => (
-          <div key={idx} className="flex items-center gap-2">
+          <div key={idx} className="flex flex-col gap-2 sm:flex-row sm:items-center">
             <Select
               value={row.collection}
               onValueChange={(v) => v && updateRow(idx, { collection: v })}
             >
-              <SelectTrigger className="w-[140px]">
+              <SelectTrigger className="w-full sm:w-[140px]">
                 <SelectValue>{row.collection}</SelectValue>
               </SelectTrigger>
               <SelectContent>
@@ -177,38 +177,40 @@ function RateForm({
                   ))}
               </SelectContent>
             </Select>
-            <Select
-              value={row.rateType}
-              onValueChange={(v) =>
-                v && updateRow(idx, { rateType: v as "fixed" | "percentage" })
-              }
-            >
-              <SelectTrigger className="w-[130px]">
-                <SelectValue>
-                  {row.rateType === "percentage" ? "Percentage" : "Fixed (RM)"}
-                </SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="percentage">Percentage</SelectItem>
-                <SelectItem value="fixed">Fixed (RM)</SelectItem>
-              </SelectContent>
-            </Select>
-            <Input
-              type="number"
-              step={row.rateType === "percentage" ? "1" : "0.01"}
-              placeholder={row.rateType === "percentage" ? "70" : "35.00"}
-              value={row.rateValue}
-              onChange={(e) => updateRow(idx, { rateValue: e.target.value })}
-              className="w-[100px]"
-            />
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => removeRow(idx)}
-            >
-              <Trash2Icon className="h-4 w-4" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <Select
+                value={row.rateType}
+                onValueChange={(v) =>
+                  v && updateRow(idx, { rateType: v as "fixed" | "percentage" })
+                }
+              >
+                <SelectTrigger className="flex-1 sm:w-[130px]">
+                  <SelectValue>
+                    {row.rateType === "percentage" ? "Percentage" : "Fixed (RM)"}
+                  </SelectValue>
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="percentage">Percentage</SelectItem>
+                  <SelectItem value="fixed">Fixed (RM)</SelectItem>
+                </SelectContent>
+              </Select>
+              <Input
+                type="number"
+                step={row.rateType === "percentage" ? "1" : "0.01"}
+                placeholder={row.rateType === "percentage" ? "70" : "35.00"}
+                value={row.rateValue}
+                onChange={(e) => updateRow(idx, { rateValue: e.target.value })}
+                className="w-[80px] sm:w-[100px]"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => removeRow(idx)}
+              >
+                <Trash2Icon className="h-4 w-4" />
+              </Button>
+            </div>
           </div>
         ))}
         {availableCollections.length > 0 && (
@@ -284,7 +286,7 @@ export default function PricingPage() {
         </div>
 
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-          <DialogContent className="sm:max-w-md">
+          <DialogContent className="sm:max-w-md max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>
                 {editingRate ? "Edit Rate" : "Create Rate"}
