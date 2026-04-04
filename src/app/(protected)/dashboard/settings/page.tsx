@@ -4,16 +4,26 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { AccountSection } from "@/components/settings/account-section";
 import { RoleSection } from "@/components/settings/role-section";
+import { Skeleton } from "@/components/ui/skeleton";
+
+function SettingsSkeleton() {
+  return (
+    <div className="mx-auto w-full max-w-3xl space-y-6">
+      <div className="space-y-2">
+        <Skeleton className="h-8 w-32" />
+        <Skeleton className="h-4 w-64" />
+      </div>
+      <Skeleton className="h-64 w-full rounded-xl" />
+      <Skeleton className="h-40 w-full rounded-xl" />
+    </div>
+  );
+}
 
 export default function SettingsPage() {
   const settingsData = useQuery(api.users.getSettingsData);
 
   if (settingsData === undefined) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <p className="text-muted-foreground">Loading...</p>
-      </div>
-    );
+    return <SettingsSkeleton />;
   }
 
   if (settingsData === null) {
@@ -25,9 +35,9 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl space-y-8">
+    <div className="mx-auto w-full max-w-3xl space-y-6">
       <div>
-        <h1 className="text-2xl font-bold">Settings</h1>
+        <h1 className="text-3xl font-semibold tracking-tight">Settings</h1>
         <p className="text-muted-foreground">
           Manage your account and view your role details.
         </p>

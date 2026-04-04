@@ -5,6 +5,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
+import { ShieldIcon, TagIcon, PackageIcon, CalendarIcon } from "lucide-react";
 
 const STOCK_MODEL_LABELS: Record<string, string> = {
   hold_paid: "Hold & Paid",
@@ -18,6 +19,7 @@ const ROLE_LABELS: Record<string, string> = {
   agent: "Agent",
   sales: "Salesperson",
 };
+
 
 type SettingsData = {
   user: Doc<"users">;
@@ -45,46 +47,55 @@ export function RoleSection({ data }: { data: SettingsData }) {
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Role</CardTitle>
-        <CardDescription>Your role and pricing details</CardDescription>
+        <CardTitle>Role & Pricing</CardTitle>
+        <CardDescription>Your assigned role and pricing details</CardDescription>
       </CardHeader>
-      <CardContent className="space-y-4">
-        {/* Role Info */}
-        <div className="flex items-center gap-4">
-          <div className="space-y-1">
-            <p className="text-muted-foreground text-xs">Role</p>
-            <div className="flex items-center gap-2">
-              <Badge variant="secondary">{ROLE_LABELS[role] ?? role}</Badge>
+      <CardContent className="space-y-5">
+        {/* Role info row */}
+        <div className="flex flex-wrap gap-4">
+          <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3 flex-1 min-w-[140px] overflow-hidden">
+            <ShieldIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+            <div className="min-w-0 space-y-1">
+              <p className="text-xs text-muted-foreground">Role</p>
+              <p className="text-xs font-medium">{ROLE_LABELS[role] ?? role}</p>
             </div>
           </div>
+
           {agentProfile?.defaultStockModel && (
-            <div className="space-y-1">
-              <p className="text-muted-foreground text-xs">Default Stock Model</p>
-              <Badge variant="outline">
-                {STOCK_MODEL_LABELS[agentProfile.defaultStockModel] ?? agentProfile.defaultStockModel}
-              </Badge>
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3 flex-1 min-w-[140px] overflow-hidden">
+              <PackageIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 space-y-1">
+                <p className="text-xs text-muted-foreground">Default Stock Model</p>
+                <p className="text-xs font-medium">
+                  {STOCK_MODEL_LABELS[agentProfile.defaultStockModel] ?? agentProfile.defaultStockModel}
+                </p>
+              </div>
             </div>
           )}
+
           {rate && (
-            <div className="space-y-1">
-              <p className="text-muted-foreground text-xs">Assigned Rate</p>
-              <Badge variant="outline">{rate.name}</Badge>
+            <div className="flex items-start gap-3 rounded-lg border bg-muted/30 px-4 py-3 flex-1 min-w-[140px] overflow-hidden">
+              <TagIcon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
+              <div className="min-w-0 space-y-1">
+                <p className="text-xs text-muted-foreground">Assigned Rate</p>
+                <p className="text-xs font-medium break-words">{rate.name}</p>
+              </div>
             </div>
           )}
         </div>
 
-        {/* Rate-based Pricing (sellers only) */}
+        {/* Pricing */}
         {isSeller && rate && (
           <>
             <Separator />
             <div className="space-y-3">
               <h3 className="text-sm font-medium">Pricing — {rate.name}</h3>
 
-              {rate.collectionRates.length > 0 && (
+              {rate.collectionRates.length > 0 ? (
                 <div className="rounded-md border">
                   <Table>
                     <TableHeader>
-                      <TableRow>
+                      <TableRow className="bg-muted/50">
                         <TableHead>Collection</TableHead>
                         <TableHead>HQ Rate</TableHead>
                       </TableRow>
@@ -95,7 +106,7 @@ export function RoleSection({ data }: { data: SettingsData }) {
                           <TableCell>
                             <Badge variant="outline">{cr.collection}</Badge>
                           </TableCell>
-                          <TableCell>
+                          <TableCell className="text-sm">
                             {formatRate(cr.rateType, cr.rateValue)}
                           </TableCell>
                         </TableRow>
@@ -103,11 +114,9 @@ export function RoleSection({ data }: { data: SettingsData }) {
                     </TableBody>
                   </Table>
                 </div>
-              )}
-
-              {rate.collectionRates.length === 0 && (
+              ) : (
                 <p className="text-muted-foreground text-sm">
-                  No collection rates configured on this rate. Full retail price applies.
+                  No collection rates configured. Full retail price applies.
                 </p>
               )}
 
@@ -116,47 +125,71 @@ export function RoleSection({ data }: { data: SettingsData }) {
                 <>
                   <Separator />
                   <div className="space-y-2">
-                    <p className="text-muted-foreground text-xs">
-                      Applicable Offers
-                    </p>
-                    {applicableOffers.map((offer) => {
-                      // Find offer pricing for this agent's rate
-                      const op = offerPricing.find(
-                        (p) => p.offerId === offer._id && agentProfile?.rateId && p.rateId === agentProfile.rateId
-                      );
-                      return (
-                        <div key={offer._id} className="rounded-md border p-3 space-y-2">
-                          <div className="flex items-center justify-between">
-                            <div>
-                              <p className="text-sm font-medium">{offer.name}</p>
-                              {offer.description && (
-                                <p className="text-muted-foreground text-xs">
-                                  {offer.description}
+                    <h4 className="text-sm font-medium">Applicable Offers</h4>
+                    <div className="space-y-2">
+                      {applicableOffers.map((offer) => {
+                        const op = offerPricing.find(
+                          (p) =>
+                            p.offerId === offer._id &&
+                            agentProfile?.rateId &&
+                            p.rateId === agentProfile.rateId
+                        );
+                        const agentCost = op
+                          ? op.rateType === "percentage"
+                            ? offer.bundlePrice * op.rateValue
+                            : op.rateValue
+                          : null;
+                        const agentProfit =
+                          agentCost !== null ? offer.bundlePrice - agentCost : null;
+                        return (
+                          <div key={offer._id} className="rounded-lg border bg-muted/20 p-4 space-y-3">
+                            <div className="flex items-start justify-between gap-3">
+                              <div>
+                                <p className="text-sm font-medium">{offer.name}</p>
+                                {offer.description && (
+                                  <p className="text-xs text-muted-foreground mt-0.5">
+                                    {offer.description}
+                                  </p>
+                                )}
+                              </div>
+                              <Badge variant="secondary" className="shrink-0 text-xs">
+                                Min {offer.minQuantity} pcs
+                              </Badge>
+                            </div>
+                            <div className="flex flex-wrap gap-3">
+                              <div className="rounded-md bg-background border px-3 py-1.5">
+                                <p className="text-xs text-muted-foreground">You Sell At</p>
+                                <p className="text-sm font-medium">RM {offer.bundlePrice.toFixed(2)}</p>
+                              </div>
+                              <div className="rounded-md bg-background border px-3 py-1.5">
+                                <p className="text-xs text-muted-foreground">Your Cost</p>
+                                <p className="text-sm font-medium">
+                                  {agentCost !== null ? `RM ${agentCost.toFixed(2)}` : "Per-product rates"}
                                 </p>
+                              </div>
+                              {agentProfit !== null && (
+                                <div className="rounded-md bg-background border px-3 py-1.5">
+                                  <p className="text-xs text-muted-foreground">You Keep</p>
+                                  <p className="text-sm font-medium text-green-600">
+                                    RM {agentProfit.toFixed(2)}
+                                  </p>
+                                </div>
+                              )}
+                              {(offer.startDate || offer.endDate) && (
+                                <div className="rounded-md bg-background border px-3 py-1.5 flex items-center gap-1.5">
+                                  <CalendarIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                                  <p className="text-xs text-muted-foreground">
+                                    {offer.startDate && `From ${new Date(offer.startDate).toLocaleDateString()}`}
+                                    {offer.startDate && offer.endDate && " · "}
+                                    {offer.endDate && `Until ${new Date(offer.endDate).toLocaleDateString()}`}
+                                  </p>
+                                </div>
                               )}
                             </div>
-                            <Badge variant="secondary" className="text-xs">
-                              Min {offer.minQuantity} pcs
-                            </Badge>
                           </div>
-                          <div className="flex items-center gap-4 text-xs text-muted-foreground">
-                            <span>Bundle: RM {offer.bundlePrice.toFixed(2)}</span>
-                            {op && <span>HQ: {formatRate(op.rateType, op.rateValue)}</span>}
-                            {!op && <span>HQ: per-product rates</span>}
-                            {offer.startDate && (
-                              <span>
-                                From: {new Date(offer.startDate).toLocaleDateString()}
-                              </span>
-                            )}
-                            {offer.endDate && (
-                              <span>
-                                Until: {new Date(offer.endDate).toLocaleDateString()}
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      );
-                    })}
+                        );
+                      })}
+                    </div>
                   </div>
                 </>
               )}
@@ -167,16 +200,10 @@ export function RoleSection({ data }: { data: SettingsData }) {
         {isSeller && !rate && (
           <>
             <Separator />
-            <p className="text-muted-foreground text-sm">
+            <p className="text-sm text-muted-foreground">
               No rate assigned. Full retail price applies until a rate is set by admin.
             </p>
           </>
-        )}
-
-        {role === "admin" && (
-          <p className="text-muted-foreground text-sm">
-            As an administrator, you have full access to all features.
-          </p>
         )}
       </CardContent>
     </Card>
