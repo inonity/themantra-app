@@ -169,6 +169,46 @@ export const sendPasswordChangedEmail = internalAction({
   },
 });
 
+export const sendPasswordResetEmail = internalAction({
+  args: {
+    email: v.string(),
+    name: v.string(),
+    resetLink: v.string(),
+  },
+  handler: async (_ctx, args) => {
+    await sendBrevoEmail({
+      to: [{ email: args.email, name: args.name }],
+      subject: "Reset your password — TheMantra",
+      htmlContent: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Reset your password</h2>
+          <p>Hi ${args.name},</p>
+          <p>We received a request to reset your password for <strong>TheMantra</strong>.</p>
+          <p>Click the button below to set a new password:</p>
+          <p style="margin: 24px 0;">
+            <a href="${args.resetLink}"
+               style="background-color: #18181b; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">
+              Reset Password
+            </a>
+          </p>
+          <p style="color: #6b7280; font-size: 14px;">
+            Or copy and paste this link into your browser:<br/>
+            <a href="${args.resetLink}" style="color: #2563eb;">${args.resetLink}</a>
+          </p>
+          <p style="color: #dc2626; font-size: 14px; font-weight: 500;">
+            This link expires in 1 hour.
+          </p>
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="color: #9ca3af; font-size: 12px;">
+            If you didn't request a password reset, you can safely ignore this email.
+            Your password will not be changed.
+          </p>
+        </div>
+      `,
+    });
+  },
+});
+
 export const sendWelcomeEmail = internalAction({
   args: {
     email: v.string(),

@@ -28,12 +28,15 @@ export default defineSchema({
     pendingEmail: v.optional(v.string()),
     pendingEmailToken: v.optional(v.string()),
     pendingEmailExpiresAt: v.optional(v.number()),
+    passwordResetToken: v.optional(v.string()),
+    passwordResetExpiresAt: v.optional(v.number()),
     updatedAt: v.optional(v.number()),
     // NOTE: "distributor" and "stockist" roles planned for future
   })
     .index("email", ["email"])
     .index("phone", ["phone"])
-    .index("by_role", ["role"]),
+    .index("by_role", ["role"])
+    .index("by_passwordResetToken", ["passwordResetToken"]),
 
   products: defineTable({
     name: v.string(),

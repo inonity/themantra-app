@@ -4,6 +4,7 @@ import { useAuthActions } from "@convex-dev/auth/react";
 import { useConvexAuth } from "convex/react";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -50,9 +51,13 @@ export function LoginForm({
       setSignInComplete(true);
     } catch (err) {
       console.error("Sign-in error:", err);
-      setError(
-        err instanceof Error ? err.message : "Invalid email or password.",
-      );
+      const raw = err instanceof Error ? err.message : "";
+      const isCredentialError =
+        raw === "InvalidSecret" ||
+        raw === "InvalidAccountId" ||
+        raw.includes("InvalidSecret") ||
+        raw.includes("InvalidAccountId");
+      setError(isCredentialError ? "Invalid email or password." : (raw || "Sign-in failed. Please try again."));
       setPending(false);
     }
   }
@@ -89,7 +94,15 @@ export function LoginForm({
             />
           </div>
           <div className="flex flex-col gap-2">
-            <Label htmlFor="password">Password</Label>
+            <div className="flex items-center justify-between">
+              <Label htmlFor="password">Password</Label>
+              <Link
+                href="/forgot-password"
+                className="text-sm text-muted-foreground underline underline-offset-4"
+              >
+                Forgot password?
+              </Link>
+            </div>
             <Input
               id="password"
               type="password"
