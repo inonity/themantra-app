@@ -19,6 +19,7 @@ import type * as files from "../files.js";
 import type * as helpers_auth from "../helpers/auth.js";
 import type * as helpers_pricing from "../helpers/pricing.js";
 import type * as http from "../http.js";
+import type * as interestForms from "../interestForms.js";
 import type * as interests from "../interests.js";
 import type * as inventory from "../inventory.js";
 import type * as offerPricing from "../offerPricing.js";
@@ -50,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   "helpers/auth": typeof helpers_auth;
   "helpers/pricing": typeof helpers_pricing;
   http: typeof http;
+  interestForms: typeof interestForms;
   interests: typeof interests;
   inventory: typeof inventory;
   offerPricing: typeof offerPricing;

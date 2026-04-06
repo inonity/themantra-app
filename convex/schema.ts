@@ -413,12 +413,35 @@ export default defineSchema({
       v.literal("cancelled")
     ),
     convertedSaleId: v.optional(v.id("sales")),
+    formId: v.optional(v.id("interestForms")),
     createdAt: v.number(),
     updatedAt: v.optional(v.number()),
   })
     .index("by_agentId_and_status", ["agentId", "status"])
     .index("by_agentId_and_createdAt", ["agentId", "createdAt"])
-    .index("by_status", ["status"]),
+    .index("by_status", ["status"])
+    .index("by_formId_and_status", ["formId", "status"])
+    .index("by_formId_and_createdAt", ["formId", "createdAt"]),
+
+  interestForms: defineTable({
+    agentId: v.id("users"),
+    slug: v.string(),
+    title: v.optional(v.string()),
+    stockModel: v.union(
+      v.literal("hold_paid"),
+      v.literal("consignment"),
+      v.literal("presell")
+    ),
+    date: v.string(), // ISO date string shown on the form
+    offerId: v.optional(v.id("offers")),
+    notes: v.optional(v.string()),
+    status: v.union(v.literal("active"), v.literal("closed")),
+    createdAt: v.number(),
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_slug", ["slug"])
+    .index("by_agentId_and_status", ["agentId", "status"])
+    .index("by_agentId_and_createdAt", ["agentId", "createdAt"]),
 
   stockRequests: defineTable({
     agentId: v.id("users"),

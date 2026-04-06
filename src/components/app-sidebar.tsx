@@ -16,6 +16,7 @@ import {
   PercentIcon,
   HeartIcon,
   TruckIcon,
+  QrCodeIcon,
   ChevronsUpDown,
   LogOut,
   Settings,
@@ -118,6 +119,11 @@ const agentNav = [
     icon: ClipboardListIcon,
   },
   {
+    title: "Interest Forms",
+    url: "/dashboard/interest-forms",
+    icon: QrCodeIcon,
+  },
+  {
     title: "Sales",
     url: "/dashboard/my-sales",
     icon: HistoryIcon,
@@ -149,6 +155,11 @@ const salesNav = [
     title: "Customer Interests",
     url: "/dashboard/interests",
     icon: ClipboardListIcon,
+  },
+  {
+    title: "Interest Forms",
+    url: "/dashboard/interest-forms",
+    icon: QrCodeIcon,
   },
   {
     title: "Sales History",

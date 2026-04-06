@@ -136,3 +136,88 @@ export const get = query({
     return await ctx.db.get(args.interestId);
   },
 });
+
+// Public: submit interest via a shared form (no auth required)
+export const recordViaForm = mutation({
+  args: {
+    formId: v.id("interestForms"),
+    customerDetail: v.object({
+      name: v.string(),
+      phone: v.string(),
+    }),
+    items: v.array(
+      v.object({
+        productId: v.id("products"),
+        quantity: v.number(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.items.length === 0) throw new Error("No items specified");
+
+    const form = await ctx.db.get(args.formId);
+    if (!form) throw new Error("Form not found");
+    if (form.status !== "active") throw new Error("This form is no longer accepting entries");
+
+    for (const item of args.items) {
+      const product = await ctx.db.get(item.productId);
+      if (!product) throw new Error("Product not found");
+      if (item.quantity < 1) throw new Error("Quantity must be at least 1");
+    }
+
+    return await ctx.db.insert("interests", {
+      agentId: form.agentId,
+      formId: form._id,
+      customerDetail: {
+        name: args.customerDetail.name,
+        phone: args.customerDetail.phone,
+      },
+      items: args.items,
+      status: "active",
+      createdAt: Date.now(),
+    });
+  },
+});
+
+// Public: update an interest entry via form — requires phone verification
+export const updateViaForm = mutation({
+  args: {
+    interestId: v.id("interests"),
+    phone: v.string(),
+    items: v.array(
+      v.object({
+        productId: v.id("products"),
+        quantity: v.number(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    if (args.items.length === 0) throw new Error("No items specified");
+
+    const interest = await ctx.db.get(args.interestId);
+    if (!interest) throw new Error("Entry not found");
+    if (interest.status !== "active") throw new Error("This entry is no longer editable");
+
+    // Verify phone matches
+    if (interest.customerDetail.phone !== args.phone) {
+      throw new Error("Phone number does not match. Please enter the number you used when placing the order.");
+    }
+
+    // Verify form is still active
+    if (interest.formId) {
+      const form = await ctx.db.get(interest.formId);
+      if (form && form.status !== "active") throw new Error("This form is no longer accepting edits");
+    }
+
+    for (const item of args.items) {
+      const product = await ctx.db.get(item.productId);
+      if (!product) throw new Error("Product not found");
+      if (item.quantity < 1) throw new Error("Quantity must be at least 1");
+    }
+
+    await ctx.db.patch(args.interestId, {
+      items: args.items,
+      updatedAt: Date.now(),
+    });
+  },
+});

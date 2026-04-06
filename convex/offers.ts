@@ -87,6 +87,24 @@ export const getByIds = query({
   },
 });
 
+// Any authenticated user can list active offers (for form creation, etc.)
+export const listActive = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireAuth(ctx);
+    const now = Date.now();
+    const offers = await ctx.db
+      .query("offers")
+      .withIndex("by_isActive", (q) => q.eq("isActive", true))
+      .take(100);
+    return offers.filter((o) => {
+      if (o.startDate && now < o.startDate) return false;
+      if (o.endDate && now > o.endDate) return false;
+      return true;
+    });
+  },
+});
+
 export const getApplicableOffers = query({
   args: {
     productIds: v.array(v.id("products")),
