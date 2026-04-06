@@ -80,6 +80,9 @@ function RequestStockDialog({
     productId ? { productId: productId as Id<"products"> } : "skip"
   ) ?? [];
 
+  const selectedProduct = products.find((p) => p._id === productId);
+  const selectedVariant = variants.find((v) => v._id === variantId);
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!productId || !quantity) return;
@@ -121,7 +124,11 @@ function RequestStockDialog({
               }}
             >
               <SelectTrigger>
-                <SelectValue placeholder="Select product..." />
+                <SelectValue placeholder="Select product...">
+                  {selectedProduct
+                    ? `${selectedProduct.name}${selectedProduct.status === "future_release" ? " (Future Release)" : ""}`
+                    : "Select product..."}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
                 {products.map((p) => (
@@ -141,7 +148,9 @@ function RequestStockDialog({
                 onValueChange={(v) => { if (v) setVariantId(v); }}
               >
                 <SelectTrigger>
-                  <SelectValue placeholder="Select variant..." />
+                  <SelectValue placeholder="Select variant...">
+                    {selectedVariant ? selectedVariant.name : "Select variant..."}
+                  </SelectValue>
                 </SelectTrigger>
                 <SelectContent>
                   {variants.map((v) => (
