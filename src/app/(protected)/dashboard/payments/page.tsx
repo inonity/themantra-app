@@ -117,13 +117,17 @@ function CommissionBreakdownRow({
     offerBundlePrice?: number;
     offerMinQuantity?: number;
     offerHqBundlePrice?: number;
+    offerSizeMl?: number;
     lineItemsWithProducts?: {
       productId: string;
+      variantId?: string;
       productName: string;
+      variantName?: string;
       quantity: number;
       unitPrice?: number;
       retailPrice: number;
       hqUnitPrice?: number;
+      variantSizeMl?: number;
     }[];
     hqUnitPriceMap?: Record<string, number>;
     overpaymentAmount?: number;
@@ -132,11 +136,13 @@ function CommissionBreakdownRow({
   const [expanded, setExpanded] = useState(false);
   const items = sale.lineItemsWithProducts ?? [];
 
-  // Build hqMap: prefer hqUnitPriceMap from backend, fill gaps from lineItem snapshots
+  // Build hqMap keyed by variantId ?? productId to correctly handle
+  // multiple variants of the same product with different HQ prices
   const hqMap: Record<string, number> = { ...(sale.hqUnitPriceMap ?? {}) };
   for (const item of items) {
-    if (!(item.productId in hqMap) && item.hqUnitPrice !== undefined) {
-      hqMap[item.productId] = item.hqUnitPrice;
+    const key = item.variantId ?? item.productId;
+    if (!(key in hqMap) && item.hqUnitPrice !== undefined) {
+      hqMap[key] = item.hqUnitPrice;
     }
   }
 
@@ -167,7 +173,7 @@ function CommissionBreakdownRow({
               {items.map(
                 (item, i) => (
                   <div key={i} className="text-xs">
-                    {item.productName}{" "}
+                    {item.productName}{item.variantName ? ` — ${item.variantName}` : ""}{" "}
                     <span className="text-muted-foreground">
                       x{item.quantity}
                     </span>
@@ -189,10 +195,10 @@ function CommissionBreakdownRow({
           RM {sale.totalAmount.toFixed(2)}
         </TableCell>
         <TableCell className="text-right text-sm">
-          RM {(sale.hqPrice ?? 0).toFixed(2)}
+          RM {((sale as { computedHqPrice?: number }).computedHqPrice ?? sale.hqPrice ?? 0).toFixed(2)}
         </TableCell>
         <TableCell className="text-right text-sm text-green-600">
-          RM {((sale.agentCommission ?? 0) + (sale.overpaymentAmount ?? 0)).toFixed(2)}
+          RM {(((sale as { computedCommission?: number }).computedCommission ?? sale.agentCommission ?? 0) + (sale.overpaymentAmount ?? 0)).toFixed(2)}
         </TableCell>
       </TableRow>
 
@@ -207,49 +213,65 @@ function CommissionBreakdownRow({
                 (() => {
                   const minQty = sale.offerMinQuantity ?? 1;
                   const bundlePrice = sale.offerBundlePrice ?? 0;
+                  const offerSizeMl = sale.offerSizeMl;
 
-                  // Expand items into individual units, then split into bundled vs remainder
-                  const expandedUnits: { itemIdx: number; productName: string; productId: string; retailPrice: number }[] = [];
+                  type ExpandedUnit = { itemIdx: number; productName: string; variantName?: string; productId: string; variantId?: string; retailPrice: number; eligible: boolean };
+
+                  // Expand items into individual units, marking each as eligible (matches offer sizeMl) or not
+                  const expandedUnits: ExpandedUnit[] = [];
                   for (let i = 0; i < items.length; i++) {
-                    for (let u = 0; u < items[i].quantity; u++) {
+                    const item = items[i];
+                    const eligible = offerSizeMl == null
+                      || item.variantSizeMl == null
+                      || item.variantSizeMl === offerSizeMl;
+                    for (let u = 0; u < item.quantity; u++) {
                       expandedUnits.push({
                         itemIdx: i,
-                        productName: items[i].productName,
-                        productId: items[i].productId,
-                        retailPrice: items[i].retailPrice,
+                        productName: item.productName,
+                        variantName: item.variantName,
+                        productId: item.productId,
+                        variantId: item.variantId,
+                        retailPrice: item.retailPrice,
+                        eligible,
                       });
                     }
                   }
 
-                  const bundleCount = Math.floor(expandedUnits.length / minQty);
+                  const eligibleUnits = expandedUnits.filter((u) => u.eligible);
+                  const bundleCount = Math.floor(eligibleUnits.length / minQty);
                   const bundledQty = bundleCount * minQty;
 
-                  // Collect bundled items (grouped by product name for display)
-                  const bundledItems: { productName: string; quantity: number; retailPrice: number }[] = [];
-                  const bundledMap = new Map<string, { productName: string; quantity: number; retailPrice: number }>();
+                  // Collect bundled items from the first bundledQty eligible units
+                  const bundledItems: { productName: string; variantName?: string; quantity: number; retailPrice: number }[] = [];
+                  const bundledMap = new Map<string, { productName: string; variantName?: string; quantity: number; retailPrice: number }>();
                   for (let i = 0; i < bundledQty; i++) {
-                    const unit = expandedUnits[i];
-                    const existing = bundledMap.get(unit.productName);
+                    const unit = eligibleUnits[i];
+                    const mapKey = unit.variantId ?? unit.productId;
+                    const existing = bundledMap.get(mapKey);
                     if (existing) {
                       existing.quantity += 1;
                     } else {
-                      const entry = { productName: unit.productName, quantity: 1, retailPrice: unit.retailPrice };
-                      bundledMap.set(unit.productName, entry);
+                      const entry = { productName: unit.productName, variantName: unit.variantName, quantity: 1, retailPrice: unit.retailPrice };
+                      bundledMap.set(mapKey, entry);
                       bundledItems.push(entry);
                     }
                   }
 
-                  // Collect remainder items
-                  const remainderItems: { productName: string; productId: string; quantity: number; retailPrice: number }[] = [];
-                  const remainderMap = new Map<string, { productName: string; productId: string; quantity: number; retailPrice: number }>();
-                  for (let i = bundledQty; i < expandedUnits.length; i++) {
-                    const unit = expandedUnits[i];
-                    const existing = remainderMap.get(unit.productName);
+                  // Collect remainder: eligible units past bundledQty + all ineligible units
+                  const remainderItems: { productName: string; variantName?: string; productId: string; variantId?: string; quantity: number; retailPrice: number }[] = [];
+                  const remainderMap = new Map<string, { productName: string; variantName?: string; productId: string; variantId?: string; quantity: number; retailPrice: number }>();
+                  const remainderUnits = [
+                    ...eligibleUnits.slice(bundledQty),
+                    ...expandedUnits.filter((u) => !u.eligible),
+                  ];
+                  for (const unit of remainderUnits) {
+                    const mapKey = unit.variantId ?? unit.productId;
+                    const existing = remainderMap.get(mapKey);
                     if (existing) {
                       existing.quantity += 1;
                     } else {
-                      const entry = { productName: unit.productName, productId: unit.productId, quantity: 1, retailPrice: unit.retailPrice };
-                      remainderMap.set(unit.productName, entry);
+                      const entry = { productName: unit.productName, variantName: unit.variantName, productId: unit.productId, variantId: unit.variantId, quantity: 1, retailPrice: unit.retailPrice };
+                      remainderMap.set(mapKey, entry);
                       remainderItems.push(entry);
                     }
                   }
@@ -259,6 +281,16 @@ function CommissionBreakdownRow({
                   const hqPerBundle = sale.offerHqBundlePrice ?? bundlePrice;
                   const bundledHqShare = Math.round(bundleCount * hqPerBundle * 100) / 100;
                   const bundledCommission = Math.round((bundledAmount - bundledHqShare) * 100) / 100;
+
+                  // Pre-compute remainder HQ totals so we can sum for the totals row
+                  const remainderHqTotal = remainderItems.reduce((sum, item) => {
+                    const hqKey = item.variantId ?? item.productId;
+                    return hqMap[hqKey] !== undefined
+                      ? sum + Math.round(item.quantity * hqMap[hqKey] * 100) / 100
+                      : sum;
+                  }, 0);
+                  const computedHqTotal = Math.round((bundledHqShare + remainderHqTotal) * 100) / 100;
+                  const computedCommission = Math.round((sale.totalAmount - computedHqTotal) * 100) / 100;
 
                   return (
                     <div className="rounded-md border">
@@ -297,7 +329,7 @@ function CommissionBreakdownRow({
                           {bundledItems.map((item, i) => (
                             <TableRow key={`b-${i}`}>
                               <TableCell className="text-sm pl-8 text-muted-foreground">
-                                {item.productName}
+                                {item.productName}{item.variantName ? ` — ${item.variantName}` : ""}
                               </TableCell>
                               <TableCell className="text-right text-sm text-muted-foreground">
                                 {item.quantity}
@@ -311,8 +343,9 @@ function CommissionBreakdownRow({
                           {/* Remainder items (not in the offer) */}
                           {remainderItems.map((item, i) => {
                             const itemAmount = item.quantity * item.retailPrice;
-                            const itemHq = hqMap[item.productId] !== undefined
-                              ? Math.round(item.quantity * hqMap[item.productId] * 100) / 100
+                            const hqKey = item.variantId ?? item.productId;
+                            const itemHq = hqMap[hqKey] !== undefined
+                              ? Math.round(item.quantity * hqMap[hqKey] * 100) / 100
                               : null;
                             const itemCommission = itemHq !== null
                               ? Math.round((itemAmount - itemHq) * 100) / 100
@@ -321,7 +354,7 @@ function CommissionBreakdownRow({
                             return (
                               <TableRow key={`r-${i}`}>
                                 <TableCell className="text-sm font-medium">
-                                  {item.productName}
+                                  {item.productName}{item.variantName ? ` — ${item.variantName}` : ""}
                                 </TableCell>
                                 <TableCell className="text-right text-sm">
                                   {item.quantity}
@@ -348,10 +381,10 @@ function CommissionBreakdownRow({
                               RM {sale.totalAmount.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right text-sm font-medium">
-                              RM {(sale.hqPrice ?? 0).toFixed(2)}
+                              RM {computedHqTotal.toFixed(2)}
                             </TableCell>
                             <TableCell className="text-right text-sm font-semibold text-green-600">
-                              RM {(sale.agentCommission ?? 0).toFixed(2)}
+                              RM {computedCommission.toFixed(2)}
                             </TableCell>
                           </TableRow>
                           {sale.overpaymentAmount != null && sale.overpaymentAmount > 0 && (
@@ -389,14 +422,14 @@ function CommissionBreakdownRow({
                     <TableBody>
                       {items.map((item, i) => {
                         const saleUnitPrice = item.unitPrice ?? 0;
-                        const hqUnitPrice = hqMap[item.productId] ?? 0;
+                        const hqUnitPrice = hqMap[item.variantId ?? item.productId] ?? 0;
                         const marginPerUnit = Math.round((saleUnitPrice - hqUnitPrice) * 100) / 100;
                         const lineCommission = Math.round(marginPerUnit * item.quantity * 100) / 100;
 
                         return (
                           <TableRow key={i}>
                             <TableCell className="text-sm font-medium">
-                              {item.productName}
+                              {item.productName}{item.variantName ? ` — ${item.variantName}` : ""}
                             </TableCell>
                             <TableCell className="text-right text-sm">
                               {item.quantity}

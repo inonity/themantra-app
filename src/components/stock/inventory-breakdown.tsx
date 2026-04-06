@@ -1,6 +1,8 @@
 "use client";
 
 import { Fragment, useState, useMemo } from "react";
+import { useQuery } from "convex/react";
+import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
 import {
   Table,
@@ -58,6 +60,8 @@ export function InventoryBreakdown({
   const [minQty, setMinQty] = useState("");
   const [maxQty, setMaxQty] = useState("");
 
+  const allVariantsData = useQuery(api.productVariants.listAll);
+  const variantMap = useMemo(() => new Map((allVariantsData ?? []).map((v) => [v._id, v])), [allVariantsData]);
   const batchMap = useMemo(() => new Map(batches.map((b) => [b._id, b])), [batches]);
   const agentMap = useMemo(() => new Map(agents.map((a) => [a._id, a])), [agents]);
 
@@ -457,6 +461,11 @@ export function InventoryBreakdown({
                                     <span className="font-medium text-foreground">
                                       {batch?.batchCode ?? "Unknown"}
                                     </span>
+                                    {inv.variantId && (
+                                      <span className="ml-2">
+                                        {variantMap.get(inv.variantId)?.name}
+                                      </span>
+                                    )}
                                     {inv.stockModel && (
                                       <Badge
                                         variant="outline"

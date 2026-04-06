@@ -32,6 +32,7 @@ interface FulfillmentItem {
   quantity: number;
   fulfilledQuantity: number;
   productName: string;
+  variantName?: string;
   fulfillmentSource: string;
   batchId: Id<"batches"> | null;
   batchCode: string;
@@ -67,7 +68,8 @@ export function FulfillSaleDialog({
         productId: li.productId,
         quantity: remaining,
         fulfilledQuantity: fulfilled,
-        productName: products.get(li.productId)?.name ?? "Unknown",
+        productName: li.productName ?? products.get(li.productId)?.name ?? "Unknown",
+        variantName: li.variantName,
         fulfillmentSource: li.fulfillmentSource ?? "pending_batch",
         batchId: null,
         batchCode: "",
@@ -228,7 +230,7 @@ export function FulfillSaleDialog({
               return (
                 <div key={item.lineItemIndex} className="space-y-1 opacity-50">
                   <Label className="text-sm flex items-center gap-2">
-                    {item.productName} — x{item.fulfilledQuantity}
+                    {item.productName}{item.variantName ? ` — ${item.variantName}` : ""} — x{item.fulfilledQuantity}
                     <Badge variant="default" className="text-xs">Fulfilled</Badge>
                     {lineItem?.fulfilledAt && (
                       <span className="text-xs text-muted-foreground font-normal">
@@ -253,7 +255,7 @@ export function FulfillSaleDialog({
             return (
               <div key={item.lineItemIndex} className="space-y-2">
                 <Label className="text-sm flex items-center gap-2">
-                  {item.productName} — x{item.quantity}
+                  {item.productName}{item.variantName ? ` — ${item.variantName}` : ""} — x{item.quantity}
                   <Badge variant="outline" className="text-xs">
                     {SOURCE_LABELS[item.fulfillmentSource] ?? item.fulfillmentSource}
                   </Badge>

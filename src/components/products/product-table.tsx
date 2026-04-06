@@ -32,7 +32,6 @@ export function ProductTable({ products }: { products: Doc<"products">[] }) {
           <TableHead>Code</TableHead>
           <TableHead>Collection</TableHead>
           <TableHead>Description</TableHead>
-          <TableHead>Price (RM)</TableHead>
           <TableHead>Status</TableHead>
           <TableHead className="w-[80px]">Actions</TableHead>
         </TableRow>
@@ -61,7 +60,6 @@ export function ProductTable({ products }: { products: Doc<"products">[] }) {
             <TableCell className="max-w-[300px] truncate">
               {product.description}
             </TableCell>
-            <TableCell>{product.price.toFixed(2)}</TableCell>
             <TableCell>
               <Badge
                 variant={

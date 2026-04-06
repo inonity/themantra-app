@@ -53,7 +53,6 @@ export function ProductFormDialog({
   const [collection, setCollection] = useState(product?.collection ?? "");
   const [isAddingNewCollection, setIsAddingNewCollection] = useState(false);
   const [newCollectionName, setNewCollectionName] = useState("");
-  const [price, setPrice] = useState(product?.price?.toString() ?? "");
   const [status, setStatus] = useState<"active" | "discontinued" | "future_release">(
     product?.status ?? "active"
   );
@@ -67,7 +66,6 @@ export function ProductFormDialog({
       setCollection("");
       setIsAddingNewCollection(false);
       setNewCollectionName("");
-      setPrice("");
       setStatus("active");
     }
   }
@@ -106,7 +104,6 @@ export function ProductFormDialog({
         shortCode: shortCode.toUpperCase(),
         description: description || undefined,
         collection: collection || null,
-        price: parseFloat(price),
         status,
       });
     } else {
@@ -115,7 +112,6 @@ export function ProductFormDialog({
         shortCode: shortCode.toUpperCase(),
         description: description || undefined,
         collection: collection || undefined,
-        price: parseFloat(price),
         status,
       });
     }
@@ -136,7 +132,6 @@ export function ProductFormDialog({
           setCollection(product.collection ?? "");
           setIsAddingNewCollection(false);
           setNewCollectionName("");
-          setPrice(product.price.toString());
           setStatus(product.status);
         }
         if (!v) resetForm();
@@ -245,18 +240,6 @@ export function ProductFormDialog({
                 </SelectContent>
               </Select>
             )}
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="price">Price (RM)</Label>
-            <Input
-              id="price"
-              type="number"
-              step="0.01"
-              min="0"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              required
-            />
           </div>
           <div className="space-y-2">
             <Label htmlFor="status">Status</Label>

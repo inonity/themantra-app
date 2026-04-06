@@ -3,6 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
+import { useMemo } from "react";
 import { useState, useEffect } from "react";
 import {
   Dialog,
@@ -57,6 +58,9 @@ export function BatchFormDialog({
   const [selectedProductId, setSelectedProductId] = useState<string>(
     fixedProductId ?? batch?.productId ?? ""
   );
+  const [selectedVariantId, setSelectedVariantId] = useState<string>(
+    batch?.variantId ?? ""
+  );
   const [batchCode, setBatchCode] = useState(batch?.batchCode ?? "");
   const [batchCodeManuallyEdited, setBatchCodeManuallyEdited] = useState(isEdit);
   const [manufacturedDate, setManufacturedDate] = useState(batch?.manufacturedDate ?? "");
@@ -73,6 +77,16 @@ export function BatchFormDialog({
   const [error, setError] = useState("");
 
   const activeProductId = fixedProductId ?? batch?.productId ?? (selectedProductId as Id<"products">);
+
+  const productVariants = useQuery(
+    api.productVariants.listByProduct,
+    activeProductId ? { productId: activeProductId as Id<"products"> } : "skip"
+  );
+
+  const activeVariants = useMemo(
+    () => (productVariants ?? []).filter((v) => v.status === "active"),
+    [productVariants]
+  );
 
   const nextBatchInfo = useQuery(
     api.batches.getNextBatchNumber,
@@ -110,6 +124,7 @@ export function BatchFormDialog({
 
   function resetForm() {
     if (!fixedProductId && !isEdit) setSelectedProductId("");
+    setSelectedVariantId("");
     setBatchCode("");
     setBatchCodeManuallyEdited(false);
     setManufacturedDate("");
@@ -130,6 +145,11 @@ export function BatchFormDialog({
       return;
     }
 
+    if (!isEdit && activeVariants.length > 0 && !selectedVariantId) {
+      setError("Please select a variant");
+      return;
+    }
+
     try {
       if (isEdit) {
         await updateBatch({
@@ -144,6 +164,7 @@ export function BatchFormDialog({
       } else {
         await createBatch({
           productId: activeProductId as Id<"products">,
+          variantId: selectedVariantId ? (selectedVariantId as Id<"productVariants">) : undefined,
           batchCode,
           manufacturedDate,
           expectedReadyDate: expectedReadyDate || undefined,
@@ -176,6 +197,7 @@ export function BatchFormDialog({
               value={selectedProductId}
               onValueChange={(v) => {
                 setSelectedProductId(v ?? "");
+                setSelectedVariantId("");
                 setBatchCodeManuallyEdited(false);
               }}
             >
@@ -194,6 +216,36 @@ export function BatchFormDialog({
                 ))}
               </SelectContent>
             </Select>
+          </div>
+        )}
+
+        {/* Variant selector — only in create mode and when variants exist */}
+        {!isEdit && activeVariants.length > 0 && (
+          <div className="space-y-2">
+            <Label>Variant</Label>
+            <Select
+              value={selectedVariantId}
+              onValueChange={(v) => setSelectedVariantId(v ?? "")}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {selectedVariantId
+                    ? activeVariants.find((v) => v._id === selectedVariantId)?.name ?? "Select variant"
+                    : "Select variant"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                {activeVariants.map((v) => (
+                  <SelectItem key={v._id} value={v._id}>
+                    {v.name} — RM{v.price.toFixed(2)}
+                    {v.agentOnly ? " (Agent Only)" : ""}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Associate this batch with a specific variant (e.g. 30ML, Tester 15ML).
+            </p>
           </div>
         )}
 

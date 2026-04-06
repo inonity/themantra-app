@@ -28,6 +28,7 @@ export const recordB2CSale = mutation({
         v.object({
           batchId: v.id("batches"),
           productId: v.id("products"),
+          variantId: v.optional(v.id("productVariants")),
           quantity: v.number(),
         })
       )
@@ -36,6 +37,7 @@ export const recordB2CSale = mutation({
       v.array(
         v.object({
           productId: v.id("products"),
+          variantId: v.optional(v.id("productVariants")),
           quantity: v.number(),
         })
       )
@@ -49,6 +51,7 @@ export const recordB2CSale = mutation({
         v.object({
           batchId: v.id("batches"),
           productId: v.id("products"),
+          variantId: v.optional(v.id("productVariants")),
           quantity: v.number(),
           inBundle: v.optional(v.boolean()),
         })
@@ -58,6 +61,7 @@ export const recordB2CSale = mutation({
       v.array(
         v.object({
           productId: v.id("products"),
+          variantId: v.optional(v.id("productVariants")),
           quantity: v.number(),
           fulfillmentSource: fulfillmentSourceValidator,
           inBundle: v.optional(v.boolean()),
@@ -115,8 +119,8 @@ export const recordB2CSale = mutation({
     }
 
     // Normalize into fulfilledItems + pendingItems
-    let fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; inBundle?: boolean }[] = [];
-    let pendingItems: { productId: Id<"products">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] = [];
+    let fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; inBundle?: boolean }[] = [];
+    let pendingItems: { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; fulfillmentSource: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] = [];
 
     if (isNewStyle) {
       fulfilledItems = args.fulfilledItems ?? [];
@@ -138,9 +142,9 @@ export const recordB2CSale = mutation({
     }
 
     // Build unified pricing items list
-    const allPricingItems: { productId: Id<"products">; quantity: number }[] = [
-      ...fulfilledItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-      ...pendingItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+    const allPricingItems: { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number }[] = [
+      ...fulfilledItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
+      ...pendingItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
     ];
     const totalQuantity = allPricingItems.reduce((sum, item) => sum + item.quantity, 0);
 
@@ -154,15 +158,28 @@ export const recordB2CSale = mutation({
       stockModel = profile?.defaultStockModel ?? "hold_paid";
     }
 
-    // Look up product prices and names
+    // Look up product prices (variant-aware) and names
+    // Key for pricingMap: variantId when present, else productId
     const productPrices = new Map<string, number>();
     const productNames = new Map<string, string>();
+    const variantNamesMap = new Map<string, string>(); // variantId → variant name
+    const variantSizeMap = new Map<string, number>(); // variantId → sizeMl
+
     for (const item of allPricingItems) {
-      if (!productPrices.has(item.productId)) {
+      if (!productNames.has(item.productId)) {
         const product = await ctx.db.get(item.productId);
         if (!product) throw new Error("Product not found");
-        productPrices.set(item.productId, product.price);
         productNames.set(item.productId, product.name);
+        if (!item.variantId) {
+          productPrices.set(item.productId, product.price ?? 0);
+        }
+      }
+      if (item.variantId && !productPrices.has(item.variantId)) {
+        const variant = await ctx.db.get(item.variantId);
+        if (!variant) throw new Error("Variant not found");
+        productPrices.set(item.variantId, variant.price);
+        variantNamesMap.set(item.variantId, variant.name);
+        if (variant.sizeMl != null) variantSizeMap.set(item.variantId, variant.sizeMl);
       }
     }
 
@@ -198,13 +215,22 @@ export const recordB2CSale = mutation({
       const nonEligibleItems: typeof allPricingItems = [];
       for (const item of allPricingItems) {
         let eligible = true;
-        if (offer.productId) {
+        if (offer.variantId) {
+          eligible = item.variantId === offer.variantId;
+        } else if (offer.variantIds && offer.variantIds.length > 0) {
+          eligible = !!item.variantId && offer.variantIds.includes(item.variantId);
+        } else if (offer.productId) {
           eligible = item.productId === offer.productId;
         } else if (offer.productIds && offer.productIds.length > 0) {
           eligible = offer.productIds.includes(item.productId);
         } else if (offer.collection) {
           const product = await ctx.db.get(item.productId);
           eligible = !!product && product.collection === offer.collection;
+        }
+        // Apply sizeMl filter for new-style offers (not legacy variantId-based)
+        if (eligible && offer.sizeMl != null && !offer.variantId && !(offer.variantIds && offer.variantIds.length > 0)) {
+          const itemSizeMl = item.variantId ? variantSizeMap.get(item.variantId) : undefined;
+          eligible = itemSizeMl === offer.sizeMl;
         }
         if (eligible) {
           eligibleItems.push(item);
@@ -220,18 +246,23 @@ export const recordB2CSale = mutation({
       }
 
       const bundleCount = Math.floor(eligibleQty / offer.minQuantity);
-      const eligibleRemainder = eligibleQty - bundleCount * offer.minQuantity;
+      const bundledUnitCount = bundleCount * offer.minQuantity;
 
-      const eligibleDefaultTotal = eligibleItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
-        0
-      );
-      const avgEligiblePrice = eligibleDefaultTotal / eligibleQty;
-      const eligibleTotal =
-        bundleCount * offer.bundlePrice + eligibleRemainder * avgEligiblePrice;
+      // Expand eligible items to per-unit prices, bundle the first N, price the rest at actual unit cost
+      const expandedEligiblePrices: number[] = [];
+      for (const item of eligibleItems) {
+        const price = productPrices.get(item.variantId ?? item.productId)!;
+        for (let u = 0; u < item.quantity; u++) {
+          expandedEligiblePrices.push(price);
+        }
+      }
+      const remainderTotal = expandedEligiblePrices
+        .slice(bundledUnitCount)
+        .reduce((sum, p) => sum + p, 0);
+      const eligibleTotal = bundleCount * offer.bundlePrice + remainderTotal;
 
       const nonEligibleTotal = nonEligibleItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
+        (sum, item) => sum + item.quantity * productPrices.get(item.variantId ?? item.productId)!,
         0
       );
 
@@ -239,14 +270,14 @@ export const recordB2CSale = mutation({
       offerIdToStore = args.offerId;
     } else {
       totalSalePrice = allPricingItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
+        (sum, item) => sum + item.quantity * productPrices.get(item.variantId ?? item.productId)!,
         0
       );
     }
 
     // Calculate HQ pricing (what agent owes HQ)
     let totalHqPrice = 0;
-    const hqPricePerProduct = new Map<string, number>();
+    const hqPricePerProduct = new Map<string, number>(); // key: variantId ?? productId
     let usedOfferHqPricing = false;
 
     if (offerIdToStore) {
@@ -272,14 +303,15 @@ export const recordB2CSale = mutation({
 
         if (remainder > 0) {
           for (const item of allPricingItems) {
-            if (!hqPricePerProduct.has(item.productId)) {
-              const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-              hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+            const pKey = item.variantId ?? item.productId;
+            if (!hqPricePerProduct.has(pKey)) {
+              const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+              hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
             }
           }
           totalHqPrice += remainder * (
             allPricingItems.reduce(
-              (sum, item) => sum + item.quantity * hqPricePerProduct.get(item.productId)!,
+              (sum, item) => sum + item.quantity * hqPricePerProduct.get(item.variantId ?? item.productId)!,
               0
             ) / totalQuantity
           );
@@ -289,11 +321,12 @@ export const recordB2CSale = mutation({
 
     if (!usedOfferHqPricing) {
       for (const item of allPricingItems) {
-        if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-          hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+        const pKey = item.variantId ?? item.productId;
+        if (!hqPricePerProduct.has(pKey)) {
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+          hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
         }
-        totalHqPrice += item.quantity * hqPricePerProduct.get(item.productId)!;
+        totalHqPrice += item.quantity * hqPricePerProduct.get(pKey)!;
       }
     }
 
@@ -324,7 +357,11 @@ export const recordB2CSale = mutation({
         const nonEligibleKeys: string[] = [];
         for (const item of allItems) {
           let eligible = true;
-          if (offer.productId) {
+          if (offer.variantId) {
+            eligible = item.variantId === offer.variantId;
+          } else if (offer.variantIds && offer.variantIds.length > 0) {
+            eligible = !!item.variantId && offer.variantIds.includes(item.variantId);
+          } else if (offer.productId) {
             eligible = item.productId === offer.productId;
           } else if (offer.productIds && offer.productIds.length > 0) {
             eligible = offer.productIds.includes(item.productId);
@@ -340,11 +377,11 @@ export const recordB2CSale = mutation({
         }
 
         // Expand eligible items by quantity to assign bundle vs remainder
-        const expandedEligible: { key: string; productId: Id<"products"> }[] = [];
+        const expandedEligible: { key: string; productId: Id<"products">; variantId?: Id<"productVariants"> }[] = [];
         for (const item of allItems) {
           if (eligibleKeys.includes(item._key)) {
             for (let u = 0; u < item.quantity; u++) {
-              expandedEligible.push({ key: item._key, productId: item.productId });
+              expandedEligible.push({ key: item._key, productId: item.productId, variantId: item.variantId });
             }
           }
         }
@@ -369,11 +406,11 @@ export const recordB2CSale = mutation({
           if (eligibleKeys.includes(item._key)) {
             const bundled = bundledPerKey.get(item._key) ?? 0;
             const remainder = remainderPerKey.get(item._key) ?? 0;
-            const regularPrice = productPrices.get(item.productId) ?? 0;
+            const regularPrice = productPrices.get(item.variantId ?? item.productId) ?? 0;
             const totalForItem = bundled * bundleUnitPrice + remainder * regularPrice;
             itemUnitPrices.set(item._key, Math.round((totalForItem / item.quantity) * 100) / 100);
           } else {
-            itemUnitPrices.set(item._key, productPrices.get(item.productId) ?? 0);
+            itemUnitPrices.set(item._key, productPrices.get(item.variantId ?? item.productId) ?? 0);
           }
         }
       }
@@ -382,7 +419,7 @@ export const recordB2CSale = mutation({
     // Fallback: regular product price for items without offer pricing
     for (const item of allItems) {
       if (!itemUnitPrices.has(item._key)) {
-        itemUnitPrices.set(item._key, productPrices.get(item.productId) ?? 0);
+        itemUnitPrices.set(item._key, productPrices.get(item.variantId ?? item.productId) ?? 0);
       }
     }
 
@@ -390,15 +427,18 @@ export const recordB2CSale = mutation({
 
     // Ensure hqPricePerProduct is populated for all items (needed for lineItem snapshots)
     for (const item of allPricingItems) {
-      if (!hqPricePerProduct.has(item.productId)) {
-        const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-        hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+      const pKey = item.variantId ?? item.productId;
+      if (!hqPricePerProduct.has(pKey)) {
+        const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+        hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
       }
     }
 
     // Build enriched lineItems array
     const enrichedLineItems: {
       productId: Id<"products">;
+      variantId?: Id<"productVariants">;
+      variantName?: string;
       quantity: number;
       unitPrice: number;
       productName: string;
@@ -414,17 +454,20 @@ export const recordB2CSale = mutation({
     for (let idx = 0; idx < fulfilledItems.length; idx++) {
       const item = fulfilledItems[idx];
       const key = `f_${idx}`;
+      const pKey = item.variantId ?? item.productId;
       enrichedLineItems.push({
         productId: item.productId,
+        variantId: item.variantId,
+        variantName: item.variantId ? variantNamesMap.get(item.variantId) : undefined,
         quantity: item.quantity,
-        unitPrice: itemUnitPrices.get(key) ?? Math.round((productPrices.get(item.productId) ?? avgUnitPrice) * 100) / 100,
+        unitPrice: itemUnitPrices.get(key) ?? Math.round((productPrices.get(pKey) ?? avgUnitPrice) * 100) / 100,
         productName: productNames.get(item.productId) ?? "Unknown",
-        productPrice: productPrices.get(item.productId) ?? 0,
+        productPrice: productPrices.get(pKey) ?? 0,
         fulfillmentSource: "agent_stock",
         fulfilledQuantity: item.quantity,
         batchId: item.batchId,
         fulfilledAt: movedAt,
-        hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        hqUnitPrice: Math.round((hqPricePerProduct.get(pKey) ?? 0) * 100) / 100,
         inBundle: item.inBundle,
       });
     }
@@ -432,15 +475,18 @@ export const recordB2CSale = mutation({
     for (let idx = 0; idx < pendingItems.length; idx++) {
       const item = pendingItems[idx];
       const key = `p_${idx}`;
+      const pKey = item.variantId ?? item.productId;
       enrichedLineItems.push({
         productId: item.productId,
+        variantId: item.variantId,
+        variantName: item.variantId ? variantNamesMap.get(item.variantId) : undefined,
         quantity: item.quantity,
-        unitPrice: itemUnitPrices.get(key) ?? Math.round((productPrices.get(item.productId) ?? avgUnitPrice) * 100) / 100,
+        unitPrice: itemUnitPrices.get(key) ?? Math.round((productPrices.get(pKey) ?? avgUnitPrice) * 100) / 100,
         productName: productNames.get(item.productId) ?? "Unknown",
-        productPrice: productPrices.get(item.productId) ?? 0,
+        productPrice: productPrices.get(pKey) ?? 0,
         fulfillmentSource: item.fulfillmentSource,
         fulfilledQuantity: 0,
-        hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        hqUnitPrice: Math.round((hqPricePerProduct.get(pKey) ?? 0) * 100) / 100,
         inBundle: item.inBundle,
       });
     }
@@ -499,9 +545,10 @@ export const recordB2CSale = mutation({
     // Process fulfilled items — deduct from agent inventory + create stock movements
     if (fulfilledItems.length > 0) {
       for (const item of fulfilledItems) {
-        if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-          hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+        const pKey = item.variantId ?? item.productId;
+        if (!hqPricePerProduct.has(pKey)) {
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+          hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
         }
       }
 
@@ -533,14 +580,20 @@ export const recordB2CSale = mutation({
           await ctx.db.patch(agentInventory._id, { quantity: newQty, updatedAt: Date.now() });
         }
 
+        const pKey = item.variantId ?? item.productId;
         const key = `f_${fulfilledItems.indexOf(item)}`;
-        const itemAdjustedUnitPrice = itemUnitPrices.get(key) ?? (productPrices.get(item.productId) ?? avgUnitPrice);
+        const itemAdjustedUnitPrice = itemUnitPrices.get(key) ?? (productPrices.get(pKey) ?? avgUnitPrice);
         const itemSalePrice = itemAdjustedUnitPrice * item.quantity;
-        const hqUnitPrice = hqPricePerProduct.get(item.productId)!;
+        const hqUnitPrice = hqPricePerProduct.get(pKey)!;
+
+        // Get variantId from batch if not on item (for backward compat)
+        const batch = await ctx.db.get(item.batchId);
+        const variantId = item.variantId ?? batch?.variantId;
 
         await ctx.db.insert("stockMovements", {
           batchId: item.batchId,
           productId: item.productId,
+          variantId,
           fromPartyType: "agent",
           fromPartyId: userId,
           toPartyType: "customer",
@@ -604,6 +657,7 @@ export const recordB2BPurchase = mutation({
     const itemDetails: {
       batchId: typeof args.items[0]["batchId"];
       productId: Id<"products">;
+      variantId: Id<"productVariants"> | undefined;
       quantity: number;
       retailPrice: number;
       hqUnitPrice: number;
@@ -617,12 +671,14 @@ export const recordB2BPurchase = mutation({
       const resolved = await resolveAgentPrice(
         ctx,
         args.agentId,
-        batch.productId
+        batch.productId,
+        batch.variantId
       );
 
       itemDetails.push({
         batchId: item.batchId,
         productId: batch.productId,
+        variantId: batch.variantId,
         quantity: item.quantity,
         retailPrice: resolved.retailPrice,
         hqUnitPrice: resolved.hqUnitPrice,
@@ -703,6 +759,7 @@ export const recordB2BPurchase = mutation({
           await ctx.db.insert("inventory", {
             batchId: detail.batchId,
             productId: detail.productId,
+            variantId: detail.variantId,
             heldByType: "agent",
             heldById: args.agentId,
             quantity: detail.quantity,
@@ -714,6 +771,7 @@ export const recordB2BPurchase = mutation({
       await ctx.db.insert("stockMovements", {
         batchId: detail.batchId,
         productId: detail.productId,
+        variantId: detail.variantId,
         fromPartyType: "business",
         toPartyType: "agent",
         toPartyId: args.agentId,
@@ -740,6 +798,7 @@ export const recordPresellSale = mutation({
       v.object({
         batchId: v.id("batches"),
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
       })
     )),
@@ -748,6 +807,7 @@ export const recordPresellSale = mutation({
       v.object({
         batchId: v.id("batches"),
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
         fulfillmentSource: v.optional(fulfillmentSourceValidator),
         inBundle: v.optional(v.boolean()),
@@ -756,6 +816,7 @@ export const recordPresellSale = mutation({
     pendingItems: v.optional(v.array(
       v.object({
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
         fulfillmentSource: v.union(
           v.literal("agent_stock"),
@@ -812,7 +873,7 @@ export const recordPresellSale = mutation({
     }
 
     // Normalize into fulfilledItems + pendingItems (support legacy `items` arg)
-    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] =
+    const fulfilledItems: { batchId: Id<"batches">; productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; fulfillmentSource?: "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release"; inBundle?: boolean }[] =
       args.fulfilledItems ?? args.items?.map((i) => ({ ...i, fulfillmentSource: undefined })) ?? [];
     const pendingItems = args.pendingItems ?? [];
 
@@ -821,22 +882,34 @@ export const recordPresellSale = mutation({
     }
 
     // Build unified pricing items list
-    const allPricingItems: { productId: Id<"products">; quantity: number }[] = [
-      ...fulfilledItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
-      ...pendingItems.map((i) => ({ productId: i.productId, quantity: i.quantity })),
+    const allPricingItems: { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number }[] = [
+      ...fulfilledItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
+      ...pendingItems.map((i) => ({ productId: i.productId, variantId: i.variantId, quantity: i.quantity })),
     ];
     const totalQuantity = allPricingItems.reduce((sum, item) => sum + item.quantity, 0);
     const stockModel = "presell" as const;
 
-    // Look up product prices and names
+    // Look up product prices (variant-aware) and names
     const productPrices = new Map<string, number>();
     const productNames = new Map<string, string>();
+    const variantNamesMap = new Map<string, string>();
+    const variantSizeMap = new Map<string, number>(); // variantId → sizeMl
+
     for (const item of allPricingItems) {
-      if (!productPrices.has(item.productId)) {
+      if (!productNames.has(item.productId)) {
         const product = await ctx.db.get(item.productId);
         if (!product) throw new Error("Product not found");
-        productPrices.set(item.productId, product.price);
         productNames.set(item.productId, product.name);
+        if (!item.variantId) {
+          productPrices.set(item.productId, product.price ?? 0);
+        }
+      }
+      if (item.variantId && !productPrices.has(item.variantId)) {
+        const variant = await ctx.db.get(item.variantId);
+        if (!variant) throw new Error("Variant not found");
+        productPrices.set(item.variantId, variant.price);
+        variantNamesMap.set(item.variantId, variant.name);
+        if (variant.sizeMl != null) variantSizeMap.set(item.variantId, variant.sizeMl);
       }
     }
 
@@ -872,13 +945,22 @@ export const recordPresellSale = mutation({
       const nonEligibleItems: typeof allPricingItems = [];
       for (const item of allPricingItems) {
         let eligible = true;
-        if (offer.productId) {
+        if (offer.variantId) {
+          eligible = item.variantId === offer.variantId;
+        } else if (offer.variantIds && offer.variantIds.length > 0) {
+          eligible = !!item.variantId && offer.variantIds.includes(item.variantId);
+        } else if (offer.productId) {
           eligible = item.productId === offer.productId;
         } else if (offer.productIds && offer.productIds.length > 0) {
           eligible = offer.productIds.includes(item.productId);
         } else if (offer.collection) {
           const product = await ctx.db.get(item.productId);
           eligible = !!product && product.collection === offer.collection;
+        }
+        // Apply sizeMl filter for new-style offers (not legacy variantId-based)
+        if (eligible && offer.sizeMl != null && !offer.variantId && !(offer.variantIds && offer.variantIds.length > 0)) {
+          const itemSizeMl = item.variantId ? variantSizeMap.get(item.variantId) : undefined;
+          eligible = itemSizeMl === offer.sizeMl;
         }
         if (eligible) {
           eligibleItems.push(item);
@@ -894,20 +976,24 @@ export const recordPresellSale = mutation({
       }
 
       const bundleCount = Math.floor(eligibleQty / offer.minQuantity);
-      const eligibleRemainder = eligibleQty - bundleCount * offer.minQuantity;
+      const bundledUnitCount = bundleCount * offer.minQuantity;
 
-      // Eligible: bundles at offer price, remainder at retail
-      const eligibleDefaultTotal = eligibleItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
-        0
-      );
-      const avgEligiblePrice = eligibleDefaultTotal / eligibleQty;
-      const eligibleTotal =
-        bundleCount * offer.bundlePrice + eligibleRemainder * avgEligiblePrice;
+      // Expand eligible items to per-unit prices, bundle the first N, price the rest at actual unit cost
+      const expandedEligiblePrices: number[] = [];
+      for (const item of eligibleItems) {
+        const price = productPrices.get(item.variantId ?? item.productId)!;
+        for (let u = 0; u < item.quantity; u++) {
+          expandedEligiblePrices.push(price);
+        }
+      }
+      const remainderTotal = expandedEligiblePrices
+        .slice(bundledUnitCount)
+        .reduce((sum, p) => sum + p, 0);
+      const eligibleTotal = bundleCount * offer.bundlePrice + remainderTotal;
 
       // Non-eligible at full retail
       const nonEligibleTotal = nonEligibleItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
+        (sum, item) => sum + item.quantity * productPrices.get(item.variantId ?? item.productId)!,
         0
       );
 
@@ -915,14 +1001,14 @@ export const recordPresellSale = mutation({
       offerIdToStore = args.offerId;
     } else {
       totalSalePrice = allPricingItems.reduce(
-        (sum, item) => sum + item.quantity * productPrices.get(item.productId)!,
+        (sum, item) => sum + item.quantity * productPrices.get(item.variantId ?? item.productId)!,
         0
       );
     }
 
     // Calculate HQ pricing
     let totalHqPrice = 0;
-    const hqPricePerProduct = new Map<string, number>();
+    const hqPricePerProduct = new Map<string, number>(); // key: variantId ?? productId
     let usedOfferHqPricing = false;
 
     if (offerIdToStore) {
@@ -948,14 +1034,15 @@ export const recordPresellSale = mutation({
 
         if (remainder > 0) {
           for (const item of allPricingItems) {
-            if (!hqPricePerProduct.has(item.productId)) {
-              const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-              hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+            const pKey = item.variantId ?? item.productId;
+            if (!hqPricePerProduct.has(pKey)) {
+              const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+              hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
             }
           }
           totalHqPrice += remainder * (
             allPricingItems.reduce(
-              (sum, item) => sum + item.quantity * hqPricePerProduct.get(item.productId)!,
+              (sum, item) => sum + item.quantity * hqPricePerProduct.get(item.variantId ?? item.productId)!,
               0
             ) / totalQuantity
           );
@@ -965,11 +1052,12 @@ export const recordPresellSale = mutation({
 
     if (!usedOfferHqPricing) {
       for (const item of allPricingItems) {
-        if (!hqPricePerProduct.has(item.productId)) {
-          const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-          hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+        const pKey = item.variantId ?? item.productId;
+        if (!hqPricePerProduct.has(pKey)) {
+          const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+          hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
         }
-        totalHqPrice += item.quantity * hqPricePerProduct.get(item.productId)!;
+        totalHqPrice += item.quantity * hqPricePerProduct.get(pKey)!;
       }
     }
 
@@ -981,9 +1069,10 @@ export const recordPresellSale = mutation({
 
     // Ensure per-product HQ prices are resolved for stock movements
     for (const item of allPricingItems) {
-      if (!hqPricePerProduct.has(item.productId)) {
-        const resolved = await resolveAgentPrice(ctx, userId, item.productId);
-        hqPricePerProduct.set(item.productId, resolved.hqUnitPrice);
+      const pKey = item.variantId ?? item.productId;
+      if (!hqPricePerProduct.has(pKey)) {
+        const resolved = await resolveAgentPrice(ctx, userId, item.productId, item.variantId);
+        hqPricePerProduct.set(pKey, resolved.hqUnitPrice);
       }
     }
 
@@ -994,6 +1083,8 @@ export const recordPresellSale = mutation({
     // Build enriched lineItems
     const enrichedLineItems: {
       productId: Id<"products">;
+      variantId?: Id<"productVariants">;
+      variantName?: string;
       quantity: number;
       unitPrice: number;
       productName: string;
@@ -1008,31 +1099,37 @@ export const recordPresellSale = mutation({
 
     for (const item of fulfilledItems) {
       const source = item.fulfillmentSource ?? "hq_transfer";
+      const pKey = item.variantId ?? item.productId;
       enrichedLineItems.push({
         productId: item.productId,
+        variantId: item.variantId,
+        variantName: item.variantId ? variantNamesMap.get(item.variantId) : undefined,
         quantity: item.quantity,
         unitPrice: Math.round(unitPrice * 100) / 100,
         productName: productNames.get(item.productId) ?? "Unknown",
-        productPrice: productPrices.get(item.productId) ?? 0,
+        productPrice: productPrices.get(pKey) ?? 0,
         fulfillmentSource: source === "agent_stock" ? "agent_stock" : "hq_transfer",
         fulfilledQuantity: item.quantity,
         batchId: item.batchId,
         fulfilledAt: movedAt,
-        hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        hqUnitPrice: Math.round((hqPricePerProduct.get(pKey) ?? 0) * 100) / 100,
         inBundle: item.inBundle,
       });
     }
 
     for (const item of pendingItems) {
+      const pKey = item.variantId ?? item.productId;
       enrichedLineItems.push({
         productId: item.productId,
+        variantId: item.variantId,
+        variantName: item.variantId ? variantNamesMap.get(item.variantId) : undefined,
         quantity: item.quantity,
         unitPrice: Math.round(unitPrice * 100) / 100,
         productName: productNames.get(item.productId) ?? "Unknown",
-        productPrice: productPrices.get(item.productId) ?? 0,
+        productPrice: productPrices.get(pKey) ?? 0,
         fulfillmentSource: item.fulfillmentSource,
         fulfilledQuantity: 0,
-        hqUnitPrice: Math.round((hqPricePerProduct.get(item.productId) ?? 0) * 100) / 100,
+        hqUnitPrice: Math.round((hqPricePerProduct.get(pKey) ?? 0) * 100) / 100,
         inBundle: item.inBundle,
       });
     }
@@ -1138,12 +1235,18 @@ export const recordPresellSale = mutation({
         }
       }
 
+      const pKey = item.variantId ?? item.productId;
       const itemSalePrice = unitPrice * item.quantity;
-      const hqUnitPrice = hqPricePerProduct.get(item.productId)!;
+      const hqUnitPrice = hqPricePerProduct.get(pKey)!;
+
+      // Get variantId from batch if not on item
+      const batch = await ctx.db.get(item.batchId);
+      const variantId = item.variantId ?? batch?.variantId;
 
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: item.productId,
+        variantId,
         fromPartyType: isAgentStock ? "agent" : "business",
         fromPartyId: isAgentStock ? userId : undefined,
         toPartyType: "customer",
@@ -1476,10 +1579,13 @@ export const fulfillLineItems = mutation({
       }
 
       // Create stock movement
-      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId);
+      const batch = await ctx.db.get(item.batchId);
+      const variantId = lineItem.variantId ?? batch?.variantId;
+      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId, variantId);
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: lineItem.productId,
+        variantId,
         fromPartyType: "agent",
         fromPartyId: sellerId,
         toPartyType: "customer",
@@ -1600,6 +1706,7 @@ export const hqTransferToAgent = mutation({
         await ctx.db.insert("inventory", {
           batchId: item.batchId,
           productId: item.productId,
+          variantId: batch.variantId,
           heldByType: "agent",
           heldById: args.agentId,
           quantity: item.quantity,
@@ -1608,12 +1715,13 @@ export const hqTransferToAgent = mutation({
         });
       }
 
-      const resolved = await resolveAgentPrice(ctx, args.agentId, item.productId);
+      const resolved = await resolveAgentPrice(ctx, args.agentId, item.productId, batch.variantId);
 
       // 4. Create B2B stock movement (HQ → agent)
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: item.productId,
+        variantId: batch.variantId,
         fromPartyType: "business",
         toPartyType: "agent",
         toPartyId: args.agentId,
@@ -1721,13 +1829,15 @@ export const selfFulfillFromHQ = mutation({
         });
       }
 
-      // Resolve pricing
-      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId);
+      // Resolve pricing (variant-aware)
+      const variantId = lineItem.variantId ?? batch.variantId;
+      const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId, variantId);
 
       // 2. Stock movement: business → agent (the "pull" from HQ)
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: lineItem.productId,
+        variantId,
         fromPartyType: "business",
         toPartyType: "agent",
         toPartyId: sellerId,
@@ -1743,6 +1853,7 @@ export const selfFulfillFromHQ = mutation({
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: lineItem.productId,
+        variantId,
         fromPartyType: "agent",
         fromPartyId: sellerId,
         toPartyType: "customer",
@@ -1901,6 +2012,7 @@ export const getPendingFulfillmentDashboard = query({
       lineItemIndex: number;
       productId: Id<"products">;
       productName: string;
+      variantName?: string;
       quantity: number;
       fulfilledQuantity: number;
       fulfillmentSource: string;
@@ -1938,7 +2050,8 @@ export const getPendingFulfillmentDashboard = query({
           saleId: sale._id,
           lineItemIndex: i,
           productId: li.productId as Id<"products">,
-          productName: product?.name ?? "Unknown",
+          productName: li.productName ?? product?.name ?? "Unknown",
+          variantName: li.variantName,
           quantity: li.quantity,
           fulfilledQuantity: fulfilled,
           fulfillmentSource: source,

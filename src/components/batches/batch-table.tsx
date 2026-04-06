@@ -1,6 +1,6 @@
 "use client";
 
-import { useMutation, useQuery } from "convex/react";
+import { useMutation } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc } from "../../../convex/_generated/dataModel";
 import {
@@ -48,7 +48,14 @@ const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
   cancelled: [],
 };
 
-export function BatchTable({ batches }: { batches: Doc<"batches">[] }) {
+export function BatchTable({
+  batches,
+  variants,
+}: {
+  batches: Doc<"batches">[];
+  variants?: Doc<"productVariants">[];
+}) {
+  const variantMap = new Map(variants?.map((v) => [v._id, v.name]) ?? []);
   const updateStatus = useMutation(api.batches.updateStatus);
   const [releasingBatch, setReleasingBatch] = useState<Doc<"batches"> | null>(null);
 
@@ -79,6 +86,7 @@ export function BatchTable({ batches }: { batches: Doc<"batches">[] }) {
         <TableHeader>
           <TableRow>
             <TableHead>Batch Code</TableHead>
+            <TableHead>Variant</TableHead>
             <TableHead>Manufactured</TableHead>
             <TableHead>Expected Maturation</TableHead>
             <TableHead>Quantity</TableHead>
@@ -93,6 +101,9 @@ export function BatchTable({ batches }: { batches: Doc<"batches">[] }) {
             return (
               <TableRow key={batch._id}>
                 <TableCell className="font-medium">{batch.batchCode}</TableCell>
+                <TableCell>
+                  {batch.variantId ? (variantMap.get(batch.variantId) ?? "—") : "—"}
+                </TableCell>
                 <TableCell>{batch.manufacturedDate}</TableCell>
                 <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>
                 <TableCell>

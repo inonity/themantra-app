@@ -1,4 +1,4 @@
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
@@ -211,7 +211,7 @@ export const generate = mutation({
     agentId: v.id("users"),
   },
   handler: async (ctx, args) => {
-    const admin = await requireRole(ctx, "admin");
+    await requireRole(ctx, "admin");
 
     const agent = await ctx.db.get(args.agentId);
     if (!agent || !isSellerRole(agent.role)) throw new Error("Invalid agent");
@@ -337,12 +337,7 @@ export const getActiveSettlement = query({
     const agentToHq = allPending.find(
       (s) => (s.direction ?? "agent_to_hq") === "agent_to_hq"
     ) ?? null;
-    const hqToAgent = allPending.find(
-      (s) => s.direction === "hq_to_agent"
-    ) ?? null;
-
     // Return the agent_to_hq one for backward compat (legacy callers expect single object)
-    // But also return both for new UI
     return agentToHq;
   },
 });
@@ -506,7 +501,7 @@ export const getWithSales = query({
     for (const saleId of settlement.saleIds) {
       const sale = await ctx.db.get(saleId);
       if (sale) {
-        // Resolve product names from lineItems (use snapshot if available, fall back to live)
+        // Resolve product names and variant sizes from lineItems
         const lineItemsWithProducts = [];
         if (sale.lineItems) {
           for (const item of sale.lineItems) {
@@ -517,10 +512,16 @@ export const getWithSales = query({
               productName = product?.name ?? "Unknown Product";
               retailPrice = retailPrice ?? product?.price ?? 0;
             }
+            let variantSizeMl: number | undefined;
+            if (item.variantId) {
+              const variant = await ctx.db.get(item.variantId);
+              variantSizeMl = variant?.sizeMl ?? undefined;
+            }
             lineItemsWithProducts.push({
               ...item,
               productName,
               retailPrice: retailPrice ?? 0,
+              variantSizeMl,
             });
           }
         }
@@ -530,21 +531,28 @@ export const getWithSales = query({
         let offerBundlePrice: number | undefined;
         let offerMinQuantity: number | undefined;
         let offerHqBundlePrice: number | undefined;
+        let offerSizeMl: number | undefined;
         if (sale.offerSnapshot) {
           offerName = sale.offerSnapshot.name;
           offerBundlePrice = sale.offerSnapshot.bundlePrice;
           offerMinQuantity = sale.offerSnapshot.minQuantity;
           offerHqBundlePrice = sale.offerSnapshot.hqBundlePrice;
-        } else if (sale.offerId) {
+        }
+        // Always fetch live offer for sizeMl (not in snapshot)
+        if (sale.offerId) {
           const offer = await ctx.db.get(sale.offerId);
           if (offer) {
-            offerName = offer.name;
-            offerBundlePrice = offer.bundlePrice;
-            offerMinQuantity = offer.minQuantity;
+            if (!offerName) {
+              offerName = offer.name;
+              offerBundlePrice = offer.bundlePrice;
+              offerMinQuantity = offer.minQuantity;
+            }
+            offerSizeMl = offer.sizeMl;
           }
         }
 
-        // Build per-product hqUnitPrice map: prefer lineItem snapshot, fall back to stockMovements
+        // Build per-variant hqUnitPrice map: keyed by variantId ?? productId
+        // This handles multiple variants of the same product with different HQ prices
         let hqUnitPriceMap: Record<string, number> | undefined;
         if (sale.lineItems) {
           hqUnitPriceMap = {};
@@ -552,7 +560,8 @@ export const getWithSales = query({
           // First try lineItem snapshots (available on newer sales)
           for (const item of sale.lineItems) {
             if (item.hqUnitPrice !== undefined) {
-              hqUnitPriceMap[item.productId] = item.hqUnitPrice;
+              const key = item.variantId ?? item.productId;
+              hqUnitPriceMap[key] = item.hqUnitPrice;
             }
           }
 
@@ -565,10 +574,48 @@ export const getWithSales = query({
 
             for (const m of movements) {
               if (m.hqUnitPrice !== undefined) {
-                hqUnitPriceMap[m.productId] = m.hqUnitPrice;
+                const key = m.variantId ?? m.productId;
+                hqUnitPriceMap[key] = m.hqUnitPrice;
               }
             }
           }
+        }
+
+        // Compute correct HQ price and commission from current rate/offer data
+        let computedHqPrice: number | undefined;
+        let computedCommission: number | undefined;
+        if (lineItemsWithProducts.length > 0 && hqUnitPriceMap && Object.keys(hqUnitPriceMap).length > 0) {
+          if (offerName && offerMinQuantity != null && offerBundlePrice != null) {
+            // Offer sale: split eligible (matches sizeMl) vs ineligible
+            type UnitRef = { variantId?: string; productId: string };
+            const eligibleUnits: UnitRef[] = [];
+            const nonEligibleUnits: UnitRef[] = [];
+            for (const item of lineItemsWithProducts) {
+              const isEligible = offerSizeMl == null || item.variantSizeMl == null || item.variantSizeMl === offerSizeMl;
+              const unitRef: UnitRef = { variantId: item.variantId ?? undefined, productId: item.productId };
+              for (let u = 0; u < item.quantity; u++) {
+                if (isEligible) eligibleUnits.push(unitRef);
+                else nonEligibleUnits.push(unitRef);
+              }
+            }
+            const bundleCount = Math.floor(eligibleUnits.length / offerMinQuantity);
+            const bundledUnitCount = bundleCount * offerMinQuantity;
+            const hqPerBundle = offerHqBundlePrice ?? offerBundlePrice;
+            const bundledHqShare = bundleCount * hqPerBundle;
+            const remainderUnits = [...eligibleUnits.slice(bundledUnitCount), ...nonEligibleUnits];
+            const remainderHqShare = remainderUnits.reduce((sum, u) => {
+              const key = u.variantId ?? u.productId;
+              return sum + (hqUnitPriceMap![key] ?? 0);
+            }, 0);
+            computedHqPrice = Math.round((bundledHqShare + remainderHqShare) * 100) / 100;
+          } else {
+            // Non-offer sale: sum per-item HQ prices
+            computedHqPrice = Math.round(lineItemsWithProducts.reduce((sum, item) => {
+              const key = item.variantId ?? item.productId;
+              return sum + item.quantity * (hqUnitPriceMap![key] ?? 0);
+            }, 0) * 100) / 100;
+          }
+          computedCommission = Math.round((sale.totalAmount - computedHqPrice) * 100) / 100;
         }
 
         sales.push({
@@ -579,6 +626,9 @@ export const getWithSales = query({
           offerBundlePrice,
           offerMinQuantity,
           offerHqBundlePrice,
+          offerSizeMl,
+          computedHqPrice,
+          computedCommission,
         });
       }
     }

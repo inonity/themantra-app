@@ -7,6 +7,7 @@ import { requireAuth, requireRole } from "./helpers/auth";
 export const create = mutation({
   args: {
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
     quantity: v.number(),
     notes: v.optional(v.string()),
   },
@@ -23,6 +24,7 @@ export const create = mutation({
     return await ctx.db.insert("stockRequests", {
       agentId: userId,
       productId: args.productId,
+      variantId: args.variantId,
       quantity: args.quantity,
       notes: args.notes,
       status: "pending",
@@ -108,11 +110,17 @@ async function enrichRequests(
   for (const req of requests) {
     const agent = await ctx.db.get(req.agentId);
     const product = await ctx.db.get(req.productId);
+    let variantName: string | undefined;
+    if (req.variantId) {
+      const variant = await ctx.db.get(req.variantId);
+      variantName = variant?.name;
+    }
     enriched.push({
       ...req,
       agentName: agent?.nickname ?? agent?.name ?? agent?.email ?? "Unknown",
       productName: product?.name ?? "Unknown",
       productStatus: product?.status ?? "unknown",
+      variantName,
     });
   }
   return enriched.sort((a, b) => b.createdAt - a.createdAt);

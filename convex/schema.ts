@@ -2,7 +2,8 @@ import { defineSchema, defineTable } from "convex/server";
 import { authTables } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 
-const { users, ...otherAuthTables } = authTables;
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+const { users: _users, ...otherAuthTables } = authTables;
 
 export default defineSchema({
   ...otherAuthTables,
@@ -39,7 +40,7 @@ export default defineSchema({
     shortCode: v.optional(v.string()), // 2-letter code, e.g. "MA" for "Mon Amour"
     description: v.optional(v.string()),
     collection: v.optional(v.string()), // e.g. "Inspired"
-    price: v.number(),
+    price: v.optional(v.number()), // deprecated — price is now on productVariants
     status: v.union(v.literal("active"), v.literal("discontinued"), v.literal("future_release")),
     updatedAt: v.optional(v.number()),
   })
@@ -47,8 +48,34 @@ export default defineSchema({
     .index("by_shortCode", ["shortCode"])
     .index("by_collection", ["collection"]),
 
+  productVariants: defineTable({
+    productId: v.id("products"),
+    name: v.string(),           // auto-generated: "30ML" for customers, "Tester 10ML" for agents
+    sizeMl: v.optional(v.number()),
+    type: v.optional(v.string()), // agent variant type label e.g. "Tester", "Refill" (agents only)
+    price: v.number(),          // retail price for this variant
+    forWho: v.optional(v.union(
+      v.literal("customers"),   // customer-facing (shown in public/customer flows)
+      v.literal("agents"),      // agent-only (tester, refill — hidden from customers)
+      v.literal("both")         // visible in all flows
+    )),
+    // Legacy fields — kept optional for existing documents until migration runs
+    variantType: v.optional(v.union(
+      v.literal("standard"),
+      v.literal("tester"),
+      v.literal("filling")
+    )),
+    agentOnly: v.optional(v.boolean()),
+    status: v.union(v.literal("active"), v.literal("discontinued")),
+    sortOrder: v.optional(v.number()), // controls display order within a product
+    updatedAt: v.optional(v.number()),
+  })
+    .index("by_productId", ["productId"])
+    .index("by_productId_and_status", ["productId", "status"]),
+
   batches: defineTable({
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")), // which variant this batch produces
     batchCode: v.string(),
     manufacturedDate: v.string(), // ISO date string
     expectedReadyDate: v.optional(v.string()), // expected maturation date (ISO date string)
@@ -173,6 +200,8 @@ export default defineSchema({
       v.array(
         v.object({
           productId: v.id("products"),
+          variantId: v.optional(v.id("productVariants")),
+          variantName: v.optional(v.string()), // snapshot of variant name at sale time
           quantity: v.number(),
           unitPrice: v.optional(v.number()),
           // Snapshot of product at time of sale (immutable historical record)
@@ -211,6 +240,7 @@ export default defineSchema({
   stockMovements: defineTable({
     batchId: v.id("batches"),
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
     fromPartyType: v.union(v.literal("business"), v.literal("agent")),
     fromPartyId: v.optional(v.id("users")),
     toPartyType: v.union(v.literal("agent"), v.literal("customer")),
@@ -241,6 +271,7 @@ export default defineSchema({
   inventory: defineTable({
     batchId: v.id("batches"),
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
     heldByType: v.union(v.literal("business"), v.literal("agent")),
     heldById: v.optional(v.id("users")), // agentId when heldByType is "agent"
     quantity: v.number(),
@@ -270,9 +301,21 @@ export default defineSchema({
     type: v.literal("bundle"), // extensible later with v.union(...)
     minQuantity: v.number(), // e.g. 3
     bundlePrice: v.number(), // e.g. 100 (total for the bundle)
+    // Product scope — AND with sizeMl/forWho filters below
     productId: v.optional(v.id("products")), // single product mode
     productIds: v.optional(v.array(v.id("products"))), // multiple products mode
-    collection: v.optional(v.string()), // collection mode (absent/all three absent = all products)
+    collection: v.optional(v.string()), // collection filter (absent = all collections)
+    // Size filter — if set, only applies to variants with this sizeMl
+    sizeMl: v.optional(v.number()),
+    // Audience filter — if set, only applies in matching sale context
+    forWho: v.optional(v.union(
+      v.literal("customers"),
+      v.literal("agents"),
+      v.literal("both")
+    )),
+    // Legacy variant scope (kept for backward compat with old offers)
+    variantId: v.optional(v.id("productVariants")),
+    variantIds: v.optional(v.array(v.id("productVariants"))),
     agentIds: v.optional(v.array(v.id("users"))), // eligible agents (empty/absent = all)
     isActive: v.boolean(),
     startDate: v.optional(v.number()),
@@ -295,12 +338,38 @@ export default defineSchema({
 
   rates: defineTable({
     name: v.string(),
+    // Per (collection, sizeMl) HQ pricing for customer-facing variants
     collectionRates: v.array(
       v.object({
         collection: v.string(),
+        sizeMl: v.optional(v.number()), // optional for backward compat with old documents
         rateType: v.union(v.literal("fixed"), v.literal("percentage")),
         rateValue: v.number(),
       })
+    ),
+    // Per agent variant type HQ pricing (e.g. Tester, Refill)
+    agentVariantRates: v.optional(
+      v.array(
+        v.object({
+          type: v.string(),
+          rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+          rateValue: v.number(),
+        })
+      )
+    ),
+    // Legacy — kept for backward compat, no longer used in pricing logic
+    forWhoRates: v.optional(
+      v.array(
+        v.object({
+          forWho: v.union(
+            v.literal("customers"),
+            v.literal("agents"),
+            v.literal("both")
+          ),
+          rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+          rateValue: v.number(),
+        })
+      )
     ),
     defaultRate: v.optional(
       v.object({
@@ -403,6 +472,7 @@ export default defineSchema({
     items: v.array(
       v.object({
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
       })
     ),
@@ -446,6 +516,7 @@ export default defineSchema({
   stockRequests: defineTable({
     agentId: v.id("users"),
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
     quantity: v.number(),
     notes: v.optional(v.string()),
     status: v.union(

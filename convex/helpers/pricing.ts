@@ -49,27 +49,46 @@ export async function resolveOfferHqPrice(
 }
 
 /**
- * Resolves the HQ unit price for an agent + product using the agent's assigned rate.
+ * Resolves the HQ unit price for an agent + product/variant using the agent's assigned rate.
  *
- * Cascade order (first match wins):
- * 1. Rate's collectionRates for the product's collection
- * 2. Rate's defaultRate
- * 3. Fallback: product.price (full retail = 100%)
+ * When variantId is provided, the variant determines the pricing path:
+ *   - Agent variants (forWho="agents"): look up by variant.type in agentVariantRates.
+ *     Default: full variant price (agent pays 100%).
+ *   - Customer variants (forWho="customers"/"both"/unset): look up by (collection, sizeMl)
+ *     in collectionRates. Default: full retail (HQ takes 100%).
  *
- * For percentage rates, the base is always the product's retail price.
+ * When variantId is absent (legacy records): use product.price + collection fallback.
  */
 export async function resolveAgentPrice(
   ctx: QueryCtx | MutationCtx,
   agentId: Id<"users">,
-  productId: Id<"products">
+  productId: Id<"products">,
+  variantId?: Id<"productVariants">
 ): Promise<ResolvedPrice> {
-  const product = await ctx.db.get(productId);
-  if (!product) throw new Error("Product not found");
-  const retailPrice = product.price;
+  let retailPrice: number;
+  let collection: string | undefined;
+  let sizeMl: number | undefined;
+  let forWho: string | undefined;
+  let variantType: string | undefined;
+
+  if (variantId) {
+    const variant = await ctx.db.get(variantId);
+    if (!variant) throw new Error("Variant not found");
+    retailPrice = variant.price;
+    sizeMl = variant.sizeMl;
+    forWho = variant.forWho;
+    variantType = variant.type;
+    const product = await ctx.db.get(productId);
+    collection = product?.collection;
+  } else {
+    const product = await ctx.db.get(productId);
+    if (!product) throw new Error("Product not found");
+    retailPrice = product.price ?? 0;
+    collection = product.collection;
+  }
 
   const rateId = await getAgentRateId(ctx, agentId);
   if (!rateId) {
-    // No rate assigned — full retail
     return { hqUnitPrice: retailPrice, retailPrice };
   }
 
@@ -78,10 +97,25 @@ export async function resolveAgentPrice(
     return { hqUnitPrice: retailPrice, retailPrice };
   }
 
-  // 1. Check collectionRates for the product's collection
-  if (product.collection) {
+  // Agent-only variants (tester, refill, etc.): price by type
+  if (forWho === "agents") {
+    if (variantType && rate.agentVariantRates && rate.agentVariantRates.length > 0) {
+      const agentRate = rate.agentVariantRates.find((r) => r.type === variantType);
+      if (agentRate) {
+        return {
+          hqUnitPrice: applyRate(retailPrice, agentRate.rateType, agentRate.rateValue),
+          retailPrice,
+        };
+      }
+    }
+    // No rate set for this type — agent pays full variant price
+    return { hqUnitPrice: retailPrice, retailPrice };
+  }
+
+  // Customer-facing variants: price by (collection, sizeMl)
+  if (collection) {
     const collectionRate = rate.collectionRates.find(
-      (cr) => cr.collection === product.collection
+      (cr) => cr.collection === collection && cr.sizeMl === sizeMl
     );
     if (collectionRate) {
       return {
@@ -91,15 +125,7 @@ export async function resolveAgentPrice(
     }
   }
 
-  // 2. Check defaultRate on the rate
-  if (rate.defaultRate) {
-    return {
-      hqUnitPrice: applyRate(retailPrice, rate.defaultRate.rateType, rate.defaultRate.rateValue),
-      retailPrice,
-    };
-  }
-
-  // 3. Fallback: full retail price
+  // Fallback: HQ takes full retail (agent commission = 0)
   return { hqUnitPrice: retailPrice, retailPrice };
 }
 

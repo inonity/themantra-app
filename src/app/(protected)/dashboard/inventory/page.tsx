@@ -37,6 +37,7 @@ export default function AgentInventoryPage() {
   const inventory = useQuery(api.inventory.getForAgent);
   const products = useQuery(api.products.list);
   const batches = useQuery(api.batches.listAll);
+  const allVariants = useQuery(api.productVariants.listAll);
 
   const [expandedProducts, setExpandedProducts] = useState<Set<Id<"products">>>(
     new Set()
@@ -48,6 +49,7 @@ export default function AgentInventoryPage() {
     batches === undefined;
 
   const batchMap = new Map((batches ?? []).map((b) => [b._id, b]));
+  const variantMap = new Map((allVariants ?? []).map((v) => [v._id, v]));
 
   // Group inventory by product
   const productGroups = new Map<
@@ -162,6 +164,11 @@ export default function AgentInventoryPage() {
                               <span className="font-medium">
                                 {batch?.batchCode ?? "Unknown"}
                               </span>
+                              {inv.variantId && (
+                                <span className="ml-2 text-muted-foreground">
+                                  {variantMap.get(inv.variantId)?.name}
+                                </span>
+                              )}
                               {stockModelKey && (
                                 <Badge variant="outline" className="ml-3">
                                   {stockModelLabels[stockModelKey] ?? stockModelKey}

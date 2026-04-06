@@ -29,6 +29,7 @@ type DashboardItem = {
   lineItemIndex: number;
   productId: Id<"products">;
   productName: string;
+  variantName?: string;
   quantity: number;
   fulfilledQuantity: number;
   fulfillmentSource: string;
@@ -58,6 +59,7 @@ type SaleEntry = {
 type ProductGroup = {
   productId: Id<"products">;
   productName: string;
+  variantName?: string;
   totalNeeded: number;
   sales: SaleEntry[];
 };
@@ -102,12 +104,13 @@ function buildAgentGroups(items: DashboardItem[]): AgentGroup[] {
     const agent = agentMap.get(agentKey)!;
 
     let productGroup = agent.products.find(
-      (p) => p.productId === item.productId
+      (p) => p.productId === item.productId && p.variantName === item.variantName
     );
     if (!productGroup) {
       productGroup = {
         productId: item.productId,
         productName: item.productName,
+        variantName: item.variantName,
         totalNeeded: 0,
         sales: [],
       };
@@ -267,6 +270,7 @@ export function HqFulfillmentDashboard() {
         term &&
         !item.sellerName.toLowerCase().includes(term) &&
         !item.productName.toLowerCase().includes(term) &&
+        !(item.variantName ?? "").toLowerCase().includes(term) &&
         !item.customerName.toLowerCase().includes(term)
       )
         return false;
@@ -405,11 +409,11 @@ export function HqFulfillmentDashboard() {
 
                     {isAgentExpanded &&
                       agent.products.map((product) => {
-                        const productKey = `${agent.sellerId}_${product.productId}`;
+                        const productKey = `${agent.sellerId}_${product.productId}_${product.variantName ?? ""}`;
                         const isProductExpanded =
                           expandedProducts.has(productKey);
                         return (
-                          <Fragment key={product.productId}>
+                          <Fragment key={`${product.productId}_${product.variantName ?? ""}`}>
                             {/* Product row */}
                             <TableRow
                               className="bg-muted/30 cursor-pointer hover:bg-muted/50"
@@ -424,6 +428,9 @@ export function HqFulfillmentDashboard() {
                               </TableCell>
                               <TableCell className="pl-8 text-sm font-medium">
                                 {product.productName}
+                                {product.variantName && (
+                                  <span className="text-muted-foreground ml-1 font-normal">— {product.variantName}</span>
+                                )}
                               </TableCell>
                               <TableCell className="text-sm font-semibold">
                                 {product.totalNeeded}

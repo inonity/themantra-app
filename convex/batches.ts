@@ -108,6 +108,7 @@ export const checkBatchCodeUnique = query({
 export const create = mutation({
   args: {
     productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
     batchCode: v.string(),
     manufacturedDate: v.string(),
     expectedReadyDate: v.optional(v.string()),
@@ -126,6 +127,14 @@ export const create = mutation({
     const product = await ctx.db.get(args.productId);
     if (!product) {
       throw new Error("Product not found");
+    }
+
+    // Validate variantId belongs to the same product
+    if (args.variantId) {
+      const variant = await ctx.db.get(args.variantId);
+      if (!variant || variant.productId !== args.productId) {
+        throw new Error("Variant does not belong to this product");
+      }
     }
 
     // Check batch code uniqueness
@@ -147,6 +156,7 @@ export const create = mutation({
       await ctx.db.insert("inventory", {
         batchId,
         productId: args.productId,
+        variantId: args.variantId,
         heldByType: "business",
         quantity: args.totalQuantity,
       });
@@ -237,6 +247,7 @@ export const update = mutation({
           await ctx.db.insert("inventory", {
             batchId: id,
             productId: batch.productId,
+            variantId: batch.variantId,
             heldByType: "business",
             quantity: remaining,
           });
@@ -261,6 +272,7 @@ export const update = mutation({
         await ctx.db.insert("inventory", {
           batchId: id,
           productId: batch.productId,
+          variantId: batch.variantId,
           heldByType: "business",
           quantity: args.totalQuantity,
         });
@@ -316,6 +328,7 @@ export const updateStatus = mutation({
           await ctx.db.insert("inventory", {
             batchId: args.id,
             productId: batch.productId,
+            variantId: batch.variantId,
             heldByType: "business",
             quantity: remaining,
           });
@@ -343,6 +356,7 @@ export const updateStatus = mutation({
         await ctx.db.insert("inventory", {
           batchId: args.id,
           productId: batch.productId,
+          variantId: batch.variantId,
           heldByType: "business",
           quantity: batch.totalQuantity,
         });
@@ -399,6 +413,7 @@ export const releaseUnits = mutation({
       await ctx.db.insert("inventory", {
         batchId: args.id,
         productId: batch.productId,
+        variantId: batch.variantId,
         heldByType: "business",
         quantity: args.quantity,
       });
@@ -477,6 +492,7 @@ export const adjustStock = mutation({
       await ctx.db.insert("inventory", {
         batchId: args.id,
         productId: batch.productId,
+        variantId: batch.variantId,
         heldByType: "business",
         quantity: args.adjustment,
       });

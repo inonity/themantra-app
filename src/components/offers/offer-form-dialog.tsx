@@ -26,9 +26,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { XIcon } from "lucide-react";
 
-type ProductSelectionMode = "all" | "single" | "multiple" | "collection";
+type ProductScope = "all" | "single" | "multiple" | "collection";
 
-function detectProductMode(offer?: Doc<"offers">): ProductSelectionMode {
+function detectProductScope(offer?: Doc<"offers">): ProductScope {
   if (offer?.productId) return "single";
   if (offer?.productIds && offer.productIds.length > 0) return "multiple";
   if (offer?.collection) return "collection";
@@ -51,33 +51,24 @@ export function OfferFormDialog({
   const products = useQuery(api.products.list) ?? [];
   const agents = useQuery(api.users.listSellers) ?? [];
   const collections = useQuery(api.products.listCollections) ?? [];
+  const sizes = useQuery(api.productVariants.listSizes) ?? [];
 
   const [internalOpen, setInternalOpen] = useState(false);
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledOnOpenChange ?? setInternalOpen;
+
   const [name, setName] = useState(offer?.name ?? "");
   const [description, setDescription] = useState(offer?.description ?? "");
-  const [minQuantity, setMinQuantity] = useState(
-    offer?.minQuantity?.toString() ?? ""
+  const [minQuantity, setMinQuantity] = useState(offer?.minQuantity?.toString() ?? "");
+  const [bundlePrice, setBundlePrice] = useState(offer?.bundlePrice?.toString() ?? "");
+  const [productScope, setProductScope] = useState<ProductScope>(detectProductScope(offer));
+  const [singleProductId, setSingleProductId] = useState<string>(offer?.productId ?? "");
+  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(offer?.productIds ?? []);
+  const [selectedCollection, setSelectedCollection] = useState<string>(offer?.collection ?? "");
+  const [selectedSizeMl, setSelectedSizeMl] = useState<string>(
+    offer?.sizeMl != null ? offer.sizeMl.toString() : ""
   );
-  const [bundlePrice, setBundlePrice] = useState(
-    offer?.bundlePrice?.toString() ?? ""
-  );
-  const [productMode, setProductMode] = useState<ProductSelectionMode>(
-    detectProductMode(offer)
-  );
-  const [singleProductId, setSingleProductId] = useState<string>(
-    offer?.productId ?? ""
-  );
-  const [selectedProductIds, setSelectedProductIds] = useState<string[]>(
-    offer?.productIds ?? []
-  );
-  const [selectedCollection, setSelectedCollection] = useState<string>(
-    offer?.collection ?? ""
-  );
-  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>(
-    offer?.agentIds ?? []
-  );
+  const [selectedAgentIds, setSelectedAgentIds] = useState<string[]>(offer?.agentIds ?? []);
   const [isActive, setIsActive] = useState(offer?.isActive ?? true);
 
   function resetForm() {
@@ -86,10 +77,11 @@ export function OfferFormDialog({
       setDescription("");
       setMinQuantity("");
       setBundlePrice("");
-      setProductMode("all");
+      setProductScope("all");
       setSingleProductId("");
       setSelectedProductIds([]);
       setSelectedCollection("");
+      setSelectedSizeMl("");
       setSelectedAgentIds([]);
       setIsActive(true);
     }
@@ -123,19 +115,19 @@ export function OfferFormDialog({
       minQuantity: parseInt(minQuantity),
       bundlePrice: parseFloat(bundlePrice),
       productId:
-        productMode === "single" && singleProductId
+        productScope === "single" && singleProductId
           ? (singleProductId as Id<"products">)
           : undefined,
       productIds:
-        productMode === "multiple" && selectedProductIds.length > 0
+        productScope === "multiple" && selectedProductIds.length > 0
           ? (selectedProductIds as Id<"products">[])
           : undefined,
       collection:
-        productMode === "collection" && selectedCollection
+        productScope === "collection" && selectedCollection
           ? selectedCollection
           : undefined,
-      agentIds:
-        selectedAgentIds.length > 0 ? (selectedAgentIds as Id<"users">[]) : [],
+      sizeMl: selectedSizeMl ? parseFloat(selectedSizeMl) : undefined,
+      agentIds: selectedAgentIds.length > 0 ? (selectedAgentIds as Id<"users">[]) : [],
       isActive,
     };
 
@@ -151,11 +143,11 @@ export function OfferFormDialog({
   const productMap = new Map(products.map((p) => [p._id, p]));
   const agentMap = new Map(agents.map((a) => [a._id, a]));
   const availableProducts = products.filter(
-    (p) => !selectedProductIds.includes(p._id) && (p.status === "active" || p.status === "future_release")
+    (p) =>
+      !selectedProductIds.includes(p._id) &&
+      (p.status === "active" || p.status === "future_release")
   );
-  const availableAgents = agents.filter(
-    (a) => !selectedAgentIds.includes(a._id)
-  );
+  const availableAgents = agents.filter((a) => !selectedAgentIds.includes(a._id));
 
   return (
     <Dialog
@@ -167,10 +159,11 @@ export function OfferFormDialog({
           setDescription(offer.description ?? "");
           setMinQuantity(offer.minQuantity.toString());
           setBundlePrice(offer.bundlePrice.toString());
-          setProductMode(detectProductMode(offer));
+          setProductScope(detectProductScope(offer));
           setSingleProductId(offer.productId ?? "");
           setSelectedProductIds(offer.productIds ?? []);
           setSelectedCollection(offer.collection ?? "");
+          setSelectedSizeMl(offer.sizeMl != null ? offer.sizeMl.toString() : "");
           setSelectedAgentIds(offer.agentIds ?? []);
           setIsActive(offer.isActive);
         }
@@ -180,9 +173,7 @@ export function OfferFormDialog({
       {children && <DialogTrigger render={children} />}
       <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>
-            {offer ? "Edit Offer" : "Create Offer"}
-          </DialogTitle>
+          <DialogTitle>{offer ? "Edit Offer" : "Create Offer"}</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
@@ -232,35 +223,31 @@ export function OfferFormDialog({
             </div>
           </div>
 
+          {/* Product scope */}
           <div className="space-y-2">
             <Label>Eligible Products</Label>
             <Select
-              value={productMode}
-              onValueChange={(v) => setProductMode(v as ProductSelectionMode)}
+              value={productScope}
+              onValueChange={(v) => setProductScope(v as ProductScope)}
             >
               <SelectTrigger>
                 <SelectValue>
-                  {productMode === "all" && "All Products"}
-                  {productMode === "single" && "Single Product"}
-                  {productMode === "multiple" && "Multiple Products"}
-                  {productMode === "collection" && "Collection"}
+                  {productScope === "all" && "All Products"}
+                  {productScope === "single" && "Single Product"}
+                  {productScope === "multiple" && "Multiple Products"}
+                  {productScope === "collection" && "By Collection"}
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="all" label="All Products">All Products</SelectItem>
-                <SelectItem value="single" label="Single Product">Single Product</SelectItem>
-                <SelectItem value="multiple" label="Multiple Products">Multiple Products</SelectItem>
-                <SelectItem value="collection" label="Collection">Collection</SelectItem>
+                <SelectItem value="all">All Products</SelectItem>
+                <SelectItem value="single">Single Product</SelectItem>
+                <SelectItem value="multiple">Multiple Products</SelectItem>
+                <SelectItem value="collection">By Collection</SelectItem>
               </SelectContent>
             </Select>
-            {productMode === "all" && (
-              <p className="text-xs text-muted-foreground">
-                Applies to all products.
-              </p>
-            )}
           </div>
 
-          {productMode === "single" && (
+          {productScope === "single" && (
             <div className="space-y-2">
               <Label>Select Product</Label>
               <Select
@@ -278,7 +265,7 @@ export function OfferFormDialog({
                   {products
                     .filter((p) => p.status === "active" || p.status === "future_release")
                     .map((p) => (
-                      <SelectItem key={p._id} value={p._id} label={`${p.name}${p.status === "future_release" ? " (Future Release)" : ""}`}>
+                      <SelectItem key={p._id} value={p._id}>
                         {p.name}{p.status === "future_release" ? " (Future Release)" : ""}
                       </SelectItem>
                     ))}
@@ -287,7 +274,7 @@ export function OfferFormDialog({
             </div>
           )}
 
-          {productMode === "multiple" && (
+          {productScope === "multiple" && (
             <div className="space-y-2">
               <Label>Select Products</Label>
               {selectedProductIds.length > 0 && (
@@ -297,11 +284,7 @@ export function OfferFormDialog({
                     return (
                       <Badge key={id} variant="secondary" className="gap-1">
                         {product?.name ?? "Unknown"}
-                        <button
-                          type="button"
-                          onClick={() => removeProduct(id)}
-                          className="ml-1"
-                        >
+                        <button type="button" onClick={() => removeProduct(id)} className="ml-1">
                           <XIcon className="h-3 w-3" />
                         </button>
                       </Badge>
@@ -310,16 +293,13 @@ export function OfferFormDialog({
                 </div>
               )}
               {availableProducts.length > 0 && (
-                <Select
-                  value=""
-                  onValueChange={(v) => v && addProduct(v)}
-                >
+                <Select value="" onValueChange={(v) => v && addProduct(v)}>
                   <SelectTrigger>
                     <SelectValue placeholder="Add product..." />
                   </SelectTrigger>
                   <SelectContent>
                     {availableProducts.map((p) => (
-                      <SelectItem key={p._id} value={p._id} label={p.name}>
+                      <SelectItem key={p._id} value={p._id}>
                         {p.name}
                       </SelectItem>
                     ))}
@@ -329,7 +309,7 @@ export function OfferFormDialog({
             </div>
           )}
 
-          {productMode === "collection" && (
+          {productScope === "collection" && (
             <div className="space-y-2">
               <Label>Select Collection</Label>
               <Select
@@ -350,6 +330,33 @@ export function OfferFormDialog({
             </div>
           )}
 
+          {/* Size filter */}
+          <div className="space-y-2">
+            <Label>Size Filter (optional)</Label>
+            <Select
+              value={selectedSizeMl}
+              onValueChange={(v) => setSelectedSizeMl(!v || v === "__any__" ? "" : v)}
+            >
+              <SelectTrigger>
+                <SelectValue>
+                  {selectedSizeMl ? `${selectedSizeMl} ML` : "Any size"}
+                </SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__any__">Any size</SelectItem>
+                {sizes.map((s) => (
+                  <SelectItem key={s} value={s.toString()}>
+                    {s} ML
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Leave as &quot;Any size&quot; to apply to all sizes.
+            </p>
+          </div>
+
+          {/* Eligible sellers */}
           <div className="space-y-2">
             <Label>Eligible Sellers</Label>
             <p className="text-xs text-muted-foreground">
@@ -362,11 +369,7 @@ export function OfferFormDialog({
                   return (
                     <Badge key={id} variant="secondary" className="gap-1">
                       {agent?.name ?? "Unknown"}
-                      <button
-                        type="button"
-                        onClick={() => removeAgent(id)}
-                        className="ml-1"
-                      >
+                      <button type="button" onClick={() => removeAgent(id)} className="ml-1">
                         <XIcon className="h-3 w-3" />
                       </button>
                     </Badge>
@@ -375,10 +378,7 @@ export function OfferFormDialog({
               </div>
             )}
             {availableAgents.length > 0 && (
-              <Select
-                value=""
-                onValueChange={(v) => v && addAgent(v)}
-              >
+              <Select value="" onValueChange={(v) => v && addAgent(v)}>
                 <SelectTrigger>
                   <SelectValue placeholder="Add seller..." />
                 </SelectTrigger>
@@ -405,21 +405,17 @@ export function OfferFormDialog({
                 </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="active" label="Active">Active</SelectItem>
-                <SelectItem value="inactive" label="Inactive">Inactive</SelectItem>
+                <SelectItem value="active">Active</SelectItem>
+                <SelectItem value="inactive">Inactive</SelectItem>
               </SelectContent>
             </Select>
           </div>
 
           <div className="flex justify-end gap-2">
-            <DialogClose
-              render={<Button type="button" variant="outline" />}
-            >
+            <DialogClose render={<Button type="button" variant="outline" />}>
               Cancel
             </DialogClose>
-            <Button type="submit">
-              {offer ? "Save Changes" : "Create Offer"}
-            </Button>
+            <Button type="submit">{offer ? "Save Changes" : "Create Offer"}</Button>
           </div>
         </form>
       </DialogContent>

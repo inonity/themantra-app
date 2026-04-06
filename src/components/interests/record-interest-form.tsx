@@ -31,14 +31,17 @@ import { PhoneInput } from "@/components/ui/phone-input";
 
 interface InterestLineItem {
   productId: Id<"products">;
+  variantId?: Id<"productVariants">;
   quantity: number;
   productName: string;
+  variantName?: string;
   isFutureRelease: boolean;
 }
 
 export function RecordInterestForm() {
   const recordInterest = useMutation(api.interests.record);
   const products = useQuery(api.products.list);
+  const allVariants = useQuery(api.productVariants.listAll);
   const router = useRouter();
 
   const [lineItems, setLineItems] = useState<InterestLineItem[]>([]);
@@ -49,19 +52,33 @@ export function RecordInterestForm() {
   const [submitting, setSubmitting] = useState(false);
 
   const activeProducts = (products ?? []).filter((p) => p.status === "active" || p.status === "future_release");
-  const usedProductIds = new Set(lineItems.map((li) => li.productId));
-  const availableProducts = activeProducts.filter((p) => !usedProductIds.has(p._id));
+  const activeVariants = (allVariants ?? []).filter((v) => v.status === "active");
 
-  function addLineItem(productId: string) {
+  const variantsByProduct = new Map<string, typeof activeVariants>();
+  for (const v of activeVariants) {
+    const existing = variantsByProduct.get(v.productId) ?? [];
+    variantsByProduct.set(v.productId, [...existing, v]);
+  }
+  const variantMap = new Map(activeVariants.map((v) => [v._id, v]));
+
+  // Track used product+variant combos
+  const usedKeys = new Set(lineItems.map((li) => li.variantId ? `${li.productId}__${li.variantId}` : li.productId));
+
+  function addLineItem(value: string) {
+    // value is "productId" or "productId__variantId"
+    const [productId, variantId] = value.split("__");
     const product = activeProducts.find((p) => p._id === productId);
     if (!product) return;
+    const variant = variantId ? variantMap.get(variantId as Id<"productVariants">) : undefined;
 
     setLineItems([
       ...lineItems,
       {
         productId: product._id,
+        variantId: variant?._id,
         quantity: 1,
         productName: product.name,
+        variantName: variant?.name,
         isFutureRelease: product.status === "future_release",
       },
     ]);
@@ -93,6 +110,7 @@ export function RecordInterestForm() {
         },
         items: lineItems.map((li) => ({
           productId: li.productId,
+          variantId: li.variantId,
           quantity: li.quantity,
         })),
         notes: notes || undefined,
@@ -154,9 +172,9 @@ export function RecordInterestForm() {
               </TableHeader>
               <TableBody>
                 {lineItems.map((li, index) => (
-                  <TableRow key={li.productId}>
+                  <TableRow key={li.variantId ?? li.productId}>
                     <TableCell className="font-medium">
-                      <span>{li.productName}</span>
+                      <span>{li.productName}{li.variantName ? ` — ${li.variantName}` : ""}</span>
                       {li.isFutureRelease && (
                         <span className="ml-2 text-xs font-normal text-muted-foreground border border-border rounded px-1 py-0.5">
                           Future Release
@@ -188,25 +206,44 @@ export function RecordInterestForm() {
                   </TableRow>
                 ))}
 
-                {availableProducts.length > 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={3}>
-                      <Select value="" onValueChange={(v) => v && addLineItem(v)}>
-                        <SelectTrigger className="w-full md:w-[300px]">
-                          <SelectValue placeholder="Add a product..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {availableProducts.map((product) => (
-                            <SelectItem key={product._id} value={product._id}>
-                              {product.name} — RM{product.price.toFixed(2)}
-                              {product.status === "future_release" && " (Future Release)"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                )}
+                {(() => {
+                  const options = activeProducts.flatMap((product) => {
+                    const variants = variantsByProduct.get(product._id) ?? [];
+                    const suffix = product.status === "future_release" ? " (Future Release)" : "";
+                    if (variants.length === 0) {
+                      if (usedKeys.has(product._id)) return [];
+                      return [{
+                        value: product._id,
+                        label: `${product.name}${product.price != null ? ` — RM${product.price.toFixed(2)}` : ""}${suffix}`,
+                      }];
+                    }
+                    return variants
+                      .filter((v) => !usedKeys.has(`${product._id}__${v._id}`))
+                      .map((v) => ({
+                        value: `${product._id}__${v._id}`,
+                        label: `${product.name} — ${v.name} — RM${v.price.toFixed(2)}${suffix}`,
+                      }));
+                  });
+                  if (options.length === 0) return null;
+                  return (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={3}>
+                        <Select value="" onValueChange={(v) => v && addLineItem(v)}>
+                          <SelectTrigger className="w-full md:w-[300px]">
+                            <SelectValue placeholder="Add a product..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {options.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })()}
 
                 {lineItems.length === 0 && (
                   <TableRow className="hover:bg-transparent">

@@ -104,7 +104,9 @@ export function RoleSection({ data }: { data: SettingsData }) {
                       {rate.collectionRates.map((cr, idx) => (
                         <TableRow key={idx}>
                           <TableCell>
-                            <Badge variant="outline">{cr.collection}</Badge>
+                            <Badge variant="outline">
+                              {cr.collection}{cr.sizeMl != null ? ` ${cr.sizeMl}ML` : ""}
+                            </Badge>
                           </TableCell>
                           <TableCell className="text-sm">
                             {formatRate(cr.rateType, cr.rateValue)}

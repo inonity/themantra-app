@@ -13,7 +13,10 @@ export default function RecordSalePage() {
   const agentProfile = useQuery(api.agentProfiles.getMyProfile);
 
   const isLoading =
-    inventory === undefined || businessInventory === undefined;
+    inventory === undefined || businessInventory === undefined || agentProfile === undefined;
+
+  const isNotConfigured =
+    !isLoading && (!agentProfile?.defaultStockModel || !agentProfile?.rateId);
 
   return (
     <RoleGuard allowed={["agent", "sales"]}>
@@ -29,6 +32,13 @@ export default function RecordSalePage() {
 
         {isLoading ? (
           <div className="text-muted-foreground max-w-4xl mx-auto">Loading...</div>
+        ) : isNotConfigured ? (
+          <div className="max-w-4xl mx-auto rounded-lg border border-destructive/40 bg-destructive/5 p-6 text-center space-y-2">
+            <p className="font-semibold text-destructive">Account not configured</p>
+            <p className="text-sm text-muted-foreground">
+              Your account is missing a pricing rate or stock model. Please contact an admin to set up your profile before recording orders.
+            </p>
+          </div>
         ) : (
           <RecordSaleForm
             inventory={inventory}

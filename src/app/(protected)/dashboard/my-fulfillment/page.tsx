@@ -41,7 +41,7 @@ import {
 } from "@/components/ui/dialog";
 import { FulfillSaleDialog } from "@/components/sales/fulfill-sale-dialog";
 import { useCurrentUser } from "@/hooks/useStoreUserEffect";
-import { PlusIcon, PackageIcon, XIcon } from "lucide-react";
+import { PlusIcon, XIcon } from "lucide-react";
 import { useState } from "react";
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -70,9 +70,15 @@ function RequestStockDialog({
   const products = useQuery(api.products.listSellable) ?? [];
   const createRequest = useMutation(api.stockRequests.create);
   const [productId, setProductId] = useState<string>("");
+  const [variantId, setVariantId] = useState<string>("");
   const [quantity, setQuantity] = useState("");
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+
+  const variants = useQuery(
+    api.productVariants.listActiveByProduct,
+    productId ? { productId: productId as Id<"products"> } : "skip"
+  ) ?? [];
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -81,10 +87,12 @@ function RequestStockDialog({
     try {
       await createRequest({
         productId: productId as Id<"products">,
+        variantId: variantId ? (variantId as Id<"productVariants">) : undefined,
         quantity: parseInt(quantity),
         notes: notes || undefined,
       });
       setProductId("");
+      setVariantId("");
       setQuantity("");
       setNotes("");
       onOpenChange(false);
@@ -109,7 +117,7 @@ function RequestStockDialog({
             <Select
               value={productId}
               onValueChange={(v) => {
-                if (v) setProductId(v);
+                if (v) { setProductId(v); setVariantId(""); }
               }}
             >
               <SelectTrigger>
@@ -125,6 +133,26 @@ function RequestStockDialog({
               </SelectContent>
             </Select>
           </div>
+          {productId && variants.length > 0 && (
+            <div className="space-y-2">
+              <Label>Variant</Label>
+              <Select
+                value={variantId}
+                onValueChange={(v) => { if (v) setVariantId(v); }}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Select variant..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {variants.map((v) => (
+                    <SelectItem key={v._id} value={v._id}>
+                      {v.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          )}
           <div className="space-y-2">
             <Label htmlFor="reqQty">Quantity</Label>
             <Input
@@ -216,7 +244,14 @@ function PendingSalesSection({
                         key={i}
                         className={`flex items-center gap-2 text-sm ${isDone ? "opacity-40 line-through" : ""}`}
                       >
-                        <span>{product?.name ?? "Unknown"}</span>
+                        <span>
+                          {product?.name ?? "Unknown"}
+                          {li.variantName && (
+                            <span className="text-muted-foreground ml-1">
+                              ({li.variantName})
+                            </span>
+                          )}
+                        </span>
                         <span className="text-muted-foreground">
                           x{isDone ? fulfilled : remaining}
                         </span>
@@ -276,9 +311,11 @@ function PendingSalesSection({
 function StockRequestsSection() {
   const requests = useQuery(api.stockRequests.listMy, {}) ?? [];
   const products = useQuery(api.products.list) ?? [];
+  const allVariants = useQuery(api.productVariants.listAll) ?? [];
   const cancelRequest = useMutation(api.stockRequests.cancel);
 
   const productMap = new Map(products.map((p) => [p._id, p]));
+  const variantMap = new Map(allVariants.map((v) => [v._id, v]));
   const pending = requests.filter((r) => r.status === "pending");
   const past = requests.filter((r) => r.status !== "pending");
 
@@ -297,6 +334,7 @@ function StockRequestsSection() {
           <TableHeader>
             <TableRow>
               <TableHead>Product</TableHead>
+              <TableHead>Variant</TableHead>
               <TableHead>Quantity</TableHead>
               <TableHead>Notes</TableHead>
               <TableHead>Requested</TableHead>
@@ -308,6 +346,9 @@ function StockRequestsSection() {
               <TableRow key={req._id}>
                 <TableCell className="font-medium">
                   {productMap.get(req.productId)?.name ?? "Unknown"}
+                </TableCell>
+                <TableCell className="text-sm text-muted-foreground">
+                  {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
                 </TableCell>
                 <TableCell>{req.quantity}</TableCell>
                 <TableCell className="text-muted-foreground text-sm">
@@ -340,6 +381,7 @@ function StockRequestsSection() {
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>
+                <TableHead>Variant</TableHead>
                 <TableHead>Quantity</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Date</TableHead>
@@ -350,6 +392,9 @@ function StockRequestsSection() {
                 <TableRow key={req._id}>
                   <TableCell>
                     {productMap.get(req.productId)?.name ?? "Unknown"}
+                  </TableCell>
+                  <TableCell className="text-muted-foreground">
+                    {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
                   </TableCell>
                   <TableCell>{req.quantity}</TableCell>
                   <TableCell>

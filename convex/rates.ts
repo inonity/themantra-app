@@ -16,27 +16,34 @@ export const get = query({
   },
 });
 
+const collectionRatesArg = v.array(
+  v.object({
+    collection: v.string(),
+    sizeMl: v.optional(v.number()),
+    rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+    rateValue: v.number(),
+  })
+);
+
+const agentVariantRatesArg = v.optional(
+  v.array(
+    v.object({
+      type: v.string(),
+      rateType: v.union(v.literal("fixed"), v.literal("percentage")),
+      rateValue: v.number(),
+    })
+  )
+);
+
 export const create = mutation({
   args: {
     name: v.string(),
-    collectionRates: v.array(
-      v.object({
-        collection: v.string(),
-        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-        rateValue: v.number(),
-      })
-    ),
-    defaultRate: v.optional(
-      v.object({
-        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-        rateValue: v.number(),
-      })
-    ),
+    collectionRates: collectionRatesArg,
+    agentVariantRates: agentVariantRatesArg,
   },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, "admin");
 
-    // Check name uniqueness
     const existing = await ctx.db
       .query("rates")
       .withIndex("by_name", (q) => q.eq("name", args.name))
@@ -46,7 +53,7 @@ export const create = mutation({
     return await ctx.db.insert("rates", {
       name: args.name,
       collectionRates: args.collectionRates,
-      defaultRate: args.defaultRate,
+      agentVariantRates: args.agentVariantRates,
       createdBy: admin._id,
       updatedAt: Date.now(),
     });
@@ -57,19 +64,8 @@ export const update = mutation({
   args: {
     id: v.id("rates"),
     name: v.string(),
-    collectionRates: v.array(
-      v.object({
-        collection: v.string(),
-        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-        rateValue: v.number(),
-      })
-    ),
-    defaultRate: v.optional(
-      v.object({
-        rateType: v.union(v.literal("fixed"), v.literal("percentage")),
-        rateValue: v.number(),
-      })
-    ),
+    collectionRates: collectionRatesArg,
+    agentVariantRates: agentVariantRatesArg,
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
@@ -77,7 +73,6 @@ export const update = mutation({
     const rate = await ctx.db.get(args.id);
     if (!rate) throw new Error("Rate not found");
 
-    // Check name uniqueness (exclude self)
     if (args.name !== rate.name) {
       const nameConflict = await ctx.db
         .query("rates")
@@ -89,7 +84,7 @@ export const update = mutation({
     await ctx.db.patch(args.id, {
       name: args.name,
       collectionRates: args.collectionRates,
-      defaultRate: args.defaultRate,
+      agentVariantRates: args.agentVariantRates,
       updatedAt: Date.now(),
     });
 

@@ -12,6 +12,7 @@ export const record = mutation({
     items: v.array(
       v.object({
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
       })
     ),
@@ -148,6 +149,7 @@ export const recordViaForm = mutation({
     items: v.array(
       v.object({
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
       })
     ),
@@ -187,6 +189,7 @@ export const updateViaForm = mutation({
     items: v.array(
       v.object({
         productId: v.id("products"),
+        variantId: v.optional(v.id("productVariants")),
         quantity: v.number(),
       })
     ),

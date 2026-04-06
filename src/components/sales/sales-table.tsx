@@ -100,6 +100,7 @@ interface OfferLike {
   name: string;
   minQuantity: number;
   bundlePrice: number;
+  sizeMl?: number;
   // Only needed for live offers (backward compat) — snapshots treat all items as eligible
   productId?: Id<"products">;
   productIds?: Id<"products">[];
@@ -109,7 +110,7 @@ interface OfferLike {
 // Group items by stored inBundle flag — items with inBundle=true go into bundles, rest outside.
 // Falls back to legacy computation for old sales without the flag.
 function computeOfferGrouping(
-  items: { productId: Id<"products">; quantity: number; productPrice?: number; inBundle?: boolean }[],
+  items: { productId: Id<"products">; quantity: number; productPrice?: number; inBundle?: boolean; variantSizeMl?: number }[],
   offer: OfferLike | null | undefined,
   products: Map<Id<"products">, Doc<"products">>,
   useSnapshotPrices = false,
@@ -118,13 +119,25 @@ function computeOfferGrouping(
   const empty = { bundles: [] as BundleGroup[], nonBundledIndices: allIndices };
   if (!offer) return empty;
 
+  // Returns false if the item's variant sizeMl doesn't match the offer's sizeMl requirement
+  const matchesSizeMl = (item: typeof items[number]) => {
+    if (offer.sizeMl == null) return true; // no size filter on offer
+    if (item.variantSizeMl == null) return true; // unknown size — don't exclude
+    return item.variantSizeMl === offer.sizeMl;
+  };
+
   // Check if any item has the inBundle flag — if so, use stored grouping
   const hasInBundleFlag = items.some((item) => item.inBundle != null);
 
   if (hasInBundleFlag) {
-    // Simple: items tagged inBundle go into bundles, rest outside
-    const bundledIndices = items.map((item, i) => item.inBundle ? i : -1).filter((i) => i >= 0);
-    const nonBundledIndices = items.map((item, i) => !item.inBundle ? i : -1).filter((i) => i >= 0);
+    // Items tagged inBundle go into bundles — but also enforce sizeMl to correct
+    // any flags that were wrongly set before the sizeMl filter was applied.
+    const bundledIndices = items
+      .map((item, i) => (item.inBundle && matchesSizeMl(item) ? i : -1))
+      .filter((i) => i >= 0);
+    const nonBundledIndices = items
+      .map((item, i) => (!item.inBundle || !matchesSizeMl(item) ? i : -1))
+      .filter((i) => i >= 0);
 
     const bundledQty = bundledIndices.reduce((sum, idx) => sum + items[idx].quantity, 0);
     const bundleCount = Math.floor(bundledQty / offer.minQuantity);
@@ -156,15 +169,18 @@ function computeOfferGrouping(
   const eligibleIndices: number[] = [];
   let eligibleQty = 0;
   for (let i = 0; i < items.length; i++) {
+    let eligible: boolean;
     if (useSnapshotPrices) {
-      eligibleIndices.push(i);
-      eligibleQty += items[i].quantity;
+      eligible = true;
     } else {
       const product = products.get(items[i].productId);
-      if (isEligibleForOffer(items[i].productId, product, offer as Doc<"offers">)) {
-        eligibleIndices.push(i);
-        eligibleQty += items[i].quantity;
-      }
+      eligible = isEligibleForOffer(items[i].productId, product, offer as Doc<"offers">);
+    }
+    // Also apply sizeMl filter regardless of path
+    if (eligible && !matchesSizeMl(items[i])) eligible = false;
+    if (eligible) {
+      eligibleIndices.push(i);
+      eligibleQty += items[i].quantity;
     }
   }
 
@@ -219,6 +235,10 @@ function SaleLineItems({
   offer?: Doc<"offers"> | null;
 }) {
   const data = useQuery(api.sales.getWithLineItems, { saleId });
+  const allVariants = useQuery(api.productVariants.listAll);
+  const variantSizeMap = new Map(
+    (allVariants ?? []).filter((v) => v.sizeMl != null).map((v) => [v._id, v.sizeMl!])
+  );
   const totalCols = showAgent ? 8 : 7;
 
   // Use snapshotted offer if available, fall back to live offer for old sales
@@ -260,6 +280,8 @@ function SaleLineItems({
       productId: item.productId,
       quantity: item.quantity,
       productPrice: item.productPrice,
+      inBundle: item.inBundle,
+      variantSizeMl: item.variantId ? variantSizeMap.get(item.variantId) : undefined,
     }));
     const { bundles, nonBundledIndices } = computeOfferGrouping(items, effectiveOffer, products, hasSnapshots);
 
@@ -267,6 +289,7 @@ function SaleLineItems({
       const product = products.get(item.productId);
       // Use snapshotted name/price, fall back to live product data
       const itemName = item.productName ?? product?.name ?? "Unknown";
+      const variantName = item.variantName;
       const itemPrice = item.productPrice ?? product?.price ?? 0;
       const qty = item.quantity;
       const fulfilled = item.fulfilledQuantity ?? 0;
@@ -288,6 +311,9 @@ function SaleLineItems({
             <span className="font-medium">
               {itemName}
             </span>
+            {variantName && (
+              <span className="text-muted-foreground ml-1 text-xs">— {variantName}</span>
+            )}
             <span className="text-muted-foreground">
               {" "}— {batch ? `Batch ${batch.batchCode}` : "Batch TBD"}
             </span>
@@ -348,11 +374,12 @@ function SaleLineItems({
 
   // For fulfilled sales, try to use snapshotted lineItems for display if available
   const saleLineItems = sale.lineItems;
-  const snapshotMap = new Map<string, { productName: string; productPrice: number }>();
+  const snapshotMap = new Map<string, { productName: string; variantName?: string; productPrice: number }>();
   if (saleLineItems) {
     for (const li of saleLineItems) {
       if (li.productName) {
-        snapshotMap.set(li.productId, { productName: li.productName, productPrice: li.productPrice ?? 0 });
+        const key = li.variantId ?? li.productId;
+        snapshotMap.set(key, { productName: li.productName, variantName: li.variantName, productPrice: li.productPrice ?? 0 });
       }
     }
   }
@@ -369,15 +396,17 @@ function SaleLineItems({
   const fulfilledItems = lineItems.map((m, i) => ({
     productId: m.productId,
     quantity: m.quantity,
-    productPrice: snapshotMap.get(m.productId)?.productPrice ?? products.get(m.productId)?.price,
+    productPrice: snapshotMap.get(m.variantId ?? m.productId)?.productPrice ?? products.get(m.productId)?.price,
     inBundle: inBundleByIdx.get(i),
+    variantSizeMl: m.variantId ? variantSizeMap.get(m.variantId) : undefined,
   }));
   const { bundles, nonBundledIndices } = computeOfferGrouping(fulfilledItems, effectiveOffer, products, hasSnapshots);
 
-  const renderFulfilledItem = (m: typeof lineItems[number], idx: number, indented: boolean) => {
-    const snapshot = snapshotMap.get(m.productId);
+  const renderFulfilledItem = (m: typeof lineItems[number], _idx: number, indented: boolean) => {
+    const snapshot = snapshotMap.get(m.variantId ?? m.productId);
     const product = products.get(m.productId);
     const itemName = snapshot?.productName ?? product?.name ?? "Unknown";
+    const variantName = snapshot?.variantName;
     const itemPrice = snapshot?.productPrice ?? product?.price ?? 0;
     const qty = m.quantity;
     const batch = batches.get(m.batchId);
@@ -395,6 +424,9 @@ function SaleLineItems({
           <span className="font-medium">
             {itemName}
           </span>
+          {variantName && (
+            <span className="text-muted-foreground ml-1 text-xs">— {variantName}</span>
+          )}
           <span className="text-muted-foreground">
             {" "}— Batch {batch?.batchCode ?? "?"}
           </span>

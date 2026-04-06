@@ -25,6 +25,7 @@ import type * as inventory from "../inventory.js";
 import type * as offerPricing from "../offerPricing.js";
 import type * as offers from "../offers.js";
 import type * as passwordChange from "../passwordChange.js";
+import type * as productVariants from "../productVariants.js";
 import type * as products from "../products.js";
 import type * as rates from "../rates.js";
 import type * as sales from "../sales.js";
@@ -57,6 +58,7 @@ declare const fullApi: ApiFromModules<{
   offerPricing: typeof offerPricing;
   offers: typeof offers;
   passwordChange: typeof passwordChange;
+  productVariants: typeof productVariants;
   products: typeof products;
   rates: typeof rates;
   sales: typeof sales;

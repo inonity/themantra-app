@@ -20,7 +20,6 @@ function ConfirmEmailInner({ token }: { token: string }) {
   );
   const [errorMessage, setErrorMessage] = useState("");
 
-  // eslint-disable-next-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (ran.current) return;
     ran.current = true;
@@ -43,6 +42,7 @@ function ConfirmEmailInner({ token }: { token: string }) {
         setErrorMessage("Something went wrong. Please try again.");
       }
     })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

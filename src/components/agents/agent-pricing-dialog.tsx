@@ -21,14 +21,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { SaveIcon } from "lucide-react";
@@ -140,46 +132,45 @@ export function AgentPricingDialog({
 
             {/* Preview of selected rate */}
             {selectedRate && (
-              <div className="rounded-md border p-3 space-y-2">
-                <p className="text-xs font-medium text-muted-foreground">
-                  Rate Preview
-                </p>
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Collection</TableHead>
-                      <TableHead>HQ Rate</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {selectedRate.collectionRates.map((cr, idx) => (
-                      <TableRow key={idx}>
-                        <TableCell>
-                          <Badge variant="outline">{cr.collection}</Badge>
-                        </TableCell>
-                        <TableCell>
-                          {formatRate(cr.rateType, cr.rateValue)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                    {selectedRate.defaultRate &&
-                      !(selectedRate.defaultRate.rateType === "percentage" && selectedRate.defaultRate.rateValue === 1) && (
-                      <TableRow>
-                        <TableCell>
-                          <span className="text-muted-foreground italic">
-                            Default
-                          </span>
-                        </TableCell>
-                        <TableCell>
-                          {formatRate(
-                            selectedRate.defaultRate.rateType,
-                            selectedRate.defaultRate.rateValue
-                          )}
-                        </TableCell>
-                      </TableRow>
-                    )}
-                  </TableBody>
-                </Table>
+              <div className="rounded-md border p-3 space-y-3">
+                <p className="text-xs font-medium text-muted-foreground">Pricing Rules</p>
+                <div className="space-y-1.5">
+                  {/* Collection rates — grouped by collection, one row per (collection, sizeMl) */}
+                  {selectedRate.collectionRates.map((cr, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">
+                        {cr.collection}{cr.sizeMl ? ` ${cr.sizeMl}ML` : ""}
+                      </span>
+                      <Badge variant="outline" className="text-xs font-medium">
+                        {formatRate(cr.rateType, cr.rateValue)}
+                      </Badge>
+                    </div>
+                  ))}
+                  {/* Agent variant rates (Tester, Refill, etc.) */}
+                  {selectedRate.agentVariantRates?.map((avr, idx) => (
+                    <div key={idx} className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">{avr.type} (agent)</span>
+                      <Badge variant="secondary" className="text-xs font-medium">
+                        {formatRate(avr.rateType, avr.rateValue)}
+                      </Badge>
+                    </div>
+                  ))}
+                  {/* Default fallback */}
+                  {selectedRate.defaultRate &&
+                    !(selectedRate.defaultRate.rateType === "percentage" && selectedRate.defaultRate.rateValue === 1) && (
+                    <div className="flex items-center justify-between text-sm">
+                      <span className="text-muted-foreground">Default</span>
+                      <Badge variant="outline" className="text-xs text-muted-foreground">
+                        {formatRate(selectedRate.defaultRate.rateType, selectedRate.defaultRate.rateValue)}
+                      </Badge>
+                    </div>
+                  )}
+                  {selectedRate.collectionRates.length === 0 &&
+                    !selectedRate.agentVariantRates?.length &&
+                    !selectedRate.defaultRate && (
+                    <p className="text-xs text-muted-foreground italic">No pricing rules defined.</p>
+                  )}
+                </div>
               </div>
             )}
           </div>

@@ -44,7 +44,6 @@ export const create = mutation({
     shortCode: v.string(),
     description: v.optional(v.string()),
     collection: v.optional(v.string()),
-    price: v.number(),
     status: v.union(v.literal("active"), v.literal("discontinued"), v.literal("future_release")),
   },
   handler: async (ctx, args) => {
@@ -60,7 +59,6 @@ export const update = mutation({
     shortCode: v.string(),
     description: v.optional(v.string()),
     collection: v.union(v.string(), v.null()),
-    price: v.number(),
     status: v.union(v.literal("active"), v.literal("discontinued"), v.literal("future_release")),
   },
   handler: async (ctx, args) => {

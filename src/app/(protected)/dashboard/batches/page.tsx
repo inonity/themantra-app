@@ -58,6 +58,7 @@ const ALLOWED_TRANSITIONS: Record<BatchStatus, BatchStatus[]> = {
 export default function BatchesPage() {
   const batches = useQuery(api.batches.listAll);
   const products = useQuery(api.products.list);
+  const variants = useQuery(api.productVariants.listAll);
   const updateStatus = useMutation(api.batches.updateStatus);
 
   const [editingBatch, setEditingBatch] = useState<Doc<"batches"> | null>(null);
@@ -66,6 +67,9 @@ export default function BatchesPage() {
 
   const productMap = new Map(
     (products ?? []).map((p) => [p._id, p])
+  );
+  const variantMap = new Map(
+    (variants ?? []).map((v) => [v._id, v.name])
   );
 
   const isLoading = batches === undefined || products === undefined;
@@ -115,6 +119,7 @@ export default function BatchesPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Product</TableHead>
+                <TableHead>Variant</TableHead>
                 <TableHead>Batch Code</TableHead>
                 <TableHead>Manufactured</TableHead>
                 <TableHead>Expected Maturation</TableHead>
@@ -139,6 +144,7 @@ export default function BatchesPage() {
                         {product?.name ?? "Unknown"}
                       </Link>
                     </TableCell>
+                    <TableCell>{batch.variantId ? (variantMap.get(batch.variantId) ?? "—") : "—"}</TableCell>
                     <TableCell>{batch.batchCode}</TableCell>
                     <TableCell>{batch.manufacturedDate}</TableCell>
                     <TableCell>{batch.expectedReadyDate ?? "—"}</TableCell>

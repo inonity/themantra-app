@@ -32,6 +32,8 @@ type EnrichedRequest = {
   _id: Id<"stockRequests">;
   agentId: Id<"users">;
   productId: Id<"products">;
+  variantId?: Id<"productVariants">;
+  variantName?: string;
   quantity: number;
   notes?: string;
   status: "pending" | "fulfilled" | "cancelled";
@@ -67,6 +69,7 @@ function RequestsTable({
         <TableRow>
           <TableHead>Agent</TableHead>
           <TableHead>Product</TableHead>
+          <TableHead>Variant</TableHead>
           <TableHead>Quantity</TableHead>
           <TableHead>Notes</TableHead>
           {!showActions && <TableHead>Status</TableHead>}
@@ -88,6 +91,9 @@ function RequestsTable({
                   Future Release
                 </Badge>
               )}
+            </TableCell>
+            <TableCell className="text-sm text-muted-foreground">
+              {req.variantName ?? "—"}
             </TableCell>
             <TableCell>
               <span className="font-semibold">{req.quantity}</span>

@@ -26,11 +26,12 @@ export const transferToAgent = mutation({
     const agent = await ctx.db.get(args.agentId);
     if (!agent || !isSellerRole(agent.role)) throw new Error("Invalid agent");
 
-    // Resolve pricing
+    // Resolve pricing (variant-aware)
     const resolved = await resolveAgentPrice(
       ctx,
       args.agentId,
-      batch.productId
+      batch.productId,
+      batch.variantId
     );
 
     // Find business inventory for this batch
@@ -75,6 +76,7 @@ export const transferToAgent = mutation({
       await ctx.db.insert("inventory", {
         batchId: args.batchId,
         productId: batch.productId,
+        variantId: batch.variantId,
         heldByType: "agent",
         heldById: args.agentId,
         quantity: args.quantity,
@@ -86,6 +88,7 @@ export const transferToAgent = mutation({
     await ctx.db.insert("stockMovements", {
       batchId: args.batchId,
       productId: batch.productId,
+      variantId: batch.variantId,
       fromPartyType: "business",
       toPartyType: "agent",
       toPartyId: args.agentId,
@@ -131,11 +134,12 @@ export const transferBulkToAgent = mutation({
       if (!batch) throw new Error("Batch not found");
       if (batch.status !== "available") throw new Error(`Batch ${batch.batchCode} is not available`);
 
-      // Resolve pricing
+      // Resolve pricing (variant-aware)
       const resolved = await resolveAgentPrice(
         ctx,
         args.agentId,
-        batch.productId
+        batch.productId,
+        batch.variantId
       );
 
       // Find business inventory
@@ -180,6 +184,7 @@ export const transferBulkToAgent = mutation({
         await ctx.db.insert("inventory", {
           batchId: item.batchId,
           productId: batch.productId,
+          variantId: batch.variantId,
           heldByType: "agent",
           heldById: args.agentId,
           quantity: item.quantity,
@@ -191,6 +196,7 @@ export const transferBulkToAgent = mutation({
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: batch.productId,
+        variantId: batch.variantId,
         fromPartyType: "business",
         toPartyType: "agent",
         toPartyId: args.agentId,

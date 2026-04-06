@@ -58,6 +58,8 @@ type FulfillmentSource = "agent_stock" | "hq_transfer" | "hq_direct" | "pending_
 interface UnifiedLineItem {
   productId: Id<"products">;
   productName: string;
+  variantId?: Id<"productVariants">;
+  variantName?: string;
   source: FulfillmentSource;
   // Only set for agent_stock items
   batchId?: Id<"batches">;
@@ -177,51 +179,34 @@ export function RecordSaleForm({
   const isHqCollector = paymentCollector === "hq";
   const needsProofOfPayment = isNonCashPayment && isHqCollector && showCollectorOption;
 
+  const allVariants = useQuery(api.productVariants.listAll);
+
   // Use allProducts for product map (includes all statuses for display), sellable for dropdown
-  const productMap = new Map((allProducts ?? []).map((p) => [p._id, p]));
+  const productMap = useMemo(
+    () => new Map((allProducts ?? []).map((p) => [p._id, p])),
+    [allProducts]
+  );
   const batchMap = new Map((batches ?? []).map((b) => [b._id, b]));
+  const variantMap = useMemo(
+    () => new Map((allVariants ?? []).map((v) => [v._id, v])),
+    [allVariants]
+  );
+  const variantsByProduct = useMemo(() => {
+    const map = new Map<string, Doc<"productVariants">[]>();
+    for (const v of (allVariants ?? [])) {
+      // In the sale order form (agent→customer), hide agent-only variants (testers, refills)
+      if (v.status === "active" && v.forWho !== "agents") {
+        const existing = map.get(v.productId) ?? [];
+        map.set(v.productId, [...existing, v]);
+      }
+    }
+    return map;
+  }, [allVariants]);
   const activeInventory = isPresell ? (businessInventory ?? []) : inventory;
-
-  // Auto-detect fulfillment source for a product
-  function detectSource(productId: Id<"products">): {
-    source: FulfillmentSource;
-    inv?: Doc<"inventory">;
-  } {
-    const product = productMap.get(productId);
-
-    // Check agent inventory first (even for future_release)
-    const agentInv = activeInventory.find(
-      (i) =>
-        i.productId === productId &&
-        i.quantity > 0 &&
-        (usedInventoryCounts.get(i._id) ?? 0) < i.quantity
-    );
-    if (agentInv) {
-      return { source: "agent_stock", inv: agentInv };
-    }
-
-    // Future release with no agent stock
-    if (product?.status === "future_release") {
-      const hqInv = (businessInventory ?? []).find(
-        (i) => i.productId === productId && i.quantity > 0
-      );
-      return { source: hqInv ? "hq_transfer" : "future_release" };
-    }
-
-    // Check if HQ has inventory
-    const hqInv = (businessInventory ?? []).find(
-      (i) => i.productId === productId && i.quantity > 0
-    );
-    if (hqInv) {
-      return { source: "hq_transfer" };
-    }
-
-    return { source: "pending_batch" };
-  }
 
   // Pre-fill from interest
   useEffect(() => {
-    if (interest && !interestPreFilled && allProducts && batches) {
+    if (interest && !interestPreFilled && allProducts && batches && allVariants) {
       setCustomerName(interest.customerDetail.name);
       setCustomerPhone(interest.customerDetail.phone ?? "");
       setCustomerEmail(interest.customerDetail.email ?? "");
@@ -229,26 +214,32 @@ export function RecordSaleForm({
 
       const pMap = new Map(allProducts.map((p) => [p._id, p]));
       const bMap = new Map(batches.map((b) => [b._id, b]));
+      const vMap = new Map(allVariants.map((v) => [v._id, v]));
       const items: UnifiedLineItem[] = [];
       const usedInvCounts = new Map<string, number>();
 
       for (const item of interest.items) {
         const product = pMap.get(item.productId);
+        const interestVariant = item.variantId ? vMap.get(item.variantId) : undefined;
 
         for (let u = 0; u < item.quantity; u++) {
-          // Try to match to agent inventory (has enough remaining)
+          // Try to match to agent inventory (has enough remaining, matching variant if set)
           const inv = inventory.find(
             (i) =>
               i.productId === item.productId &&
+              (!item.variantId || i.variantId === item.variantId) &&
               (usedInvCounts.get(i._id) ?? 0) < i.quantity
           );
 
           if (inv) {
             usedInvCounts.set(inv._id, (usedInvCounts.get(inv._id) ?? 0) + 1);
             const batch = bMap.get(inv.batchId);
+            const invVariant = inv.variantId ? vMap.get(inv.variantId) : undefined;
             items.push({
               productId: item.productId,
               productName: product?.name ?? "Unknown",
+              variantId: inv.variantId,
+              variantName: invVariant?.name,
               source: "agent_stock",
               batchId: inv.batchId,
               inventoryId: inv._id,
@@ -262,6 +253,8 @@ export function RecordSaleForm({
             items.push({
               productId: item.productId,
               productName: product.name,
+              variantId: item.variantId,
+              variantName: interestVariant?.name,
               source: hqInv ? "hq_transfer" : "future_release",
             });
           } else {
@@ -271,6 +264,8 @@ export function RecordSaleForm({
             items.push({
               productId: item.productId,
               productName: product?.name ?? "Unknown",
+              variantId: item.variantId,
+              variantName: interestVariant?.name,
               source: hqInv ? "hq_transfer" : "pending_batch",
             });
           }
@@ -280,7 +275,7 @@ export function RecordSaleForm({
       setUnifiedItems(items);
       setInterestPreFilled(true);
     }
-  }, [interest, interestPreFilled, allProducts, batches, inventory, businessInventory]);
+  }, [interest, interestPreFilled, allProducts, batches, allVariants, inventory, businessInventory]);
 
   // Track how many units from each inventory are used
   const usedInventoryCounts = useMemo(() => {
@@ -302,30 +297,48 @@ export function RecordSaleForm({
     }
     return counts;
   }, [unifiedItems]);
-  const usedProductIds = new Set(
-    unifiedItems.filter((li) => li.source !== "agent_stock").map((li) => li.productId)
-  );
+  // Track pending (non-agent-stock) product+variant combos to avoid duplicates in the "add" dropdown
+  const usedPendingKeys = useMemo(() => new Set(
+    unifiedItems
+      .filter((li) => li.source !== "agent_stock")
+      .map((li) => li.variantId ? `${li.productId}__${li.variantId}` : li.productId)
+  ), [unifiedItems]);
 
   const lineItemProductIds = useMemo(
     () => [...new Set(unifiedItems.map((li) => li.productId))],
     [unifiedItems]
   );
 
+  const lineItemVariantIds = useMemo(
+    () => [...new Set(unifiedItems.map((li) => li.variantId).filter((id): id is Id<"productVariants"> => !!id))],
+    [unifiedItems]
+  );
+
   const applicableOffers = useQuery(
     api.offers.getApplicableOffers,
     lineItemProductIds.length > 0
-      ? { productIds: lineItemProductIds }
+      ? {
+          productIds: lineItemProductIds,
+          variantIds: lineItemVariantIds.length > 0 ? lineItemVariantIds : undefined,
+          saleContext: "customers" as const,
+        }
       : "skip"
   );
 
   const totalQuantity = unifiedItems.length;
+
+  function itemPrice(li: UnifiedLineItem): number {
+    if (li.variantId) return variantMap.get(li.variantId)?.price ?? 0;
+    return productMap.get(li.productId)?.price ?? 0;
+  }
 
   // Pricing calculation — each item in unifiedItems is 1 unit
   const pricing = useMemo(() => {
     if (unifiedItems.length === 0) return null;
 
     const defaultTotal = unifiedItems.reduce((sum, li) => {
-      return sum + (productMap.get(li.productId)?.price ?? 0);
+      const price = li.variantId ? (variantMap.get(li.variantId)?.price ?? 0) : (productMap.get(li.productId)?.price ?? 0);
+      return sum + price;
     }, 0);
 
     const selectedOffer =
@@ -341,12 +354,21 @@ export function RecordSaleForm({
         const li = unifiedItems[idx];
         const product = productMap.get(li.productId);
         let eligible = true;
-        if (selectedOffer.productId) {
+        if (selectedOffer.variantId) {
+          eligible = li.variantId === selectedOffer.variantId;
+        } else if (selectedOffer.variantIds && selectedOffer.variantIds.length > 0) {
+          eligible = !!li.variantId && selectedOffer.variantIds.includes(li.variantId);
+        } else if (selectedOffer.productId) {
           eligible = li.productId === selectedOffer.productId;
         } else if (selectedOffer.productIds && selectedOffer.productIds.length > 0) {
           eligible = selectedOffer.productIds.includes(li.productId);
         } else if (selectedOffer.collection) {
           eligible = product?.collection === selectedOffer.collection;
+        }
+        // Also apply sizeMl filter for new-style offers
+        if (eligible && selectedOffer.sizeMl != null && !selectedOffer.variantId && !(selectedOffer.variantIds && selectedOffer.variantIds.length > 0)) {
+          const variant = li.variantId ? variantMap.get(li.variantId) : undefined;
+          eligible = variant?.sizeMl === selectedOffer.sizeMl;
         }
         if (eligible) {
           eligibleIndices.push(idx);
@@ -365,6 +387,11 @@ export function RecordSaleForm({
         const bundledIndices = eligibleIndices.slice(0, bundledUnitCount);
         const remainderIndices = eligibleIndices.slice(bundledUnitCount);
 
+        const getIdxPrice = (idx: number) => {
+          const li = unifiedItems[idx];
+          return li.variantId ? (variantMap.get(li.variantId)?.price ?? 0) : (productMap.get(li.productId)?.price ?? 0);
+        };
+
         // Group bundled items into per-bundle sets
         const bundles: { itemIndices: Set<number>; originalPrice: number }[] = [];
         for (let b = 0; b < bundleCount; b++) {
@@ -375,22 +402,16 @@ export function RecordSaleForm({
           const itemIndices = new Set<number>();
           for (const idx of indices) {
             itemIndices.add(idx);
-            originalPrice += productMap.get(unifiedItems[idx].productId)?.price ?? 0;
+            originalPrice += getIdxPrice(idx);
           }
           bundles.push({ itemIndices, originalPrice });
         }
 
         // Totals
         const bundleTotal = bundleCount * selectedOffer.bundlePrice;
-        const bundledOriginalPrice = bundledIndices.reduce(
-          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
-        );
-        const remainderTotal = remainderIndices.reduce(
-          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
-        );
-        const nonEligibleTotal = nonEligibleIndices.reduce(
-          (sum, idx) => sum + (productMap.get(unifiedItems[idx].productId)?.price ?? 0), 0
-        );
+        const bundledOriginalPrice = bundledIndices.reduce((sum, idx) => sum + getIdxPrice(idx), 0);
+        const remainderTotal = remainderIndices.reduce((sum, idx) => sum + getIdxPrice(idx), 0);
+        const nonEligibleTotal = nonEligibleIndices.reduce((sum, idx) => sum + getIdxPrice(idx), 0);
         const offerTotal = bundleTotal + remainderTotal + nonEligibleTotal;
 
         // Non-bundled = remainder eligible + non-eligible
@@ -426,7 +447,7 @@ export function RecordSaleForm({
       nonBundledIndices: [] as number[],
       bundledSet: new Set<number>(),
     };
-  }, [unifiedItems, selectedOfferId, applicableOffers, productMap]);
+  }, [unifiedItems, selectedOfferId, applicableOffers, productMap, variantMap]);
 
   function addItem(value: string) {
     // Value could be an inventory ID (for agent_stock) or a product ID (for pending/future)
@@ -434,12 +455,15 @@ export function RecordSaleForm({
     if (inv) {
       const product = productMap.get(inv.productId);
       const batch = batchMap.get(inv.batchId);
+      const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
       const source: FulfillmentSource = isPresell ? "hq_transfer" : "agent_stock";
       setUnifiedItems([
         ...unifiedItems,
         {
           productId: inv.productId,
           productName: product?.name ?? "Unknown",
+          variantId: inv.variantId,
+          variantName: variant?.name,
           source,
           batchId: inv.batchId,
           inventoryId: inv._id,
@@ -456,11 +480,14 @@ export function RecordSaleForm({
     if (inv) {
       const product = productMap.get(inv.productId);
       const batch = batchMap.get(inv.batchId);
+      const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
       setUnifiedItems([
         ...unifiedItems,
         {
           productId: inv.productId,
           productName: product?.name ?? "Unknown",
+          variantId: inv.variantId,
+          variantName: variant?.name,
           source: "agent_stock",
           batchId: inv.batchId,
           inventoryId: inv._id,
@@ -471,9 +498,12 @@ export function RecordSaleForm({
     }
   }
 
-  function addPendingProduct(productId: string) {
+  function addPendingProduct(value: string) {
+    // value is "productId" or "productId__variantId"
+    const [productId, variantId] = value.split("__");
     const product = productMap.get(productId as Id<"products">);
     if (!product) return;
+    const variant = variantId ? variantMap.get(variantId as Id<"productVariants">) : undefined;
     let source: FulfillmentSource;
     if (product.status === "future_release") {
       source = "future_release";
@@ -488,6 +518,8 @@ export function RecordSaleForm({
       {
         productId: product._id,
         productName: product.name,
+        variantId: variant?._id,
+        variantName: variant?.name,
         source,
       },
     ]);
@@ -498,11 +530,14 @@ export function RecordSaleForm({
     if (!inv) return;
     const product = productMap.get(inv.productId);
     const batch = batchMap.get(inv.batchId);
+    const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
     setUnifiedItems([
       ...unifiedItems,
       {
         productId: inv.productId,
         productName: product?.name ?? "Unknown",
+        variantId: inv.variantId,
+        variantName: variant?.name,
         source: "hq_transfer",
         hqBatchId: inv.batchId,
         hqBatchCode: batch?.batchCode ?? "?",
@@ -530,12 +565,6 @@ export function RecordSaleForm({
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
-  function removeItem(index: number) {
-    const updated = unifiedItems.filter((_, i) => i !== index);
-    setUnifiedItems(updated);
-    if (updated.length === 0) setSelectedOfferId("");
-  }
-
   // Add one more unit of the same product+source+batch (duplicates the given item)
   function addUnitLike(item: UnifiedLineItem) {
     // Check inventory limit
@@ -553,16 +582,34 @@ export function RecordSaleForm({
         return;
       }
     }
-    setUnifiedItems([...unifiedItems, { ...item }]);
-  }
-
-  // Remove one unit matching the same product+source+batch (removes last occurrence)
-  function removeUnitLike(item: UnifiedLineItem) {
-    // Find the last index matching this product+source+batch
+    // Insert adjacent to the last matching item so groupIndices keeps them consecutive
+    let lastMatchIdx = -1;
     for (let i = unifiedItems.length - 1; i >= 0; i--) {
       const li = unifiedItems[i];
       if (
         li.productId === item.productId &&
+        li.variantId === item.variantId &&
+        li.source === item.source &&
+        li.batchId === item.batchId &&
+        li.hqBatchId === item.hqBatchId
+      ) {
+        lastMatchIdx = i;
+        break;
+      }
+    }
+    const updated = [...unifiedItems];
+    updated.splice(lastMatchIdx + 1, 0, { ...item });
+    setUnifiedItems(updated);
+  }
+
+  // Remove one unit matching the same product+variant+source+batch (removes last occurrence)
+  function removeUnitLike(item: UnifiedLineItem) {
+    // Find the last index matching this product+variant+source+batch
+    for (let i = unifiedItems.length - 1; i >= 0; i--) {
+      const li = unifiedItems[i];
+      if (
+        li.productId === item.productId &&
+        li.variantId === item.variantId &&
         li.source === item.source &&
         li.batchId === item.batchId &&
         li.hqBatchId === item.hqBatchId
@@ -631,8 +678,8 @@ export function RecordSaleForm({
       const bundledSet = pricing?.bundledSet ?? new Set<number>();
 
       // Helper: group items by key into { ...item, quantity }
-      type GroupedFulfilled = { batchId: Id<"batches">; productId: Id<"products">; quantity: number; inBundle?: boolean; fulfillmentSource?: FulfillmentSource };
-      type GroupedPending = { productId: Id<"products">; quantity: number; fulfillmentSource: FulfillmentSource; inBundle?: boolean };
+      type GroupedFulfilled = { batchId: Id<"batches">; productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; inBundle?: boolean; fulfillmentSource?: FulfillmentSource };
+      type GroupedPending = { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; fulfillmentSource: FulfillmentSource; inBundle?: boolean };
       const fulfilledGroups = new Map<string, GroupedFulfilled>();
       const pendingGroups = new Map<string, GroupedPending>();
 
@@ -640,7 +687,7 @@ export function RecordSaleForm({
         const li = unifiedItems[i];
         const inBundle = bundledSet.has(i);
         if (li.source === "agent_stock" && li.batchId) {
-          const key = `${li.batchId}-${li.productId}-${inBundle}`;
+          const key = `${li.batchId}-${li.productId}-${li.variantId ?? ""}-${inBundle}`;
           const existing = fulfilledGroups.get(key);
           if (existing) {
             existing.quantity++;
@@ -648,19 +695,21 @@ export function RecordSaleForm({
             fulfilledGroups.set(key, {
               batchId: li.batchId,
               productId: li.productId,
+              variantId: li.variantId,
               quantity: 1,
               inBundle: inBundle || undefined,
               ...(isPresell ? { fulfillmentSource: "agent_stock" as const } : {}),
             });
           }
         } else {
-          const key = `${li.productId}-${li.source}-${inBundle}`;
+          const key = `${li.productId}-${li.variantId ?? ""}-${li.source}-${inBundle}`;
           const existing = pendingGroups.get(key);
           if (existing) {
             existing.quantity++;
           } else {
             pendingGroups.set(key, {
               productId: li.productId,
+              variantId: li.variantId,
               quantity: 1,
               fulfillmentSource: li.source,
               inBundle: inBundle || undefined,
@@ -779,10 +828,7 @@ export function RecordSaleForm({
       )
     : [];
 
-  // Sellable products not already added as pending items
-  const sellableProducts = (products ?? []).filter(
-    (p) => !usedProductIds.has(p._id)
-  );
+  const sellableProducts = products ?? [];
 
   const hasPendingItems = unifiedItems.some((li) => li.source !== "agent_stock");
   const hasItems = unifiedItems.length > 0;
@@ -942,6 +988,7 @@ export function RecordSaleForm({
                       if (
                         lastGroup &&
                         lastGroup.item.productId === li.productId &&
+                        lastGroup.item.variantId === li.variantId &&
                         lastGroup.item.source === li.source &&
                         lastGroup.item.batchId === li.batchId &&
                         lastGroup.item.hqBatchId === li.hqBatchId
@@ -967,8 +1014,7 @@ export function RecordSaleForm({
                     group: VisualGroup,
                     options: { indented?: boolean; showPrice?: boolean; keyPrefix?: string }
                   ) => {
-                    const product = productMap.get(group.item.productId);
-                    const basePrice = product?.price ?? 0;
+                    const basePrice = itemPrice(group.item);
                     const badge = SOURCE_BADGES[group.item.source];
                     const li = group.item;
                     return (
@@ -977,7 +1023,7 @@ export function RecordSaleForm({
                         className={options.indented ? "bg-muted/30" : undefined}
                       >
                         <TableCell className={options.indented ? "pl-8 font-medium" : "font-medium"}>
-                          {li.productName}
+                          {li.productName}{li.variantName ? ` — ${li.variantName}` : ""}
                         </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-1">
@@ -1101,10 +1147,11 @@ export function RecordSaleForm({
                           {(isPresell ? availableAgentInventory : availableInventory).map((inv) => {
                             const product = productMap.get(inv.productId);
                             const batch = batchMap.get(inv.batchId);
+                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
                             const remaining = inv.quantity - (usedInventoryCounts.get(inv._id) ?? 0);
                             return (
                               <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"} — Batch{" "}
+                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
                                 {batch?.batchCode ?? "?"} (avail: {remaining})
                               </SelectItem>
                             );
@@ -1127,9 +1174,10 @@ export function RecordSaleForm({
                           {availableHQInventory.map((inv) => {
                             const product = productMap.get(inv.productId);
                             const batch = batchMap.get(inv.batchId);
+                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
                             return (
                               <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"} — Batch{" "}
+                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
                                 {batch?.batchCode ?? "?"} (HQ: {inv.quantity})
                               </SelectItem>
                             );
@@ -1152,9 +1200,10 @@ export function RecordSaleForm({
                           {availableInventory.map((inv) => {
                             const product = productMap.get(inv.productId);
                             const batch = batchMap.get(inv.batchId);
+                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
                             return (
                               <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"} — Batch{" "}
+                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
                                 {batch?.batchCode ?? "?"} (avail: {inv.quantity})
                               </SelectItem>
                             );
@@ -1166,25 +1215,44 @@ export function RecordSaleForm({
                 )}
 
                 {/* Add product without stock (pending/future release) */}
-                {sellableProducts.length > 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6}>
-                      <Select value="" onValueChange={(v) => v && addPendingProduct(v)}>
-                        <SelectTrigger className="w-full md:w-[350px]">
-                          <SelectValue placeholder="Add product (no stock needed)..." />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {sellableProducts.map((product) => (
-                            <SelectItem key={product._id} value={product._id}>
-                              {product.name} — RM{product.price.toFixed(2)}
-                              {product.status === "future_release" && " (Future Release)"}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                )}
+                {sellableProducts.length > 0 && (() => {
+                  const pendingOptions = sellableProducts.flatMap((product) => {
+                    const variants = variantsByProduct.get(product._id) ?? [];
+                    if (variants.length === 0) {
+                      const key = product._id;
+                      if (usedPendingKeys.has(key)) return [];
+                      return [{
+                        value: product._id,
+                        label: `${product.name} — RM${(product.price ?? 0).toFixed(2)}${product.status === "future_release" ? " (Future Release)" : ""}`,
+                      }];
+                    }
+                    return variants
+                      .filter((v) => !usedPendingKeys.has(`${product._id}__${v._id}`))
+                      .map((v) => ({
+                        value: `${product._id}__${v._id}`,
+                        label: `${product.name} — ${v.name} — RM${v.price.toFixed(2)}${product.status === "future_release" ? " (Future Release)" : ""}`,
+                      }));
+                  });
+                  if (pendingOptions.length === 0) return null;
+                  return (
+                    <TableRow className="hover:bg-transparent">
+                      <TableCell colSpan={6}>
+                        <Select value="" onValueChange={(v) => v && addPendingProduct(v)}>
+                          <SelectTrigger className="w-full md:w-[350px]">
+                            <SelectValue placeholder="Add product (no stock needed)..." />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {pendingOptions.map((opt) => (
+                              <SelectItem key={opt.value} value={opt.value}>
+                                {opt.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </TableCell>
+                    </TableRow>
+                  );
+                })()}
 
                 {/* Empty state */}
                 {unifiedItems.length === 0 && (

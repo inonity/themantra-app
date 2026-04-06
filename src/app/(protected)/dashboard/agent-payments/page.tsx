@@ -419,9 +419,12 @@ function SettlementRow({
                           sale.lineItemsWithProducts.length > 0 ? (
                             <div className="space-y-0.5">
                               {sale.lineItemsWithProducts.map(
-                                (item: { productName: string; quantity: number; productId: string }, i: number) => (
+                                (item: { productName: string; variantName?: string; quantity: number; productId: string }, i: number) => (
                                   <div key={i} className="text-xs">
-                                    {item.productName}{" "}
+                                    {item.productName}
+                                    {item.variantName && (
+                                      <span className="text-muted-foreground"> — {item.variantName}</span>
+                                    )}{" "}
                                     <span className="text-muted-foreground">
                                       x{item.quantity}
                                     </span>
@@ -445,10 +448,10 @@ function SettlementRow({
                           RM {sale.totalAmount.toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right text-sm">
-                          RM {(sale.hqPrice ?? 0).toFixed(2)}
+                          RM {((sale as { computedHqPrice?: number }).computedHqPrice ?? sale.hqPrice ?? 0).toFixed(2)}
                         </TableCell>
                         <TableCell className="text-right text-sm text-green-600">
-                          RM {(sale.agentCommission ?? 0).toFixed(2)}
+                          RM {((sale as { computedCommission?: number }).computedCommission ?? sale.agentCommission ?? 0).toFixed(2)}
                         </TableCell>
                       </TableRow>
                     ))}

@@ -72,6 +72,7 @@ export function TransferFormDialog({
   const transferBulk = useMutation(api.stockMovements.transferBulkToAgent);
   const sellers = useQuery(api.users.listSellers);
   const allBatches = useQuery(api.batches.listAll);
+  const allVariants = useQuery(api.productVariants.listAll);
   const businessInventory = useQuery(api.inventory.getBusinessInventory);
 
   const [open, setOpen] = useState(false);
@@ -112,6 +113,11 @@ export function TransferFormDialog({
   const batchMap = useMemo(
     () => new Map((allBatches ?? []).map((b) => [b._id, b])),
     [allBatches]
+  );
+
+  const variantMap = useMemo(
+    () => new Map((allVariants ?? []).map((v) => [v._id, v])),
+    [allVariants]
   );
 
   const productTotalStock = useMemo(() => {
@@ -405,7 +411,9 @@ export function TransferFormDialog({
                           >
                             <SelectTrigger className="h-8 text-sm">
                               <SelectValue placeholder="Select batch">
-                                {selectedBatch?.batchCode}
+                                {selectedBatch
+                                  ? `${selectedBatch.batchCode}${selectedBatch.variantId ? ` · ${variantMap.get(selectedBatch.variantId)?.name ?? ""}` : ""}`
+                                  : undefined}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent alignItemWithTrigger={false}>
@@ -417,7 +425,14 @@ export function TransferFormDialog({
                                 selectableBatches.map((b) => (
                                   <SelectItem key={b._id} value={b._id}>
                                     <div className="flex items-center justify-between w-full gap-4">
-                                      <span className="truncate">{b.batchCode}</span>
+                                      <span className="truncate">
+                                        {b.batchCode}
+                                        {b.variantId && (
+                                          <span className="ml-1.5 text-muted-foreground">
+                                            {variantMap.get(b.variantId)?.name}
+                                          </span>
+                                        )}
+                                      </span>
                                       <span className="text-xs text-muted-foreground whitespace-nowrap">
                                         {businessStockByBatch.get(b._id) ?? 0} in stock
                                       </span>

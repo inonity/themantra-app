@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { useMutation } from "convex/react";
+import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Id } from "../../../convex/_generated/dataModel";
 import { Button } from "@/components/ui/button";
@@ -26,8 +26,8 @@ import {
   CheckIcon,
 } from "lucide-react";
 
-type Product = { _id: Id<"products">; name: string; price: number; status: string };
-type EntryItem = { productId: Id<"products">; quantity: number };
+type Product = { _id: Id<"products">; name: string; price?: number; status: string };
+type EntryItem = { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number };
 type Entry = {
   _id: Id<"interests">;
   customerDetail: { name: string; phone?: string };
@@ -45,7 +45,7 @@ type PageData = {
     status: string;
   };
   entries: Entry[];
-  productMap: Record<string, { name: string; price: number }>;
+  productMap: Record<string, { name: string; price?: number }>;
   activeProducts: Product[];
   offer: { name: string; minQuantity: number; bundlePrice: number } | null;
   topProducts: { productId: string; name: string; total: number }[];
@@ -54,27 +54,43 @@ type PageData = {
 
 interface LineItem {
   productId: Id<"products">;
+  variantId?: Id<"productVariants">;
   quantity: number;
   productName: string;
+  variantName?: string;
 }
+
+type PublicVariant = { _id: Id<"productVariants">; productId: Id<"products">; name: string; price: number };
 
 function ProductSelector({
   activeProducts,
+  variantsByProduct,
   lineItems,
   setLineItems,
 }: {
   activeProducts: Product[];
+  variantsByProduct: Map<string, PublicVariant[]>;
   lineItems: LineItem[];
   setLineItems: (items: LineItem[]) => void;
 }) {
-  const usedIds = new Set(lineItems.map((li) => li.productId));
-  const available = activeProducts.filter((p) => !usedIds.has(p._id));
+  const usedKeys = new Set(lineItems.map((li) => li.variantId ? `${li.productId}__${li.variantId}` : li.productId));
+
+  const options = activeProducts.flatMap((p) => {
+    const variants = variantsByProduct.get(p._id) ?? [];
+    if (variants.length === 0) {
+      if (usedKeys.has(p._id)) return [];
+      return [{ productId: p._id, variantId: undefined as Id<"productVariants"> | undefined, label: p.name, productName: p.name, variantName: undefined as string | undefined }];
+    }
+    return variants
+      .filter((v) => !usedKeys.has(`${p._id}__${v._id}`))
+      .map((v) => ({ productId: p._id, variantId: v._id, label: `${p.name} — ${v.name}`, productName: p.name, variantName: v.name }));
+  });
 
   return (
     <div className="space-y-2">
       {lineItems.map((li, idx) => (
-        <div key={li.productId} className="flex items-center gap-2">
-          <span className="flex-1 text-sm font-medium">{li.productName}</span>
+        <div key={li.variantId ?? li.productId} className="flex items-center gap-2">
+          <span className="flex-1 text-sm font-medium">{li.productName}{li.variantName ? ` — ${li.variantName}` : ""}</span>
           <div className="flex items-center gap-1">
             <button
               type="button"
@@ -111,30 +127,30 @@ function ProductSelector({
         </div>
       ))}
 
-      {available.length > 0 && (
+      {options.length > 0 && (
         <div className="pt-1">
           <p className="text-xs text-muted-foreground mb-1">Add product:</p>
           <div className="flex flex-wrap gap-2">
-            {available.map((p) => (
+            {options.map((opt) => (
               <button
-                key={p._id}
+                key={opt.variantId ?? opt.productId}
                 type="button"
                 className="text-xs border border-border rounded-full px-3 py-1 hover:bg-accent transition-colors"
                 onClick={() =>
                   setLineItems([
                     ...lineItems,
-                    { productId: p._id, quantity: 1, productName: p.name },
+                    { productId: opt.productId, variantId: opt.variantId, quantity: 1, productName: opt.productName, variantName: opt.variantName },
                   ])
                 }
               >
-                + {p.name}
+                + {opt.label}
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {lineItems.length === 0 && available.length === 0 && (
+      {lineItems.length === 0 && options.length === 0 && (
         <p className="text-xs text-muted-foreground">No products available.</p>
       )}
     </div>
@@ -146,6 +162,15 @@ export function PublicFormView({ data }: { data: PageData }) {
 
   const recordViaForm = useMutation(api.interests.recordViaForm);
   const updateViaForm = useMutation(api.interests.updateViaForm);
+
+  const publicVariants = useQuery(api.productVariants.listAllPublic) ?? [];
+  const variantsByProduct = new Map<string, PublicVariant[]>();
+  const variantMap = new Map<string, PublicVariant>();
+  for (const v of publicVariants) {
+    const existing = variantsByProduct.get(v.productId) ?? [];
+    variantsByProduct.set(v.productId, [...existing, v]);
+    variantMap.set(v._id, v);
+  }
 
   const isClosed = form.status === "closed";
 
@@ -187,11 +212,16 @@ export function PublicFormView({ data }: { data: PageData }) {
       setEditPhoneVerified(true);
       setPhoneError("");
       setEditItems(
-        editEntry.items.map((item) => ({
-          productId: item.productId,
-          quantity: item.quantity,
-          productName: productMap[item.productId]?.name ?? "Unknown",
-        }))
+        editEntry.items.map((item) => {
+          const variant = item.variantId ? variantMap.get(item.variantId) : undefined;
+          return {
+            productId: item.productId,
+            variantId: item.variantId,
+            quantity: item.quantity,
+            productName: productMap[item.productId]?.name ?? "Unknown",
+            variantName: variant?.name,
+          };
+        })
       );
     } else {
       setPhoneError("Phone number does not match. Please try again.");
@@ -208,7 +238,7 @@ export function PublicFormView({ data }: { data: PageData }) {
       await recordViaForm({
         formId: form._id,
         customerDetail: { name: orderName, phone: orderPhone },
-        items: orderItems.map((li) => ({ productId: li.productId, quantity: li.quantity })),
+        items: orderItems.map((li) => ({ productId: li.productId, variantId: li.variantId, quantity: li.quantity })),
       });
       setOrderSuccess(true);
     } catch (err: unknown) {
@@ -225,7 +255,7 @@ export function PublicFormView({ data }: { data: PageData }) {
       await updateViaForm({
         interestId: editEntry._id,
         phone: editPhone,
-        items: editItems.map((li) => ({ productId: li.productId, quantity: li.quantity })),
+        items: editItems.map((li) => ({ productId: li.productId, variantId: li.variantId, quantity: li.quantity })),
       });
       toast.success("Your order has been updated.");
       setEditEntry(null);
@@ -420,6 +450,7 @@ export function PublicFormView({ data }: { data: PageData }) {
                   <Label>Products</Label>
                   <ProductSelector
                     activeProducts={activeProducts}
+                    variantsByProduct={variantsByProduct}
                     lineItems={orderItems}
                     setLineItems={setOrderItems}
                   />
@@ -496,6 +527,7 @@ export function PublicFormView({ data }: { data: PageData }) {
                   <Label>Products</Label>
                   <ProductSelector
                     activeProducts={activeProducts}
+                    variantsByProduct={variantsByProduct}
                     lineItems={editItems}
                     setLineItems={setEditItems}
                   />

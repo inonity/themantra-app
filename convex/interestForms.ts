@@ -127,7 +127,7 @@ export const getPublicPageData = query({
     const products = await Promise.all(
       Array.from(productIds).map((id) => ctx.db.get(id as Id<"products">))
     );
-    const productMap: Record<string, { name: string; price: number }> = {};
+    const productMap: Record<string, { name: string; price?: number }> = {};
     for (const p of products) {
       if (p) productMap[p._id] = { name: p.name, price: p.price };
     }
