@@ -18,7 +18,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filter";
@@ -602,6 +602,17 @@ export function SalesTable({
   const [selectedCollectors, setSelectedCollectors] = useState<Set<string>>(new Set());
   const [dateFrom, setDateFrom] = useState("");
   const [dateTo, setDateTo] = useState("");
+  const [sortCol, setSortCol] = useState<"date" | "amount">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSort(col: "date" | "amount") {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("desc");
+    }
+  }
 
   function toggleExpanded(saleId: string) {
     setExpandedSales((prev) => {
@@ -697,6 +708,12 @@ export function SalesTable({
       if (sale.saleDate >= to) return false;
     }
     return true;
+  });
+
+  const sortedSales = [...filteredSales].sort((a, b) => {
+    const aVal = sortCol === "date" ? a.saleDate : a.totalAmount;
+    const bVal = sortCol === "date" ? b.saleDate : b.totalAmount;
+    return sortDir === "asc" ? aVal - bVal : bVal - aVal;
   });
 
   if (sales.length === 0) {
@@ -796,21 +813,40 @@ export function SalesTable({
         )}
       </div>
 
+      <div className="rounded-md border">
       <Table>
         <TableHeader>
-          <TableRow>
+          <TableRow className="bg-muted/50">
             <TableHead className="w-[40px]" />
-            <TableHead>Date</TableHead>
+            <TableHead>
+              <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("date")}>
+                Date
+                {sortCol === "date" ? (
+                  sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+                )}
+              </Button>
+            </TableHead>
             <TableHead>Customer</TableHead>
             {showAgent && <TableHead>Agent</TableHead>}
             <TableHead>Items</TableHead>
             <TableHead>Channel</TableHead>
             <TableHead>Status</TableHead>
-            <TableHead className="text-right">Amount</TableHead>
+            <TableHead className="text-right">
+              <Button variant="ghost" size="sm" className="-mr-3 h-8" onClick={() => handleSort("amount")}>
+                {sortCol === "amount" ? (
+                  sortDir === "asc" ? <ArrowUpIcon className="mr-2 h-4 w-4" /> : <ArrowDownIcon className="mr-2 h-4 w-4" />
+                ) : (
+                  <ArrowUpDownIcon className="mr-2 h-4 w-4 opacity-40" />
+                )}
+                Amount
+              </Button>
+            </TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
-          {filteredSales.length === 0 ? (
+          {sortedSales.length === 0 ? (
             <TableRow>
               <TableCell
                 colSpan={showAgent ? 8 : 7}
@@ -820,7 +856,7 @@ export function SalesTable({
               </TableCell>
             </TableRow>
           ) : null}
-          {filteredSales.map((sale) => {
+          {sortedSales.map((sale) => {
           const isExpanded = expandedSales.has(sale._id);
           const agent = sale.sellerId ? agentMap.get(sale.sellerId) : null;
           const offer = sale.offerId ? offerMap.get(sale.offerId) : null;
@@ -905,6 +941,7 @@ export function SalesTable({
         })}
         </TableBody>
       </Table>
+      </div>
     </div>
   );
 }

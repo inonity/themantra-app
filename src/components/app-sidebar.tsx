@@ -212,7 +212,7 @@ export function AppSidebar() {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton size="lg">
-              <span className="font-semibold">TheMantra</span>
+              <span className="font-semibold">The Mantra</span>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

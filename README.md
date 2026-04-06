@@ -1,4 +1,4 @@
-# TheMantra App
+# The Mantra App
 
 Inventory and sales management app built with Next.js + Convex.
 

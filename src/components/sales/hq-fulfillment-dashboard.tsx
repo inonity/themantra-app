@@ -22,7 +22,10 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { FacetedFilter } from "@/components/stock/faceted-filter";
-import { ChevronDownIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+
+type SortCol = "name" | "qty";
+type SortDir = "asc" | "desc";
 
 type DashboardItem = {
   saleId: Id<"sales">;
@@ -211,6 +214,17 @@ export function HqFulfillmentDashboard() {
   const [expandedProducts, setExpandedProducts] = useState<Set<string>>(
     new Set()
   );
+  const [sortCol, setSortCol] = useState<SortCol>("name");
+  const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  function handleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  }
 
   const agentOptions = useMemo(() => {
     if (!dashboardItems) return [];
@@ -284,7 +298,15 @@ export function HqFulfillmentDashboard() {
     });
   }, [dashboardItems, search, selectedAgents, selectedProducts, selectedSources]);
 
-  const allGroups = useMemo(() => buildAgentGroups(filtered), [filtered]);
+  const allGroups = useMemo(() => {
+    const groups = buildAgentGroups(filtered);
+    return [...groups].sort((a, b) => {
+      const cmp = sortCol === "qty"
+        ? a.totalNeeded - b.totalNeeded
+        : a.sellerName.localeCompare(b.sellerName);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortCol, sortDir]);
 
   function toggleAgent(agentId: string) {
     setExpandedAgents((prev) => {
@@ -352,36 +374,42 @@ export function HqFulfillmentDashboard() {
       </div>
 
       {/* Table */}
-      {allGroups.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          {hasActiveFilters
-            ? "No fulfillment items match the current filters."
-            : "No pending fulfillment items."}
-        </div>
-      ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader className="bg-muted/50">
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className="w-[40px]" />
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("name")}>
+                  Agent
+                  {sortCol === "name"
+                    ? sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                    : <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("qty")}>
+                  Qty Needed
+                  {sortCol === "qty"
+                    ? sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                    : <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />}
+                </Button>
+              </TableHead>
+              <TableHead>Source</TableHead>
+              <TableHead>Sale Date</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {allGroups.length === 0 ? (
               <TableRow>
-                <TableHead className="w-[40px]" />
-                <TableHead>Agent / Product / Customer</TableHead>
-                <TableHead>Qty Needed</TableHead>
-                <TableHead>Source</TableHead>
-                <TableHead>Sale Date</TableHead>
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  {hasActiveFilters
+                    ? "No fulfillment items match the current filters."
+                    : "No pending fulfillment items."}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {allGroups.length === 0 && (
-                <TableRow>
-                  <TableCell
-                    colSpan={5}
-                    className="text-center py-12 text-muted-foreground"
-                  >
-                    No pending fulfillment items.
-                  </TableCell>
-                </TableRow>
-              )}
-              {allGroups.map((agent) => {
+            ) : (
+              allGroups.map((agent) => {
                 const isAgentExpanded = expandedAgents.has(agent.sellerId);
                 return (
                   <Fragment key={agent.sellerId}>
@@ -477,11 +505,11 @@ export function HqFulfillmentDashboard() {
                       })}
                   </Fragment>
                 );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

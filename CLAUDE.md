@@ -15,7 +15,7 @@ Both `npm run dev` and `npx convex dev` must run concurrently during development
 
 ## Architecture
 
-**TheMantra** is an inventory and sales management app for a product business. It tracks products, manufacturing batches, stock movements, and sales across multiple channels.
+**The Mantra** is an inventory and sales management app for a product business. It tracks products, manufacturing batches, stock movements, and sales across multiple channels.
 
 ### Stack
 - **Frontend:** Next.js 16 (App Router) + React 19 + Tailwind CSS 4 + shadcn/ui

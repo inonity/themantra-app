@@ -32,8 +32,42 @@ import {
   ChevronDownIcon,
   ChevronRightIcon,
   BanknoteIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+
+type SortCol = "direction" | "amount" | "status" | "payment_date" | "confirmed";
+type SortDir = "asc" | "desc";
+
+function SortableHead({
+  label,
+  column,
+  sortCol,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  column: SortCol;
+  sortCol: SortCol;
+  sortDir: SortDir;
+  onSort: (col: SortCol) => void;
+}) {
+  const isActive = sortCol === column;
+  return (
+    <TableHead>
+      <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => onSort(column)}>
+        {label}
+        {isActive ? (
+          sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+        )}
+      </Button>
+    </TableHead>
+  );
+}
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 
 function CopyButton({ text }: { text: string }) {
@@ -530,26 +564,28 @@ function SettlementSalesTable({
   }
 
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8" />
-          <TableHead>Date</TableHead>
-          <TableHead>Customer</TableHead>
-          <TableHead>Products</TableHead>
-          <TableHead>Channel</TableHead>
-          <TableHead>Stock Model</TableHead>
-          <TableHead className="text-right">Sale Total</TableHead>
-          <TableHead className="text-right">HQ Share</TableHead>
-          <TableHead className="text-right">You Receive</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {detail.sales.map((sale) => (
-          <CommissionBreakdownRow key={sale._id} sale={sale} />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="rounded-md border">
+      <Table>
+        <TableHeader>
+          <TableRow className="bg-muted/50">
+            <TableHead className="w-8" />
+            <TableHead>Date</TableHead>
+            <TableHead>Customer</TableHead>
+            <TableHead>Products</TableHead>
+            <TableHead>Channel</TableHead>
+            <TableHead>Stock Model</TableHead>
+            <TableHead className="text-right">Sale Total</TableHead>
+            <TableHead className="text-right">HQ Share</TableHead>
+            <TableHead className="text-right">You Receive</TableHead>
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {detail.sales.map((sale) => (
+            <CommissionBreakdownRow key={sale._id} sale={sale} />
+          ))}
+        </TableBody>
+      </Table>
+    </div>
   );
 }
 
@@ -614,26 +650,28 @@ function SettlementRow({
               <h4 className="font-semibold text-sm">
                 Included Sales ({detail.sales.length})
               </h4>
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-8" />
-                    <TableHead>Date</TableHead>
-                    <TableHead>Customer</TableHead>
-                    <TableHead>Products</TableHead>
-                    <TableHead>Channel</TableHead>
-                    <TableHead>Stock Model</TableHead>
-                    <TableHead className="text-right">Sale Total</TableHead>
-                    <TableHead className="text-right">HQ Share</TableHead>
-                    <TableHead className="text-right">You Receive</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {detail.sales.map((sale) => (
-                    <CommissionBreakdownRow key={sale._id} sale={sale} />
-                  ))}
-                </TableBody>
-              </Table>
+              <div className="rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead className="w-8" />
+                      <TableHead>Date</TableHead>
+                      <TableHead>Customer</TableHead>
+                      <TableHead>Products</TableHead>
+                      <TableHead>Channel</TableHead>
+                      <TableHead>Stock Model</TableHead>
+                      <TableHead className="text-right">Sale Total</TableHead>
+                      <TableHead className="text-right">HQ Share</TableHead>
+                      <TableHead className="text-right">You Receive</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {detail.sales.map((sale) => (
+                      <CommissionBreakdownRow key={sale._id} sale={sale} />
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           </TableCell>
         </TableRow>
@@ -734,6 +772,18 @@ export default function AgentPaymentsPage() {
   const activeCommission = useQuery(api.agentSettlements.getActiveCommission);
   const settlements = useQuery(api.agentSettlements.listMy);
 
+  const [historySortCol, setHistorySortCol] = useState<SortCol>("payment_date");
+  const [historySortDir, setHistorySortDir] = useState<SortDir>("desc");
+
+  function handleHistorySort(col: SortCol) {
+    if (historySortCol === col) {
+      setHistorySortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setHistorySortCol(col);
+      setHistorySortDir("asc");
+    }
+  }
+
   const isLoading =
     user === undefined ||
     activeSettlement === undefined ||
@@ -741,9 +791,24 @@ export default function AgentPaymentsPage() {
     settlements === undefined;
 
   // History = submitted + paid settlements (not the active pending ones)
-  const historySettlements = (settlements ?? []).filter(
-    (s) => s.paymentStatus !== "pending"
-  );
+  const historySettlements = useMemo(() => {
+    const base = (settlements ?? []).filter((s) => s.paymentStatus !== "pending");
+    return [...base].sort((a, b) => {
+      let cmp = 0;
+      if (historySortCol === "direction") {
+        cmp = (a.direction ?? "").localeCompare(b.direction ?? "");
+      } else if (historySortCol === "amount") {
+        cmp = a.totalAmount - b.totalAmount;
+      } else if (historySortCol === "status") {
+        cmp = a.paymentStatus.localeCompare(b.paymentStatus);
+      } else if (historySortCol === "payment_date") {
+        cmp = (a.paymentDate ?? 0) - (b.paymentDate ?? 0);
+      } else {
+        cmp = (a.confirmedAt ?? 0) - (b.confirmedAt ?? 0);
+      }
+      return historySortDir === "asc" ? cmp : -cmp;
+    });
+  }, [settlements, historySortCol, historySortDir]);
 
   return (
     <RoleGuard allowed={["agent", "sales"]}>
@@ -876,32 +941,34 @@ export default function AgentPaymentsPage() {
             {/* Payment History */}
             <div className="space-y-3">
               <h2 className="text-xl font-semibold">Payment History</h2>
-              {historySettlements.length === 0 ? (
-                <Card>
-                  <CardContent className="py-6 text-center text-muted-foreground">
-                    No payment history yet.
-                  </CardContent>
-                </Card>
-              ) : (
+              <div className="rounded-md border">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-muted/50">
                       <TableHead className="w-8" />
                       <TableHead>Reference ID</TableHead>
-                      <TableHead>Direction</TableHead>
-                      <TableHead>Total</TableHead>
-                      <TableHead>Status</TableHead>
-                      <TableHead>Payment Date</TableHead>
-                      <TableHead>Confirmed</TableHead>
+                      <SortableHead label="Direction" column="direction" sortCol={historySortCol} sortDir={historySortDir} onSort={handleHistorySort} />
+                      <SortableHead label="Total" column="amount" sortCol={historySortCol} sortDir={historySortDir} onSort={handleHistorySort} />
+                      <SortableHead label="Status" column="status" sortCol={historySortCol} sortDir={historySortDir} onSort={handleHistorySort} />
+                      <SortableHead label="Payment Date" column="payment_date" sortCol={historySortCol} sortDir={historySortDir} onSort={handleHistorySort} />
+                      <SortableHead label="Confirmed" column="confirmed" sortCol={historySortCol} sortDir={historySortDir} onSort={handleHistorySort} />
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {historySettlements.map((s) => (
-                      <SettlementRow key={s._id} settlement={s} />
-                    ))}
+                    {historySettlements.length === 0 ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="text-center text-muted-foreground">
+                          No payment history yet.
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      historySettlements.map((s) => (
+                        <SettlementRow key={s._id} settlement={s} />
+                      ))
+                    )}
                   </TableBody>
                 </Table>
-              )}
+              </div>
             </div>
           </>
         )}

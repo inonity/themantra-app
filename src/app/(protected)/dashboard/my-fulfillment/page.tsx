@@ -41,8 +41,9 @@ import {
 } from "@/components/ui/dialog";
 import { FulfillSaleDialog } from "@/components/sales/fulfill-sale-dialog";
 import { useCurrentUser } from "@/hooks/useStoreUserEffect";
-import { PlusIcon, XIcon } from "lucide-react";
-import { useState } from "react";
+import { PlusIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+import { useState, useMemo } from "react";
+import { FacetedFilter } from "@/components/stock/faceted-filter";
 
 const SOURCE_LABELS: Record<string, string> = {
   agent_stock: "In Stock",
@@ -206,115 +207,228 @@ function PendingSalesSection({
   products: Map<Id<"products">, Doc<"products">>;
   userRole?: string;
 }) {
-  if (sales.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-8 text-center text-muted-foreground">
-          No pending fulfillment. All sales are fulfilled.
-        </CardContent>
-      </Card>
-    );
+  const [search, setSearch] = useState("");
+  const [selectedSources, setSelectedSources] = useState<Set<string>>(new Set());
+  const [sortCol, setSortCol] = useState<"customer" | "date">("date");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSort(col: "customer" | "date") {
+    if (sortCol === col) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortCol(col); setSortDir("asc"); }
   }
 
-  return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead>Customer</TableHead>
-          <TableHead>Items</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Sale Date</TableHead>
-          <TableHead className="text-right">Action</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {sales.map((sale) => {
-          const pendingCount = (sale.lineItems ?? []).filter(
-            (li) => (li.fulfilledQuantity ?? 0) < li.quantity
-          ).length;
-          const totalItems = (sale.lineItems ?? []).length;
+  const sourceOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const sale of sales) {
+      for (const li of sale.lineItems ?? []) {
+        if ((li.fulfilledQuantity ?? 0) < li.quantity) {
+          seen.add(li.fulfillmentSource ?? "pending_batch");
+        }
+      }
+    }
+    return Array.from(seen)
+      .map((s) => ({ value: s, label: SOURCE_LABELS[s] ?? s }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [sales]);
 
+  const hasActiveFilters = search !== "" || selectedSources.size > 0;
+
+  const filtered = useMemo(() => {
+    const term = search.toLowerCase();
+    return sales.filter((sale) => {
+      if (term) {
+        const customerMatch = (sale.customerDetail?.name ?? "").toLowerCase().includes(term);
+        const productMatch = (sale.lineItems ?? []).some((li) => {
+          const product = products.get(li.productId);
           return (
-            <TableRow key={sale._id}>
-              <TableCell className="font-medium">
-                {sale.customerDetail?.name ?? "Unknown"}
-              </TableCell>
-              <TableCell>
-                <div className="space-y-1">
-                  {(sale.lineItems ?? []).map((li, i) => {
-                    const fulfilled = li.fulfilledQuantity ?? 0;
-                    const remaining = li.quantity - fulfilled;
-                    const product = products.get(li.productId);
-                    const source = li.fulfillmentSource ?? "pending_batch";
-                    const isDone = remaining <= 0;
-
-                    return (
-                      <div
-                        key={i}
-                        className={`flex items-center gap-2 text-sm ${isDone ? "opacity-40 line-through" : ""}`}
-                      >
-                        <span>
-                          {product?.name ?? "Unknown"}
-                          {li.variantName && (
-                            <span className="text-muted-foreground ml-1">
-                              ({li.variantName})
-                            </span>
-                          )}
-                        </span>
-                        <span className="text-muted-foreground">
-                          x{isDone ? fulfilled : remaining}
-                        </span>
-                        {!isDone && (
-                          <Badge
-                            variant="outline"
-                            className={`text-xs ${SOURCE_STYLES[source] ?? ""}`}
-                          >
-                            {SOURCE_LABELS[source] ?? source}
-                          </Badge>
-                        )}
-                        {isDone && li.fulfilledAt && (
-                          <span className="text-xs text-muted-foreground">
-                            {new Date(li.fulfilledAt).toLocaleDateString()}
-                          </span>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge
-                  variant="outline"
-                  className={
-                    sale.fulfillmentStatus === "partial"
-                      ? "text-blue-600 border-blue-300"
-                      : "text-yellow-600 border-yellow-300"
-                  }
-                >
-                  {pendingCount}/{totalItems} pending
-                </Badge>
-              </TableCell>
-              <TableCell>
-                {new Date(sale.saleDate).toLocaleDateString()}
-              </TableCell>
-              <TableCell className="text-right">
-                <FulfillSaleDialog
-                  sale={sale}
-                  products={products}
-                  userRole={userRole}
-                  trigger={
-                    <Button size="sm" variant="outline">
-                      Fulfill
-                    </Button>
-                  }
-                />
-              </TableCell>
-            </TableRow>
+            (product?.name ?? "").toLowerCase().includes(term) ||
+            (li.variantName ?? "").toLowerCase().includes(term)
           );
-        })}
-      </TableBody>
-    </Table>
+        });
+        if (!customerMatch && !productMatch) return false;
+      }
+      if (selectedSources.size > 0) {
+        const hasMatch = (sale.lineItems ?? []).some((li) => {
+          const remaining = li.quantity - (li.fulfilledQuantity ?? 0);
+          if (remaining <= 0) return false;
+          return selectedSources.has(li.fulfillmentSource ?? "pending_batch");
+        });
+        if (!hasMatch) return false;
+      }
+      return true;
+    });
+  }, [sales, products, search, selectedSources]);
+
+  const sorted = useMemo(() => {
+    return [...filtered].sort((a, b) => {
+      const cmp =
+        sortCol === "customer"
+          ? (a.customerDetail?.name ?? "").localeCompare(b.customerDetail?.name ?? "")
+          : a.saleDate - b.saleDate;
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [filtered, sortCol, sortDir]);
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-1 flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search customers or products..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-[200px] lg:w-[280px]"
+        />
+        <FacetedFilter
+          title="Source"
+          options={sourceOptions}
+          selected={selectedSources}
+          onSelectionChange={setSelectedSources}
+        />
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearch(""); setSelectedSources(new Set()); }}
+            className="h-8"
+          >
+            Reset
+            <XIcon className="size-4" />
+          </Button>
+        )}
+      </div>
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("customer")}>
+                  Customer
+                  {sortCol === "customer"
+                    ? sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                    : <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />}
+                </Button>
+              </TableHead>
+              <TableHead>Items</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("date")}>
+                  Sale Date
+                  {sortCol === "date"
+                    ? sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                    : <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />}
+                </Button>
+              </TableHead>
+              <TableHead className="text-right">Action</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sorted.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                  {hasActiveFilters
+                    ? "No sales match the current filters."
+                    : "No pending fulfillment. All sales are fulfilled."}
+                </TableCell>
+              </TableRow>
+            ) : (
+              sorted.map((sale) => {
+                const pendingCount = (sale.lineItems ?? []).filter(
+                  (li) => (li.fulfilledQuantity ?? 0) < li.quantity
+                ).length;
+                const totalItems = (sale.lineItems ?? []).length;
+
+                return (
+                  <TableRow key={sale._id}>
+                    <TableCell className="font-medium">
+                      {sale.customerDetail?.name ?? "Unknown"}
+                    </TableCell>
+                    <TableCell>
+                      <div className="space-y-1">
+                        {(sale.lineItems ?? []).map((li, i) => {
+                          const fulfilled = li.fulfilledQuantity ?? 0;
+                          const remaining = li.quantity - fulfilled;
+                          const product = products.get(li.productId);
+                          const source = li.fulfillmentSource ?? "pending_batch";
+                          const isDone = remaining <= 0;
+
+                          return (
+                            <div
+                              key={i}
+                              className={`flex items-center gap-2 text-sm ${isDone ? "opacity-40 line-through" : ""}`}
+                            >
+                              <span>
+                                {product?.name ?? "Unknown"}
+                                {li.variantName && (
+                                  <span className="text-muted-foreground ml-1">
+                                    ({li.variantName})
+                                  </span>
+                                )}
+                              </span>
+                              <span className="text-muted-foreground">
+                                x{isDone ? fulfilled : remaining}
+                              </span>
+                              {!isDone && (
+                                <Badge
+                                  variant="outline"
+                                  className={`text-xs ${SOURCE_STYLES[source] ?? ""}`}
+                                >
+                                  {SOURCE_LABELS[source] ?? source}
+                                </Badge>
+                              )}
+                              {isDone && li.fulfilledAt && (
+                                <span className="text-xs text-muted-foreground">
+                                  {new Date(li.fulfilledAt).toLocaleDateString()}
+                                </span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </TableCell>
+                    <TableCell>
+                      <Badge
+                        variant="outline"
+                        className={
+                          sale.fulfillmentStatus === "partial"
+                            ? "text-blue-600 border-blue-300"
+                            : "text-yellow-600 border-yellow-300"
+                        }
+                      >
+                        {pendingCount}/{totalItems} pending
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {new Date(sale.saleDate).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <FulfillSaleDialog
+                        sale={sale}
+                        products={products}
+                        userRole={userRole}
+                        trigger={
+                          <Button size="sm" variant="outline">
+                            Fulfill
+                          </Button>
+                        }
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
+}
+
+type SortColReq = "product" | "qty" | "date";
+type SortColPast = "product" | "qty" | "status" | "date";
+
+function SortIcon({ col, active, dir }: { col: string; active: string; dir: "asc" | "desc" }) {
+  if (col !== active) return <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />;
+  return dir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />;
 }
 
 function StockRequestsSection() {
@@ -323,109 +437,280 @@ function StockRequestsSection() {
   const allVariants = useQuery(api.productVariants.listAll) ?? [];
   const cancelRequest = useMutation(api.stockRequests.cancel);
 
-  const productMap = new Map(products.map((p) => [p._id, p]));
-  const variantMap = new Map(allVariants.map((v) => [v._id, v]));
-  const pending = requests.filter((r) => r.status === "pending");
-  const past = requests.filter((r) => r.status !== "pending");
+  const productMap = useMemo(() => new Map(products.map((p) => [p._id, p])), [products]);
+  const variantMap = useMemo(() => new Map(allVariants.map((v) => [v._id, v])), [allVariants]);
+  const pending = useMemo(() => requests.filter((r) => r.status === "pending"), [requests]);
+  const past = useMemo(() => requests.filter((r) => r.status !== "pending"), [requests]);
+
+  // Pending table state
+  const [pendingSearch, setPendingSearch] = useState("");
+  const [pendingSortCol, setPendingSortCol] = useState<SortColReq>("date");
+  const [pendingSortDir, setPendingSortDir] = useState<"asc" | "desc">("desc");
+
+  // Past table state
+  const [pastSearch, setPastSearch] = useState("");
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [pastSortCol, setPastSortCol] = useState<SortColPast>("date");
+  const [pastSortDir, setPastSortDir] = useState<"asc" | "desc">("desc");
+
+  function handlePendingSort(col: SortColReq) {
+    if (pendingSortCol === col) setPendingSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setPendingSortCol(col); setPendingSortDir("asc"); }
+  }
+
+  function handlePastSort(col: SortColPast) {
+    if (pastSortCol === col) setPastSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setPastSortCol(col); setPastSortDir("asc"); }
+  }
+
+  const statusOptions = useMemo(() => {
+    const seen = new Set<string>();
+    for (const r of past) seen.add(r.status);
+    return Array.from(seen)
+      .map((s) => ({ value: s, label: s.charAt(0).toUpperCase() + s.slice(1) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [past]);
+
+  const filteredPending = useMemo(() => {
+    const term = pendingSearch.toLowerCase();
+    const sorted = [...pending].sort((a, b) => {
+      let cmp = 0;
+      if (pendingSortCol === "product") {
+        cmp = (productMap.get(a.productId)?.name ?? "").localeCompare(productMap.get(b.productId)?.name ?? "");
+      } else if (pendingSortCol === "qty") {
+        cmp = a.quantity - b.quantity;
+      } else {
+        cmp = a.createdAt - b.createdAt;
+      }
+      return pendingSortDir === "asc" ? cmp : -cmp;
+    });
+    if (!term) return sorted;
+    return sorted.filter((r) =>
+      (productMap.get(r.productId)?.name ?? "").toLowerCase().includes(term) ||
+      (r.variantId ? (variantMap.get(r.variantId)?.name ?? "") : "").toLowerCase().includes(term)
+    );
+  }, [pending, pendingSearch, pendingSortCol, pendingSortDir, productMap, variantMap]);
+
+  const filteredPast = useMemo(() => {
+    const term = pastSearch.toLowerCase();
+    const result = past.filter((r) => {
+      if (term) {
+        const nameMatch = (productMap.get(r.productId)?.name ?? "").toLowerCase().includes(term) ||
+          (r.variantId ? (variantMap.get(r.variantId)?.name ?? "") : "").toLowerCase().includes(term);
+        if (!nameMatch) return false;
+      }
+      if (selectedStatuses.size > 0 && !selectedStatuses.has(r.status)) return false;
+      return true;
+    });
+    return result.sort((a, b) => {
+      let cmp = 0;
+      if (pastSortCol === "product") {
+        cmp = (productMap.get(a.productId)?.name ?? "").localeCompare(productMap.get(b.productId)?.name ?? "");
+      } else if (pastSortCol === "qty") {
+        cmp = a.quantity - b.quantity;
+      } else if (pastSortCol === "status") {
+        cmp = a.status.localeCompare(b.status);
+      } else {
+        cmp = a.createdAt - b.createdAt;
+      }
+      return pastSortDir === "asc" ? cmp : -cmp;
+    });
+  }, [past, pastSearch, selectedStatuses, pastSortCol, pastSortDir, productMap, variantMap]);
+
+  const hasPendingFilters = pendingSearch !== "";
+  const hasPastFilters = pastSearch !== "" || selectedStatuses.size > 0;
 
   return (
-    <div className="space-y-4">
-      {pending.length === 0 && past.length === 0 && (
-        <Card>
-          <CardContent className="py-8 text-center text-muted-foreground">
-            No stock requests yet. Request products from HQ when you need stock.
-          </CardContent>
-        </Card>
-      )}
-
-      {pending.length > 0 && (
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Product</TableHead>
-              <TableHead>Variant</TableHead>
-              <TableHead>Quantity</TableHead>
-              <TableHead>Notes</TableHead>
-              <TableHead>Requested</TableHead>
-              <TableHead className="text-right">Action</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {pending.map((req) => (
-              <TableRow key={req._id}>
-                <TableCell className="font-medium">
-                  {productMap.get(req.productId)?.name ?? "Unknown"}
-                </TableCell>
-                <TableCell className="text-sm text-muted-foreground">
-                  {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
-                </TableCell>
-                <TableCell>{req.quantity}</TableCell>
-                <TableCell className="text-muted-foreground text-sm">
-                  {req.notes || "—"}
-                </TableCell>
-                <TableCell>
-                  {new Date(req.createdAt).toLocaleDateString()}
-                </TableCell>
-                <TableCell className="text-right">
-                  <Button
-                    size="sm"
-                    variant="ghost"
-                    onClick={() => cancelRequest({ requestId: req._id })}
-                  >
-                    <XIcon className="h-4 w-4" />
-                  </Button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      )}
-
-      {past.length > 0 && (
-        <details className="text-sm">
-          <summary className="cursor-pointer text-muted-foreground mb-2">
-            Past requests ({past.length})
-          </summary>
+    <div className="space-y-6">
+      {/* Pending requests */}
+      <div className="space-y-3">
+        <div className="flex flex-1 flex-wrap items-center gap-2">
+          <Input
+            placeholder="Search products..."
+            value={pendingSearch}
+            onChange={(e) => setPendingSearch(e.target.value)}
+            className="h-8 w-[200px] lg:w-[280px]"
+          />
+          {hasPendingFilters && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setPendingSearch("")}
+              className="h-8"
+            >
+              Reset
+              <XIcon className="size-4" />
+            </Button>
+          )}
+        </div>
+        <div className="rounded-md border">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Product</TableHead>
+              <TableRow className="bg-muted/50">
+                <TableHead>
+                  <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePendingSort("product")}>
+                    Product
+                    <SortIcon col="product" active={pendingSortCol} dir={pendingSortDir} />
+                  </Button>
+                </TableHead>
                 <TableHead>Variant</TableHead>
-                <TableHead>Quantity</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Date</TableHead>
+                <TableHead>
+                  <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePendingSort("qty")}>
+                    Quantity
+                    <SortIcon col="qty" active={pendingSortCol} dir={pendingSortDir} />
+                  </Button>
+                </TableHead>
+                <TableHead>Notes</TableHead>
+                <TableHead>
+                  <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePendingSort("date")}>
+                    Requested
+                    <SortIcon col="date" active={pendingSortCol} dir={pendingSortDir} />
+                  </Button>
+                </TableHead>
+                <TableHead className="text-right">Action</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {past.map((req) => (
-                <TableRow key={req._id}>
-                  <TableCell>
-                    {productMap.get(req.productId)?.name ?? "Unknown"}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground">
-                    {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
-                  </TableCell>
-                  <TableCell>{req.quantity}</TableCell>
-                  <TableCell>
-                    <Badge
-                      variant="outline"
-                      className={
-                        req.status === "fulfilled"
-                          ? "text-green-600 border-green-300"
-                          : "text-muted-foreground"
-                      }
-                    >
-                      {req.status}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>
-                    {new Date(req.createdAt).toLocaleDateString()}
+              {filteredPending.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center py-8 text-muted-foreground">
+                    {hasPendingFilters
+                      ? "No requests match the current search."
+                      : "No pending stock requests."}
                   </TableCell>
                 </TableRow>
-              ))}
+              ) : (
+                filteredPending.map((req) => (
+                  <TableRow key={req._id}>
+                    <TableCell className="font-medium">
+                      {productMap.get(req.productId)?.name ?? "Unknown"}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground">
+                      {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
+                    </TableCell>
+                    <TableCell>{req.quantity}</TableCell>
+                    <TableCell className="text-muted-foreground text-sm">
+                      {req.notes || "—"}
+                    </TableCell>
+                    <TableCell>
+                      {new Date(req.createdAt).toLocaleDateString()}
+                    </TableCell>
+                    <TableCell className="text-right">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => cancelRequest({ requestId: req._id })}
+                      >
+                        <XIcon className="h-4 w-4" />
+                      </Button>
+                    </TableCell>
+                  </TableRow>
+                ))
+              )}
             </TableBody>
           </Table>
-        </details>
+        </div>
+      </div>
+
+      {/* Past requests */}
+      {(past.length > 0 || hasPastFilters) && (
+        <div className="space-y-3">
+          <h3 className="text-sm font-medium text-muted-foreground">Past Requests</h3>
+          <div className="flex flex-1 flex-wrap items-center gap-2">
+            <Input
+              placeholder="Search products..."
+              value={pastSearch}
+              onChange={(e) => setPastSearch(e.target.value)}
+              className="h-8 w-[200px] lg:w-[280px]"
+            />
+            <FacetedFilter
+              title="Status"
+              options={statusOptions}
+              selected={selectedStatuses}
+              onSelectionChange={setSelectedStatuses}
+            />
+            {hasPastFilters && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => { setPastSearch(""); setSelectedStatuses(new Set()); }}
+                className="h-8"
+              >
+                Reset
+                <XIcon className="size-4" />
+              </Button>
+            )}
+          </div>
+          <div className="rounded-md border">
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>
+                    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePastSort("product")}>
+                      Product
+                      <SortIcon col="product" active={pastSortCol} dir={pastSortDir} />
+                    </Button>
+                  </TableHead>
+                  <TableHead>Variant</TableHead>
+                  <TableHead>
+                    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePastSort("qty")}>
+                      Quantity
+                      <SortIcon col="qty" active={pastSortCol} dir={pastSortDir} />
+                    </Button>
+                  </TableHead>
+                  <TableHead>
+                    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePastSort("status")}>
+                      Status
+                      <SortIcon col="status" active={pastSortCol} dir={pastSortDir} />
+                    </Button>
+                  </TableHead>
+                  <TableHead>
+                    <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handlePastSort("date")}>
+                      Date
+                      <SortIcon col="date" active={pastSortCol} dir={pastSortDir} />
+                    </Button>
+                  </TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {filteredPast.length === 0 ? (
+                  <TableRow>
+                    <TableCell colSpan={5} className="text-center py-8 text-muted-foreground">
+                      No past requests match the current filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  filteredPast.map((req) => (
+                    <TableRow key={req._id}>
+                      <TableCell>
+                        {productMap.get(req.productId)?.name ?? "Unknown"}
+                      </TableCell>
+                      <TableCell className="text-muted-foreground">
+                        {req.variantId ? (variantMap.get(req.variantId)?.name ?? "—") : "—"}
+                      </TableCell>
+                      <TableCell>{req.quantity}</TableCell>
+                      <TableCell>
+                        <Badge
+                          variant="outline"
+                          className={
+                            req.status === "fulfilled"
+                              ? "text-green-600 border-green-300"
+                              : "text-muted-foreground"
+                          }
+                        >
+                          {req.status.charAt(0).toUpperCase() + req.status.slice(1)}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        {new Date(req.createdAt).toLocaleDateString()}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+          </div>
+        </div>
       )}
     </div>
   );

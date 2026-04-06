@@ -27,7 +27,7 @@ async function sendBrevoEmail({
     },
     body: JSON.stringify({
       sender: {
-        name: process.env.BREVO_SENDER_NAME ?? "TheMantra",
+        name: process.env.BREVO_SENDER_NAME ?? "The Mantra",
         email: process.env.BREVO_SENDER_EMAIL ?? "noreply@themantra.com",
       },
       to,
@@ -58,12 +58,12 @@ export const sendInviteEmail = internalAction({
     try {
       await sendBrevoEmail({
         to: [{ email: args.email, name: args.name }],
-        subject: `You're invited to join TheMantra as ${roleLabel === "Agent" ? "an" : "a"} ${roleLabel}`,
+        subject: `You're invited to join The Mantra as ${roleLabel === "Agent" ? "an" : "a"} ${roleLabel}`,
         htmlContent: `
           <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
-            <h2>Welcome to TheMantra!</h2>
+            <h2>Welcome to The Mantra!</h2>
             <p>Hi ${args.name},</p>
-            <p>You've been invited to join <strong>TheMantra</strong> as <strong>${roleLabel}</strong>.</p>
+            <p>You've been invited to join <strong>The Mantra</strong> as <strong>${roleLabel}</strong>.</p>
             <p>Click the button below to set up your password and get started:</p>
             <p style="margin: 24px 0;">
               <a href="${args.inviteLink}"
@@ -113,7 +113,7 @@ export const sendEmailConfirmation = internalAction({
   handler: async (_ctx, args) => {
     await sendBrevoEmail({
       to: [{ email: args.email, name: args.name }],
-      subject: "Confirm your new email address — TheMantra",
+      subject: "Confirm your new email address — The Mantra",
       htmlContent: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>Confirm your email change</h2>
@@ -152,16 +152,16 @@ export const sendPasswordChangedEmail = internalAction({
   handler: async (_ctx, args) => {
     await sendBrevoEmail({
       to: [{ email: args.email, name: args.name }],
-      subject: "Your password has been changed — TheMantra",
+      subject: "Your password has been changed — The Mantra",
       htmlContent: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>Password Changed</h2>
           <p>Hi ${args.name},</p>
-          <p>Your password for <strong>TheMantra</strong> has been successfully changed.</p>
+          <p>Your password for <strong>The Mantra</strong> has been successfully changed.</p>
           <p>If you did not make this change, please contact your administrator immediately.</p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
           <p style="color: #9ca3af; font-size: 12px;">
-            TheMantra - Inventory & Sales Management
+            The Mantra - Inventory & Sales Management
           </p>
         </div>
       `,
@@ -178,12 +178,12 @@ export const sendPasswordResetEmail = internalAction({
   handler: async (_ctx, args) => {
     await sendBrevoEmail({
       to: [{ email: args.email, name: args.name }],
-      subject: "Reset your password — TheMantra",
+      subject: "Reset your password — The Mantra",
       htmlContent: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>Reset your password</h2>
           <p>Hi ${args.name},</p>
-          <p>We received a request to reset your password for <strong>TheMantra</strong>.</p>
+          <p>We received a request to reset your password for <strong>The Mantra</strong>.</p>
           <p>Click the button below to set a new password:</p>
           <p style="margin: 24px 0;">
             <a href="${args.resetLink}"
@@ -220,16 +220,16 @@ export const sendWelcomeEmail = internalAction({
 
     await sendBrevoEmail({
       to: [{ email: args.email, name: args.name }],
-      subject: "Welcome to TheMantra!",
+      subject: "Welcome to The Mantra!",
       htmlContent: `
         <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
           <h2>Welcome aboard!</h2>
           <p>Hi ${args.name},</p>
-          <p>Your account has been set up successfully as <strong>${roleLabel}</strong> on <strong>TheMantra</strong>.</p>
+          <p>Your account has been set up successfully as <strong>${roleLabel}</strong> on <strong>The Mantra</strong>.</p>
           <p>You can now sign in and start using the app.</p>
           <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
           <p style="color: #9ca3af; font-size: 12px;">
-            TheMantra - Inventory & Sales Management
+            The Mantra - Inventory & Sales Management
           </p>
         </div>
       `,

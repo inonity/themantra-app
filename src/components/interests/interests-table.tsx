@@ -27,7 +27,38 @@ import { FacetedFilter } from "@/components/stock/faceted-filter";
 import { Input } from "@/components/ui/input";
 import { useRouter } from "next/navigation";
 import { useState, useMemo } from "react";
-import { XIcon } from "lucide-react";
+import { XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+
+type SortCol = "date" | "status";
+type SortDir = "asc" | "desc";
+
+function SortableHead({
+  label,
+  column,
+  sortCol,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  column: SortCol;
+  sortCol: SortCol;
+  sortDir: SortDir;
+  onSort: (col: SortCol) => void;
+}) {
+  const isActive = sortCol === column;
+  return (
+    <TableHead>
+      <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => onSort(column)}>
+        {label}
+        {isActive ? (
+          sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+        )}
+      </Button>
+    </TableHead>
+  );
+}
 
 type InterestForm = { _id: Id<"interestForms">; title?: string; slug: string; date: string };
 
@@ -72,6 +103,17 @@ export function InterestsTable({
   const [formFilter, setFormFilter] = useState<Set<string>>(
     defaultFormId ? new Set([defaultFormId]) : new Set()
   );
+  const [sortCol, setSortCol] = useState<SortCol>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
+  }
 
   const productMap = new Map(products.map((p) => [p._id, p]));
   const agentMap = new Map((agents ?? []).map((a) => [a._id, a]));
@@ -85,7 +127,7 @@ export function InterestsTable({
   const hasActiveFilters = search !== "" || statusFilter.size > 0 || formFilter.size > 0;
 
   const filtered = useMemo(() => {
-    return interests.filter((i) => {
+    const result = interests.filter((i) => {
       if (search) {
         const term = search.toLowerCase();
         const name = i.customerDetail.name.toLowerCase();
@@ -99,7 +141,16 @@ export function InterestsTable({
       }
       return true;
     });
-  }, [interests, search, statusFilter, formFilter]);
+    return [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "date") {
+        cmp = a.createdAt - b.createdAt;
+      } else {
+        cmp = a.status.localeCompare(b.status);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [interests, search, statusFilter, formFilter, sortCol, sortDir]);
 
   async function handleCancel(interestId: Id<"interests">) {
     setCancelling(interestId);
@@ -159,26 +210,28 @@ export function InterestsTable({
       </div>
 
       {/* Table */}
-      {filtered.length === 0 ? (
-        <div className="text-center py-12 text-muted-foreground border border-border rounded-md">
-          No interests match the current filters.
-        </div>
-      ) : (
-        <div className="rounded-md border border-border">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead>Date</TableHead>
-                <TableHead>Customer</TableHead>
-                {showAgent && <TableHead>Agent</TableHead>}
-                <TableHead>Products</TableHead>
-                {formOptions.length > 0 && <TableHead>Form</TableHead>}
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Actions</TableHead>
+      <div className="rounded-md border border-border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <SortableHead label="Date" column="date" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <TableHead>Customer</TableHead>
+              {showAgent && <TableHead>Agent</TableHead>}
+              <TableHead>Products</TableHead>
+              {formOptions.length > 0 && <TableHead>Form</TableHead>}
+              <SortableHead label="Status" column="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={showAgent ? 7 : 6} className="text-center text-muted-foreground">
+                  {hasActiveFilters ? "No interests match the current filters." : "No interests found."}
+                </TableCell>
               </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((interest) => {
+            ) : (
+              filtered.map((interest) => {
                 const productLineItems = interest.items.map((item) => {
                   const product = productMap.get(item.productId);
                   return {
@@ -293,11 +346,11 @@ export function InterestsTable({
                     </TableCell>
                   </TableRow>
                 );
-              })}
-            </TableBody>
-          </Table>
-        </div>
-      )}
+              })
+            )}
+          </TableBody>
+        </Table>
+      </div>
     </div>
   );
 }

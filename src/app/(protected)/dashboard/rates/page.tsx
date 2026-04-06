@@ -28,6 +28,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -37,8 +38,8 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { PlusIcon, MoreHorizontalIcon, Trash2Icon } from "lucide-react";
-import { useState } from "react";
+import { PlusIcon, MoreHorizontalIcon, Trash2Icon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, XIcon } from "lucide-react";
+import { useState, useMemo } from "react";
 import type { Doc, Id } from "../../../../../convex/_generated/dataModel";
 
 function formatRate(rateType: string, rateValue: number) {
@@ -417,6 +418,21 @@ export default function PricingPage() {
   const isLoading = rates === undefined;
   const editingRate = editingId ? rates?.find((r) => r._id === editingId) : undefined;
 
+  const [search, setSearch] = useState("");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
+
+  const displayRates = useMemo(() => {
+    let result = rates ?? [];
+    if (search) {
+      const term = search.toLowerCase();
+      result = result.filter((r) => r.name.toLowerCase().includes(term));
+    }
+    return [...result].sort((a, b) => {
+      const cmp = a.name.localeCompare(b.name);
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [rates, search, sortDir]);
+
   function openCreate() {
     setEditingId(null);
     setDialogOpen(true);
@@ -463,98 +479,115 @@ export default function PricingPage() {
 
         {isLoading ? (
           <div className="text-muted-foreground">Loading...</div>
-        ) : rates.length === 0 ? (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Name</TableHead>
-                  <TableHead>Customer Rates</TableHead>
-                  <TableHead>Agent Variant Rates</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                <TableRow>
-                  <TableCell colSpan={4} className="text-center text-muted-foreground">
-                    No rates created yet. Create a rate to define HQ pricing for agents.
-                  </TableCell>
-                </TableRow>
-              </TableBody>
-            </Table>
-          </div>
         ) : (
-          <div className="rounded-md border">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Name</TableHead>
-                  <TableHead>Customer Rates</TableHead>
-                  <TableHead>Agent Variant Rates</TableHead>
-                  <TableHead className="w-[50px]" />
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rates.map((rate) => {
-                  const customerRates = rate.collectionRates.filter((cr) => cr.sizeMl != null);
-                  return (
-                    <TableRow key={rate._id}>
-                      <TableCell className="font-medium">{rate.name}</TableCell>
-                      <TableCell>
-                        {customerRates.length === 0 ? (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {customerRates.map((cr, idx) => (
-                              <Badge key={idx} variant="outline">
-                                {cr.collection} {cr.sizeMl}ML: {formatRate(cr.rateType, cr.rateValue)}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        {!rate.agentVariantRates || rate.agentVariantRates.length === 0 ? (
-                          <span className="text-muted-foreground text-sm">—</span>
-                        ) : (
-                          <div className="flex flex-wrap gap-1.5">
-                            {rate.agentVariantRates.map((r, idx) => (
-                              <Badge key={idx} variant="secondary">
-                                {r.type}: {formatRate(r.rateType, r.rateValue)}
-                              </Badge>
-                            ))}
-                          </div>
-                        )}
-                      </TableCell>
-                      <TableCell>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger
-                            render={
-                              <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
-                                <span className="sr-only">Open menu</span>
-                                <MoreHorizontalIcon className="h-4 w-4" />
-                              </Button>
-                            }
-                          />
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEdit(rate._id)}>
-                              Edit Rate
-                            </DropdownMenuItem>
-                            <DropdownMenuSeparator />
-                            <DropdownMenuItem
-                              variant="destructive"
-                              onClick={() => remove({ id: rate._id })}
-                            >
-                              Delete Rate
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+          <div className="space-y-4">
+            {/* Toolbar */}
+            <div className="flex flex-1 flex-wrap items-center gap-2">
+              <Input
+                placeholder="Filter rates..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 w-[150px] lg:w-[250px]"
+              />
+              {search && (
+                <Button variant="ghost" size="sm" onClick={() => setSearch("")} className="h-8">
+                  Reset <XIcon className="ml-2 size-4" />
+                </Button>
+              )}
+            </div>
+
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="-ml-3 h-8"
+                        onClick={() => setSortDir((d) => (d === "asc" ? "desc" : "asc"))}
+                      >
+                        Name
+                        {sortDir === "asc"
+                          ? <ArrowUpIcon className="ml-2 h-4 w-4" />
+                          : <ArrowDownIcon className="ml-2 h-4 w-4" />}
+                      </Button>
+                    </TableHead>
+                    <TableHead>Customer Rates</TableHead>
+                    <TableHead>Agent Variant Rates</TableHead>
+                    <TableHead className="w-[50px]" />
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {displayRates.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={4} className="text-center text-muted-foreground">
+                        {search ? "No rates match your search." : "No rates created yet. Create a rate to define HQ pricing for agents."}
                       </TableCell>
                     </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
+                  ) : (
+                    displayRates.map((rate) => {
+                      const customerRates = rate.collectionRates.filter((cr) => cr.sizeMl != null);
+                      return (
+                        <TableRow key={rate._id}>
+                          <TableCell className="font-medium">{rate.name}</TableCell>
+                          <TableCell>
+                            {customerRates.length === 0 ? (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {customerRates.map((cr, idx) => (
+                                  <Badge key={idx} variant="outline">
+                                    {cr.collection} {cr.sizeMl}ML: {formatRate(cr.rateType, cr.rateValue)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            {!rate.agentVariantRates || rate.agentVariantRates.length === 0 ? (
+                              <span className="text-muted-foreground text-sm">—</span>
+                            ) : (
+                              <div className="flex flex-wrap gap-1.5">
+                                {rate.agentVariantRates.map((r, idx) => (
+                                  <Badge key={idx} variant="secondary">
+                                    {r.type}: {formatRate(r.rateType, r.rateValue)}
+                                  </Badge>
+                                ))}
+                              </div>
+                            )}
+                          </TableCell>
+                          <TableCell>
+                            <DropdownMenu>
+                              <DropdownMenuTrigger
+                                render={
+                                  <Button variant="ghost" size="sm" className="h-8 w-8 p-0">
+                                    <span className="sr-only">Open menu</span>
+                                    <MoreHorizontalIcon className="h-4 w-4" />
+                                  </Button>
+                                }
+                              />
+                              <DropdownMenuContent align="end">
+                                <DropdownMenuItem onClick={() => openEdit(rate._id)}>
+                                  Edit Rate
+                                </DropdownMenuItem>
+                                <DropdownMenuSeparator />
+                                <DropdownMenuItem
+                                  variant="destructive"
+                                  onClick={() => remove({ id: rate._id })}
+                                >
+                                  Delete Rate
+                                </DropdownMenuItem>
+                              </DropdownMenuContent>
+                            </DropdownMenu>
+                          </TableCell>
+                        </TableRow>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
           </div>
         )}
       </div>

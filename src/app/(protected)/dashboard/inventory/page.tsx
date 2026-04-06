@@ -14,7 +14,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { ChevronDownIcon, ChevronRightIcon } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 
 const stockModelLabels: Record<string, string> = {
   hold_paid: "Hold & Paid",
@@ -42,6 +44,18 @@ export default function AgentInventoryPage() {
   const [expandedProducts, setExpandedProducts] = useState<Set<Id<"products">>>(
     new Set()
   );
+  const [search, setSearch] = useState("");
+  const [sortCol, setSortCol] = useState<"name" | "stock">("stock");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSort(col: "name" | "stock") {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir(col === "name" ? "asc" : "desc");
+    }
+  }
 
   const isLoading =
     inventory === undefined ||
@@ -67,20 +81,25 @@ export default function AgentInventoryPage() {
 
   for (const inv of inventory ?? []) {
     const group = productGroups.get(inv.productId);
-    if (!group) {
-      // Product not in list — skip
-      continue;
-    }
+    if (!group) continue;
     group.totalStock += inv.quantity;
     group.entries.push(inv);
   }
 
-  // Only show products with inventory, sorted by stock desc then name
+  // Only show products with inventory, filtered by search, sorted by stock desc then name
   const sortedGroups = Array.from(productGroups.values())
-    .filter((g) => g.entries.length > 0)
+    .filter((g) => {
+      if (g.entries.length === 0) return false;
+      if (search) return g.product.name.toLowerCase().includes(search.toLowerCase());
+      return true;
+    })
     .sort((a, b) => {
-      if (a.totalStock !== b.totalStock) return b.totalStock - a.totalStock;
-      return a.product.name.localeCompare(b.product.name);
+      if (sortCol === "name") {
+        const cmp = a.product.name.localeCompare(b.product.name);
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      const cmp = a.totalStock - b.totalStock;
+      return sortDir === "asc" ? cmp : -cmp;
     });
 
   function toggleProduct(productId: Id<"products">) {
@@ -99,9 +118,7 @@ export default function AgentInventoryPage() {
     <RoleGuard allowed={["agent", "sales"]}>
       <div className="space-y-6">
         <div>
-          <h1 className="text-3xl font-semibold tracking-tight">
-            My Inventory
-          </h1>
+          <h1 className="text-3xl font-semibold tracking-tight">My Inventory</h1>
           <p className="text-muted-foreground">
             View your current stock per product and batch.
           </p>
@@ -109,89 +126,125 @@ export default function AgentInventoryPage() {
 
         {isLoading ? (
           <div className="text-muted-foreground">Loading...</div>
-        ) : sortedGroups.length === 0 ? (
-          <div className="text-center py-12 text-muted-foreground">
-            You don&apos;t have any stock yet. Stock will appear here once
-            transferred to you.
-          </div>
         ) : (
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-[40px]"></TableHead>
-                <TableHead>Product</TableHead>
-                <TableHead>Total Stock</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sortedGroups.map(({ product, totalStock, entries }) => {
-                const isExpanded = expandedProducts.has(product._id);
+          <div className="space-y-4">
+            <div className="flex items-center gap-2">
+              <Input
+                placeholder="Filter products..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="h-8 w-[150px] lg:w-[250px]"
+              />
+              {search && (
+                <Button variant="ghost" size="sm" onClick={() => setSearch("")} className="h-8">
+                  Reset <XIcon className="ml-2 size-4" />
+                </Button>
+              )}
+            </div>
 
-                return (
-                  <Fragment key={product._id}>
-                    <TableRow
-                      className="cursor-pointer hover:bg-muted/50"
-                      onClick={() => toggleProduct(product._id)}
-                    >
-                      <TableCell className="w-[40px]">
-                        {isExpanded ? (
-                          <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+            <div className="rounded-md border">
+              <Table>
+                <TableHeader>
+                  <TableRow className="bg-muted/50">
+                    <TableHead className="w-[40px]"></TableHead>
+                    <TableHead>
+                      <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("name")}>
+                        Product
+                        {sortCol === "name" ? (
+                          sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
                         ) : (
-                          <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
+                          <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
                         )}
-                      </TableCell>
-                      <TableCell className="font-medium">
-                        {product.name}
-                      </TableCell>
-                      <TableCell>
-                        <span className="font-semibold">{totalStock}</span>
+                      </Button>
+                    </TableHead>
+                    <TableHead>
+                      <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("stock")}>
+                        Total Stock
+                        {sortCol === "stock" ? (
+                          sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                        ) : (
+                          <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+                        )}
+                      </Button>
+                    </TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedGroups.length === 0 ? (
+                    <TableRow>
+                      <TableCell colSpan={3} className="text-center text-muted-foreground">
+                        {search ? "No products match the current filter." : "No inventory found."}
                       </TableCell>
                     </TableRow>
-                    {isExpanded &&
-                      entries.map((inv) => {
-                        const batch = batchMap.get(inv.batchId);
-                        const statusKey = batch?.status ?? "unknown";
-                        const stockModelKey = inv.stockModel;
+                  ) : (
+                    sortedGroups.map(({ product, totalStock, entries }) => {
+                      const isExpanded = expandedProducts.has(product._id);
 
-                        return (
+                      return (
+                        <Fragment key={product._id}>
                           <TableRow
-                            key={inv._id}
-                            className="bg-muted/30"
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => toggleProduct(product._id)}
                           >
-                            <TableCell></TableCell>
-                            <TableCell className="pl-8 text-sm">
-                              <span className="text-muted-foreground">Batch:</span>{" "}
-                              <span className="font-medium">
-                                {batch?.batchCode ?? "Unknown"}
-                              </span>
-                              {inv.variantId && (
-                                <span className="ml-2 text-muted-foreground">
-                                  {variantMap.get(inv.variantId)?.name}
-                                </span>
-                              )}
-                              {stockModelKey && (
-                                <Badge variant="outline" className="ml-3">
-                                  {stockModelLabels[stockModelKey] ?? stockModelKey}
-                                </Badge>
+                            <TableCell className="w-[40px]">
+                              {isExpanded ? (
+                                <ChevronDownIcon className="h-4 w-4 text-muted-foreground" />
+                              ) : (
+                                <ChevronRightIcon className="h-4 w-4 text-muted-foreground" />
                               )}
                             </TableCell>
-                            <TableCell className="text-sm">
-                              <span>{inv.quantity}</span>
-                              <Badge
-                                variant={batchStatusVariant[statusKey] ?? "secondary"}
-                                className="ml-3"
-                              >
-                                {batchStatusLabels[statusKey] ?? statusKey}
-                              </Badge>
+                            <TableCell className="font-medium">
+                              {product.name}
+                            </TableCell>
+                            <TableCell>
+                              <span className="font-semibold">{totalStock}</span>
                             </TableCell>
                           </TableRow>
-                        );
-                      })}
-                  </Fragment>
-                );
-              })}
-            </TableBody>
-          </Table>
+                          {isExpanded &&
+                            entries.map((inv) => {
+                              const batch = batchMap.get(inv.batchId);
+                              const statusKey = batch?.status ?? "unknown";
+                              const stockModelKey = inv.stockModel;
+
+                              return (
+                                <TableRow key={inv._id} className="bg-muted/30">
+                                  <TableCell></TableCell>
+                                  <TableCell className="pl-8 text-sm">
+                                    <span className="text-muted-foreground">Batch:</span>{" "}
+                                    <span className="font-medium">
+                                      {batch?.batchCode ?? "Unknown"}
+                                    </span>
+                                    {inv.variantId && (
+                                      <span className="ml-2 text-muted-foreground">
+                                        {variantMap.get(inv.variantId)?.name}
+                                      </span>
+                                    )}
+                                    {stockModelKey && (
+                                      <Badge variant="outline" className="ml-3">
+                                        {stockModelLabels[stockModelKey] ?? stockModelKey}
+                                      </Badge>
+                                    )}
+                                  </TableCell>
+                                  <TableCell className="text-sm">
+                                    <span>{inv.quantity}</span>
+                                    <Badge
+                                      variant={batchStatusVariant[statusKey] ?? "secondary"}
+                                      className="ml-3"
+                                    >
+                                      {batchStatusLabels[statusKey] ?? statusKey}
+                                    </Badge>
+                                  </TableCell>
+                                </TableRow>
+                              );
+                            })}
+                        </Fragment>
+                      );
+                    })
+                  )}
+                </TableBody>
+              </Table>
+            </div>
+          </div>
         )}
       </div>
     </RoleGuard>

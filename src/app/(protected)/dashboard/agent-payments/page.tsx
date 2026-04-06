@@ -5,7 +5,6 @@ import { api } from "../../../../../convex/_generated/api";
 import type { Doc } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import {
   Table,
   TableBody,
@@ -32,6 +31,8 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { FacetedFilter } from "@/components/stock/faceted-filter";
 import {
   CopyIcon,
   CheckIcon,
@@ -39,8 +40,43 @@ import {
   ChevronRightIcon,
   CheckCircleIcon,
   BanknoteIcon,
+  XIcon,
+  ArrowUpDownIcon,
+  ArrowUpIcon,
+  ArrowDownIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useMemo } from "react";
+
+type SortCol = "agent" | "amount" | "date" | "status";
+type SortDir = "asc" | "desc";
+
+function SortableHead({
+  label,
+  column,
+  sortCol,
+  sortDir,
+  onSort,
+}: {
+  label: string;
+  column: SortCol;
+  sortCol: SortCol;
+  sortDir: SortDir;
+  onSort: (col: SortCol) => void;
+}) {
+  const isActive = sortCol === column;
+  return (
+    <TableHead>
+      <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => onSort(column)}>
+        {label}
+        {isActive ? (
+          sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+        ) : (
+          <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+        )}
+      </Button>
+    </TableHead>
+  );
+}
 
 type SettlementWithAgent = Doc<"agentSettlements"> & { agentName: string };
 
@@ -392,9 +428,10 @@ function SettlementRow({
                 <h4 className="font-semibold text-sm mb-2">
                   Included Sales ({detail.sales.length})
                 </h4>
+                <div className="rounded-md border">
                 <Table>
                   <TableHeader>
-                    <TableRow>
+                    <TableRow className="bg-muted/50">
                       <TableHead>Date</TableHead>
                       <TableHead>Customer</TableHead>
                       <TableHead>Products</TableHead>
@@ -457,6 +494,7 @@ function SettlementRow({
                     ))}
                   </TableBody>
                 </Table>
+                </div>
               </>
             )}
           </TableCell>
@@ -475,36 +513,129 @@ function SettlementsTable({
   direction: "agent_to_hq" | "hq_to_agent";
   emptyMessage: string;
 }) {
-  if (settlements.length === 0) {
-    return (
-      <Card>
-        <CardContent className="py-6 text-center text-muted-foreground">
-          {emptyMessage}
-        </CardContent>
-      </Card>
-    );
+  const [search, setSearch] = useState("");
+  const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
+  const [selectedStatuses, setSelectedStatuses] = useState<Set<string>>(new Set());
+  const [sortCol, setSortCol] = useState<SortCol>("date");
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
+
+  function handleSort(col: SortCol) {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir("asc");
+    }
   }
 
+  const agentOptions = useMemo(() => {
+    const seen = new Map<string, string>();
+    for (const s of settlements) seen.set(s.agentId, s.agentName);
+    return Array.from(seen.entries()).map(([value, label]) => ({ label, value })).sort((a, b) => a.label.localeCompare(b.label));
+  }, [settlements]);
+
+  const statusOptions = [
+    { label: "Confirmed", value: "paid" },
+    { label: "Awaiting Confirmation", value: "submitted" },
+    { label: "Pending", value: "pending" },
+  ];
+
+  const hasActiveFilters = search !== "" || selectedAgents.size > 0 || selectedStatuses.size > 0;
+
+  const filtered = useMemo(() => {
+    let result = settlements;
+    if (search) {
+      const term = search.toLowerCase();
+      result = result.filter(
+        (s) => s.agentName.toLowerCase().includes(term) || s.referenceId.toLowerCase().includes(term)
+      );
+    }
+    if (selectedAgents.size > 0) {
+      result = result.filter((s) => selectedAgents.has(s.agentId));
+    }
+    if (selectedStatuses.size > 0) {
+      result = result.filter((s) => selectedStatuses.has(s.paymentStatus));
+    }
+    return [...result].sort((a, b) => {
+      let cmp = 0;
+      if (sortCol === "agent") {
+        cmp = a.agentName.localeCompare(b.agentName);
+      } else if (sortCol === "amount") {
+        cmp = a.totalAmount - b.totalAmount;
+      } else if (sortCol === "status") {
+        cmp = a.paymentStatus.localeCompare(b.paymentStatus);
+      } else {
+        const aDate = a.paymentDate ?? a.confirmedAt ?? a._creationTime;
+        const bDate = b.paymentDate ?? b.confirmedAt ?? b._creationTime;
+        cmp = (aDate ?? 0) - (bDate ?? 0);
+      }
+      return sortDir === "asc" ? cmp : -cmp;
+    });
+  }, [settlements, search, selectedAgents, selectedStatuses, sortCol, sortDir]);
+
   return (
-    <Table>
-      <TableHeader>
-        <TableRow>
-          <TableHead className="w-8" />
-          <TableHead>Agent</TableHead>
-          <TableHead>Reference ID</TableHead>
-          <TableHead>Amount</TableHead>
-          <TableHead>Sales</TableHead>
-          <TableHead>Status</TableHead>
-          <TableHead>Date</TableHead>
-          <TableHead className="text-right">Actions</TableHead>
-        </TableRow>
-      </TableHeader>
-      <TableBody>
-        {settlements.map((s) => (
-          <SettlementRow key={s._id} settlement={s} direction={direction} />
-        ))}
-      </TableBody>
-    </Table>
+    <div className="space-y-4">
+      <div className="flex flex-1 flex-wrap items-center gap-2">
+        <Input
+          placeholder="Search agent, reference..."
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          className="h-8 w-[180px] lg:w-[260px]"
+        />
+        <FacetedFilter
+          title="Agent"
+          options={agentOptions}
+          selected={selectedAgents}
+          onSelectionChange={setSelectedAgents}
+        />
+        <FacetedFilter
+          title="Status"
+          options={statusOptions}
+          selected={selectedStatuses}
+          onSelectionChange={setSelectedStatuses}
+        />
+        {hasActiveFilters && (
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => { setSearch(""); setSelectedAgents(new Set()); setSelectedStatuses(new Set()); }}
+            className="h-8"
+          >
+            Reset <XIcon className="ml-2 size-4" />
+          </Button>
+        )}
+      </div>
+
+      <div className="rounded-md border">
+        <Table>
+          <TableHeader>
+            <TableRow className="bg-muted/50">
+              <TableHead className="w-8" />
+              <SortableHead label="Agent" column="agent" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <TableHead>Reference ID</TableHead>
+              <SortableHead label="Amount" column="amount" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <TableHead>Sales</TableHead>
+              <SortableHead label="Status" column="status" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <SortableHead label="Date" column="date" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+              <TableHead className="text-right">Actions</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {filtered.length === 0 ? (
+              <TableRow>
+                <TableCell colSpan={8} className="text-center text-muted-foreground">
+                  {hasActiveFilters ? "No settlements match the current filters." : emptyMessage}
+                </TableCell>
+              </TableRow>
+            ) : (
+              filtered.map((s) => (
+                <SettlementRow key={s._id} settlement={s} direction={direction} />
+              ))
+            )}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
   );
 }
 

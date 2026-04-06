@@ -2,9 +2,9 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "TheMantra",
-    short_name: "TheMantra",
-    description: "TheMantra App",
+    name: "The Mantra",
+    short_name: "The Mantra",
+    description: "The Mantra App",
     start_url: "/",
     display: "standalone",
     background_color: "#ffffff",

@@ -15,7 +15,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, XIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
 import { FacetedFilter, RangeFilter } from "./faceted-filter";
 
 const stockModelLabels: Record<string, string> = {
@@ -50,6 +50,17 @@ export function InventoryBreakdown({
   const [expandedHolders, setExpandedHolders] = useState<Set<string>>(
     new Set()
   );
+  const [sortCol, setSortCol] = useState<"name" | "stock">("stock");
+  const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+
+  function handleSort(col: "name" | "stock") {
+    if (sortCol === col) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortCol(col);
+      setSortDir(col === "name" ? "asc" : "desc");
+    }
+  }
 
   // Filter state
   const [search, setSearch] = useState("");
@@ -255,11 +266,17 @@ export function InventoryBreakdown({
     }
 
     return groups.sort((a, b) => {
+      if (sortCol === "name") {
+        const cmp = a.product.name.localeCompare(b.product.name);
+        return sortDir === "asc" ? cmp : -cmp;
+      }
+      // stock sort: keep zero-stock rows at the bottom regardless of direction
       if (a.totalStock > 0 && b.totalStock === 0) return -1;
       if (a.totalStock === 0 && b.totalStock > 0) return 1;
-      return a.product.name.localeCompare(b.product.name);
+      const cmp = a.totalStock - b.totalStock;
+      return sortDir === "asc" ? cmp : -cmp;
     });
-  }, [productGroups, searchMatchedProductIds]);
+  }, [productGroups, searchMatchedProductIds, sortCol, sortDir]);
 
   function toggleProduct(productId: Id<"products">) {
     setExpandedProducts((prev) => {
@@ -349,12 +366,31 @@ export function InventoryBreakdown({
             : "No inventory records yet. Create batches and transfer stock to agents."}
         </div>
       ) : (
+        <div className="rounded-md border">
         <Table>
           <TableHeader>
-            <TableRow>
+            <TableRow className="bg-muted/50">
               <TableHead className="w-[40px]"></TableHead>
-              <TableHead>Product</TableHead>
-              <TableHead>Total Stock</TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("name")}>
+                  Product
+                  {sortCol === "name" ? (
+                    sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+                  )}
+                </Button>
+              </TableHead>
+              <TableHead>
+                <Button variant="ghost" size="sm" className="-ml-3 h-8" onClick={() => handleSort("stock")}>
+                  Total Stock
+                  {sortCol === "stock" ? (
+                    sortDir === "asc" ? <ArrowUpIcon className="ml-2 h-4 w-4" /> : <ArrowDownIcon className="ml-2 h-4 w-4" />
+                  ) : (
+                    <ArrowUpDownIcon className="ml-2 h-4 w-4 opacity-40" />
+                  )}
+                </Button>
+              </TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -490,6 +526,7 @@ export function InventoryBreakdown({
             })}
           </TableBody>
         </Table>
+        </div>
       )}
     </div>
   );

@@ -179,7 +179,7 @@ function FormCard({ form }: { form: Form }) {
         ctx.fillRect(PAD, H - 80, W - PAD * 2, 1);
         ctx.fillStyle = "#aaaaaa";
         ctx.font = "24px system-ui, -apple-system, sans-serif";
-        ctx.fillText("TheMantra · Interest Form", W / 2, H - 44);
+        ctx.fillText("The Mantra · Interest Form", W / 2, H - 44);
 
         resolve();
       };
