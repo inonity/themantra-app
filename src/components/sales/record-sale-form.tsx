@@ -1488,7 +1488,7 @@ export function RecordSaleForm({
                       const mm = String(d.getMonth() + 1).padStart(2, "0");
                       const yy = String(d.getFullYear()).slice(-2);
                       const last4 = customerPhone.replace(/\D/g, "").slice(-4) || "XXXX";
-                      return `MNT-${dd}${mm}${yy}-${last4}`;
+                      return `TM-BT-${yy}${mm}${dd}-${last4}`;
                     })()}
                   </p>
                   <p className="text-xs text-muted-foreground">Ask customer to include this reference when transferring.</p>
