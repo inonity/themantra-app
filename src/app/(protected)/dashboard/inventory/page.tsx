@@ -21,6 +21,8 @@ import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon,
 const stockModelLabels: Record<string, string> = {
   hold_paid: "Hold & Paid",
   consignment: "Consignment",
+  presell: "Pre-sell",
+  dropship: "Dropship",
 };
 
 const batchStatusLabels: Record<string, string> = {
