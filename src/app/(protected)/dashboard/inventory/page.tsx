@@ -27,12 +27,14 @@ const stockModelLabels: Record<string, string> = {
 
 const batchStatusLabels: Record<string, string> = {
   upcoming: "Upcoming",
+  partial: "Partial",
   available: "Available",
   depleted: "Depleted",
 };
 
 const batchStatusVariant: Record<string, "default" | "secondary" | "destructive"> = {
   upcoming: "secondary",
+  partial: "secondary",
   available: "default",
   depleted: "destructive",
 };
