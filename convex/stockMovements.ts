@@ -1,5 +1,5 @@
 import { query, mutation } from "./_generated/server";
-import { v } from "convex/values";
+import { v, ConvexError } from "convex/values";
 import { requireRole, isSellerRole } from "./helpers/auth";
 import { resolveAgentPrice } from "./helpers/pricing";
 
@@ -19,12 +19,12 @@ export const transferToAgent = mutation({
 
     // Validate batch
     const batch = await ctx.db.get(args.batchId);
-    if (!batch) throw new Error("Batch not found");
-    if (batch.status !== "available") throw new Error("Batch is not available");
+    if (!batch) throw new ConvexError("Batch not found");
+    if (batch.status !== "available" && batch.status !== "partial") throw new ConvexError(`Batch ${batch.batchCode} is not yet available (status: ${batch.status})`);
 
     // Validate agent
     const agent = await ctx.db.get(args.agentId);
-    if (!agent || !isSellerRole(agent.role)) throw new Error("Invalid agent");
+    if (!agent || !isSellerRole(agent.role)) throw new ConvexError("Invalid agent");
 
     // Resolve pricing (variant-aware)
     const resolved = await resolveAgentPrice(
@@ -118,21 +118,21 @@ export const transferBulkToAgent = mutation({
   handler: async (ctx, args) => {
     const user = await requireRole(ctx, "admin");
 
-    if (args.items.length === 0) throw new Error("No items to transfer");
+    if (args.items.length === 0) throw new ConvexError("No items to transfer");
 
     const movedAt = args.movedAt ?? Date.now();
 
     // Validate agent
     const agent = await ctx.db.get(args.agentId);
-    if (!agent || !isSellerRole(agent.role)) throw new Error("Invalid agent");
+    if (!agent || !isSellerRole(agent.role)) throw new ConvexError("Invalid agent");
 
     for (const item of args.items) {
-      if (item.quantity < 1) throw new Error("Quantity must be at least 1");
+      if (item.quantity < 1) throw new ConvexError("Quantity must be at least 1");
 
       // Validate batch
       const batch = await ctx.db.get(item.batchId);
-      if (!batch) throw new Error("Batch not found");
-      if (batch.status !== "available") throw new Error(`Batch ${batch.batchCode} is not available`);
+      if (!batch) throw new ConvexError("Batch not found");
+      if (batch.status !== "available" && batch.status !== "partial") throw new ConvexError(`Batch ${batch.batchCode} is not yet available (status: ${batch.status})`);
 
       // Resolve pricing (variant-aware)
       const resolved = await resolveAgentPrice(
@@ -151,7 +151,7 @@ export const transferBulkToAgent = mutation({
         .first();
 
       if (!businessInventory || businessInventory.quantity < item.quantity) {
-        throw new Error(`Insufficient stock for batch ${batch.batchCode}`);
+        throw new ConvexError(`Insufficient stock for batch ${batch.batchCode}`);
       }
 
       // Decrement business inventory

@@ -190,7 +190,13 @@ export function TransferFormDialog({
       setOpen(false);
       resetForm();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : "Failed to transfer stock");
+      const msg =
+        err instanceof Error && "data" in err && typeof (err as { data: unknown }).data === "string"
+          ? (err as { data: string }).data
+          : err instanceof Error
+          ? err.message
+          : "Failed to transfer stock";
+      setError(msg);
     } finally {
       setSubmitting(false);
     }
