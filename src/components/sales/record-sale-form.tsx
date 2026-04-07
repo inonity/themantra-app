@@ -48,6 +48,11 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, CreditCardIcon, CalendarIcon, TagIcon, PlusIcon, MinusIcon } from "lucide-react";
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
@@ -168,6 +173,7 @@ export function RecordSaleForm({
   const [amountReceived, setAmountReceived] = useState<string>("");
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [showQrDialog, setShowQrDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
@@ -1348,7 +1354,8 @@ export function RecordSaleForm({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Collector + Method + Amount in one row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {showCollectorOption && (
                 <div className="space-y-2">
                   <Label>Who Collects Payment?</Label>
@@ -1401,8 +1408,6 @@ export function RecordSaleForm({
                   </SelectContent>
                 </Select>
               </div>
-
-              {/* Amount received — shown when HQ collects via non-cash */}
               {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (
                 <div className="space-y-2">
                   <Label htmlFor="amountReceived">Amount Received (RM)</Label>
@@ -1418,7 +1423,6 @@ export function RecordSaleForm({
                         setAmountReceived("");
                         return;
                       }
-                      // Round to 2 decimal places to avoid floating-point stepper drift
                       const num = parseFloat(raw);
                       if (!isNaN(num)) {
                         setAmountReceived((Math.round(num * 100) / 100).toString());
@@ -1427,22 +1431,70 @@ export function RecordSaleForm({
                       }
                     }}
                   />
-                  {(() => {
-                    const total = Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100;
-                    const received = Math.round(parseFloat(amountReceived) * 100) / 100;
-                    if (!isNaN(received) && received > total) {
-                      const overpayment = (Math.round((received - total) * 100) / 100).toFixed(2);
-                      return (
-                        <p className="text-sm text-muted-foreground">
-                          Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — will be transferred to you as commission.
-                        </p>
-                      );
-                    }
-                    return null;
-                  })()}
                 </div>
               )}
             </div>
+
+            {/* Overpayment note */}
+            {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (() => {
+              const total = Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100;
+              const received = Math.round(parseFloat(amountReceived) * 100) / 100;
+              if (!isNaN(received) && received > total) {
+                const overpayment = (Math.round((received - total) * 100) / 100).toFixed(2);
+                return (
+                  <p className="text-sm text-muted-foreground -mt-2">
+                    Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — will be transferred to you as commission.
+                  </p>
+                );
+              }
+              return null;
+            })()}
+
+            {/* HQ QR Payment details */}
+            {isHqCollector && showCollectorOption && paymentMethod === "qr" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                <p className="text-sm font-medium">Show QR to customer</p>
+                <button
+                  type="button"
+                  onClick={() => setShowQrDialog(true)}
+                  className="block rounded-lg border overflow-hidden hover:opacity-75 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring mx-auto"
+                >
+                  <img
+                    src="/qr-payment.png"
+                    alt="QR Payment"
+                    className="h-64 w-64 object-contain"
+                  />
+                </button>
+                <p className="text-xs text-muted-foreground text-center">Tap to enlarge</p>
+              </div>
+            )}
+
+            {/* HQ Bank Transfer details */}
+            {isHqCollector && showCollectorOption && paymentMethod === "bank_transfer" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-4">
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Transfer to</p>
+                  <p className="font-semibold text-base">Inonity Sdn Bhd</p>
+                  <p className="text-sm text-muted-foreground">RHB Bank</p>
+                  <p className="font-mono font-semibold text-lg tracking-widest">2660 1600 025125</p>
+                </div>
+                <Separator />
+                <div className="space-y-1">
+                  <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">Payment Reference</p>
+                  <p className="font-mono font-bold text-xl tracking-widest">
+                    {(() => {
+                      const d = new Date();
+                      const dd = String(d.getDate()).padStart(2, "0");
+                      const mm = String(d.getMonth() + 1).padStart(2, "0");
+                      const yy = String(d.getFullYear()).slice(-2);
+                      const last4 = customerPhone.replace(/\D/g, "").slice(-4) || "XXXX";
+                      return `MNT-${dd}${mm}${yy}-${last4}`;
+                    })()}
+                  </p>
+                  <p className="text-xs text-muted-foreground">Ask customer to include this reference when transferring.</p>
+                </div>
+              </div>
+            )}
 
             {/* Proof of payment upload — shown for QR/bank transfer, required only when HQ collects */}
             {isNonCashPayment && (
@@ -1542,6 +1594,20 @@ export function RecordSaleForm({
               : "Submit Order"}
         </Button>
       </div>
+
+      {/* QR Payment */}
+      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+        <DialogContent className="flex flex-col gap-4 sm:max-w-md">
+          <DialogTitle>QR Payment</DialogTitle>
+          <div className="flex flex-1 items-center justify-center px-4 py-2">
+            <img
+              alt="QR Payment"
+              src="/qr-payment.png"
+              className="h-auto block"
+            />
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* Confirmation dialog when agent/salesperson collects payment */}
       <AlertDialog open={showConfirmDialog} onOpenChange={setShowConfirmDialog}>
