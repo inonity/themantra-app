@@ -1496,17 +1496,14 @@ export function RecordSaleForm({
               </div>
             )}
 
-            {/* Proof of payment upload — shown for QR/bank transfer, required only when HQ collects */}
+            {/* Proof of payment upload — optional, shown for QR/bank transfer */}
             {isNonCashPayment && (
               <div className="space-y-2">
                 <Label>
                   Proof of Payment
-                  {needsProofOfPayment && <span className="text-destructive ml-1">*</span>}
                 </Label>
                 <p className="text-sm text-muted-foreground">
-                  {needsProofOfPayment
-                    ? "Upload a receipt or screenshot of the payment."
-                    : "Optional — upload a receipt or screenshot for your records."}
+                  Optional — upload a receipt or screenshot for your records.
                 </p>
 
                 {paymentProofPreview ? (
@@ -1582,7 +1579,6 @@ export function RecordSaleForm({
             !hasItems ||
             !saleChannel ||
             !customerName ||
-            (needsProofOfPayment && !paymentProofFile) ||
             submitting ||
             uploadingProof
           }
