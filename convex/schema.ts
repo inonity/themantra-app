@@ -163,6 +163,7 @@ export default defineSchema({
     paymentProofStorageId: v.optional(v.id("_storage")),
     amountReceived: v.optional(v.number()), // what customer actually paid
     overpaymentAmount: v.optional(v.number()), // excess when customer pays more than totalAmount
+    overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))), // who keeps the overpayment
     paidAt: v.optional(v.number()),
 
     // Stock model & HQ pricing

@@ -98,6 +98,7 @@ export const recordB2CSale = mutation({
     ),
     paymentProofStorageId: v.optional(v.id("_storage")),
     amountReceived: v.optional(v.number()),
+    overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -528,6 +529,7 @@ export const recordB2CSale = mutation({
       paymentProofStorageId: args.paymentProofStorageId,
       amountReceived: amountReceived !== roundedTotal ? amountReceived : undefined,
       overpaymentAmount,
+      overpaymentRecipient: overpaymentAmount != null ? (args.overpaymentRecipient ?? "seller") : undefined,
       paidAt: movedAt,
       saleDate: saleDateValue,
       recordedBy: userId,
@@ -610,18 +612,23 @@ export const recordB2CSale = mutation({
     }
 
     // Settlement logic depends on who collects payment
+    const overpaymentToHq = args.overpaymentRecipient === "hq";
     if (hqCollects) {
-      // HQ collected payment — HQ owes agent their commission + any overpayment
+      // HQ collected payment — HQ owes agent their commission + any overpayment (unless overpayment goes to HQ)
+      const overpaymentForAgent = overpaymentToHq ? 0 : (overpaymentAmount ?? 0);
       const commissionWithOverpayment = Math.round(
-        (agentCommission + (overpaymentAmount ?? 0)) * 100
+        (agentCommission + overpaymentForAgent) * 100
       ) / 100;
       if (commissionWithOverpayment > 0) {
         await addSaleToSettlement(ctx, userId, saleId, commissionWithOverpayment, "hq_to_agent");
       }
     } else {
-      // Agent collected payment — agent owes HQ the hqPrice
-      if (totalHqPrice > 0) {
-        await addSaleToSettlement(ctx, userId, saleId, totalHqPrice, "agent_to_hq");
+      // Agent collected payment — agent owes HQ the hqPrice (+ overpayment if it goes to HQ)
+      const hqAmount = Math.round(
+        (totalHqPrice + (overpaymentToHq ? (overpaymentAmount ?? 0) : 0)) * 100
+      ) / 100;
+      if (hqAmount > 0) {
+        await addSaleToSettlement(ctx, userId, saleId, hqAmount, "agent_to_hq");
       }
     }
 
@@ -856,6 +863,7 @@ export const recordPresellSale = mutation({
     ),
     paymentProofStorageId: v.optional(v.id("_storage")),
     amountReceived: v.optional(v.number()),
+    overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -1171,6 +1179,7 @@ export const recordPresellSale = mutation({
       paymentProofStorageId: args.paymentProofStorageId,
       amountReceived: dsAmountReceived !== roundedTotal ? dsAmountReceived : undefined,
       overpaymentAmount: dsOverpaymentAmount,
+      overpaymentRecipient: dsOverpaymentAmount != null ? (args.overpaymentRecipient ?? "seller") : undefined,
       paidAt: movedAt,
       saleDate: saleDateValue,
       recordedBy: userId,
@@ -1262,18 +1271,23 @@ export const recordPresellSale = mutation({
     }
 
     // Settlement logic depends on who collects payment
+    const dsOverpaymentToHq = args.overpaymentRecipient === "hq";
     if (hqCollects) {
-      // HQ collected payment — HQ owes agent their commission + any overpayment
+      // HQ collected payment — HQ owes agent their commission + any overpayment (unless overpayment goes to HQ)
+      const overpaymentForAgent = dsOverpaymentToHq ? 0 : (dsOverpaymentAmount ?? 0);
       const commissionWithOverpayment = Math.round(
-        (agentCommission + (dsOverpaymentAmount ?? 0)) * 100
+        (agentCommission + overpaymentForAgent) * 100
       ) / 100;
       if (commissionWithOverpayment > 0) {
         await addSaleToSettlement(ctx, userId, saleId, commissionWithOverpayment, "hq_to_agent");
       }
     } else {
-      // Agent collected payment — agent owes HQ the hqPrice
-      if (totalHqPrice > 0) {
-        await addSaleToSettlement(ctx, userId, saleId, totalHqPrice, "agent_to_hq");
+      // Agent collected payment — agent owes HQ the hqPrice (+ overpayment if it goes to HQ)
+      const hqAmount = Math.round(
+        (totalHqPrice + (dsOverpaymentToHq ? (dsOverpaymentAmount ?? 0) : 0)) * 100
+      ) / 100;
+      if (hqAmount > 0) {
+        await addSaleToSettlement(ctx, userId, saleId, hqAmount, "agent_to_hq");
       }
     }
 

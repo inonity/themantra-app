@@ -171,6 +171,7 @@ export function RecordSaleForm({
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
+  const [overpaymentRecipient, setOverpaymentRecipient] = useState<"seller" | "hq">("hq");
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [showQrDialog, setShowQrDialog] = useState(false);
@@ -184,6 +185,9 @@ export function RecordSaleForm({
   const isNonCashPayment = paymentMethod === "qr" || paymentMethod === "bank_transfer";
   const isHqCollector = paymentCollector === "hq";
   const needsProofOfPayment = isNonCashPayment && isHqCollector && showCollectorOption;
+  const isSalesperson = userRole === "sales";
+  const isCashOrNonCash = paymentMethod === "cash" || isNonCashPayment;
+  const showAmountReceivedForSales = isSalesperson && isCashOrNonCash;
 
   const allVariants = useQuery(api.productVariants.listAll);
 
@@ -729,6 +733,11 @@ export function RecordSaleForm({
 
       let saleId: Id<"sales">;
 
+      // Determine overpayment recipient for sales role
+      const hasOverpayment = amountReceivedValue != null && pricing &&
+        amountReceivedValue > Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100;
+      const overpaymentRecipientValue = isSalesperson && hasOverpayment ? overpaymentRecipient : undefined;
+
       if (isPresell) {
         saleId = await recordPresell({
           fulfilledItems: fulfilledItems.length > 0 ? fulfilledItems : undefined,
@@ -743,6 +752,7 @@ export function RecordSaleForm({
           paymentMethod: paymentMethodValue,
           paymentProofStorageId,
           amountReceived: amountReceivedValue,
+          overpaymentRecipient: overpaymentRecipientValue,
         });
       } else {
         saleId = await recordSale({
@@ -759,6 +769,7 @@ export function RecordSaleForm({
           paymentMethod: paymentMethodValue,
           paymentProofStorageId,
           amountReceived: amountReceivedValue,
+          overpaymentRecipient: overpaymentRecipientValue,
         });
       }
 
@@ -827,7 +838,6 @@ export function RecordSaleForm({
     : [];
 
   // HQ inventory available for auto-fulfill (salesperson only, non-presell)
-  const isSalesperson = userRole === "sales";
   const availableHQInventory = isSalesperson && !isPresell
     ? (businessInventory ?? []).filter(
         (inv) => inv.quantity > 0 && (usedHQBatchCounts.get(inv.batchId) ?? 0) < inv.quantity
@@ -838,6 +848,15 @@ export function RecordSaleForm({
 
   const hasPendingItems = unifiedItems.some((li) => li.source !== "agent_stock");
   const hasItems = unifiedItems.length > 0;
+
+  // Overpayment calculation (used in payment section)
+  const showAmountReceivedCol = ((isHqCollector && showCollectorOption && needsProofOfPayment) || showAmountReceivedForSales) && !!pricing;
+  const pricingTotal = pricing ? Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100 : 0;
+  const receivedNum = Math.round(parseFloat(amountReceived) * 100) / 100;
+  const overpaymentAmt = showAmountReceivedCol && !isNaN(receivedNum) && receivedNum > pricingTotal
+    ? (Math.round((receivedNum - pricingTotal) * 100) / 100).toFixed(2)
+    : null;
+  const showOverpaymentCol = isSalesperson && showAmountReceivedCol && !!overpaymentAmt;
 
   return (
     <form onSubmit={handleFormSubmit} className="space-y-6 max-w-4xl mx-auto">
@@ -909,7 +928,7 @@ export function RecordSaleForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <Label htmlFor="saleDate">Date</Label>
               <Input
                 id="saleDate"
@@ -917,6 +936,7 @@ export function RecordSaleForm({
                 value={saleDate}
                 onChange={(e) => setSaleDate(e.target.value)}
                 max={formatDateForInput(Date.now())}
+                className="w-full min-w-0"
               />
             </div>
             <div className="space-y-2">
@@ -1354,10 +1374,10 @@ export function RecordSaleForm({
             </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            {/* Collector + Method + Amount in one row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Collector + Method + Amount + Overpayment in one row */}
+            <div className="flex flex-wrap gap-4">
               {showCollectorOption && (
-                <div className="space-y-2">
+                <div className="space-y-2 min-w-[48px]">
                   <Label>Who Collects Payment?</Label>
                   <Select
                     value={paymentCollector}
@@ -1379,7 +1399,7 @@ export function RecordSaleForm({
                   </Select>
                 </div>
               )}
-              <div className="space-y-2">
+              <div className="space-y-2 min-w-[48px]">
                 <Label htmlFor="paymentMethod">Payment Method</Label>
                 <Select
                   value={paymentMethod || "none"}
@@ -1387,8 +1407,9 @@ export function RecordSaleForm({
                     setPaymentMethod(v === "none" || !v ? "" : v);
                     if (v === "cash" || v === "none" || !v) {
                       clearPaymentProof();
-                      setAmountReceived("");
+                      if (v !== "cash") setAmountReceived("");
                     }
+                    setOverpaymentRecipient("hq");
                   }}
                 >
                   <SelectTrigger id="paymentMethod">
@@ -1408,21 +1429,19 @@ export function RecordSaleForm({
                   </SelectContent>
                 </Select>
               </div>
-              {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (
-                <div className="space-y-2">
+              {showAmountReceivedCol && (
+                <div className="space-y-2 min-w-[48px]">
                   <Label htmlFor="amountReceived">Amount Received (RM)</Label>
                   <Input
+                    className="max-w-48"
                     id="amountReceived"
                     type="number"
                     step="0.01"
                     min={0}
-                    value={amountReceived || (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2)}
+                    value={amountReceived || pricingTotal.toFixed(2)}
                     onChange={(e) => {
                       const raw = e.target.value;
-                      if (raw === "") {
-                        setAmountReceived("");
-                        return;
-                      }
+                      if (raw === "") { setAmountReceived(""); return; }
                       const num = parseFloat(raw);
                       if (!isNaN(num)) {
                         setAmountReceived((Math.round(num * 100) / 100).toString());
@@ -1431,24 +1450,34 @@ export function RecordSaleForm({
                       }
                     }}
                   />
+                  <p className="text-xs text-muted-foreground max-w-48">Enter the actual amount received from the customer.</p>
+                  {overpaymentAmt && !isSalesperson && (
+                    <p className="text-sm text-muted-foreground">
+                      Overpayment of <span className="font-medium text-foreground">RM{overpaymentAmt}</span> — will be transferred to you as commission.
+                    </p>
+                  )}
+                </div>
+              )}
+              {showOverpaymentCol && (
+                <div className="space-y-2  min-w-[48px]">
+                  <Label>Overpayment of RM{overpaymentAmt} goes to</Label>
+                  <Select
+                    value={overpaymentRecipient}
+                    onValueChange={(v) => { if (v) setOverpaymentRecipient(v as "seller" | "hq"); }}
+                  >
+                    <SelectTrigger>
+                      <SelectValue>
+                        {overpaymentRecipient === "hq" ? "HQ" : "Me (salesperson)"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hq">HQ</SelectItem>
+                      <SelectItem value="seller">Me (salesperson)</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               )}
             </div>
-
-            {/* Overpayment note */}
-            {isHqCollector && showCollectorOption && needsProofOfPayment && pricing && (() => {
-              const total = Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100;
-              const received = Math.round(parseFloat(amountReceived) * 100) / 100;
-              if (!isNaN(received) && received > total) {
-                const overpayment = (Math.round((received - total) * 100) / 100).toFixed(2);
-                return (
-                  <p className="text-sm text-muted-foreground -mt-2">
-                    Overpayment of <span className="font-medium text-foreground">RM{overpayment}</span> — will be transferred to you as commission.
-                  </p>
-                );
-              }
-              return null;
-            })()}
 
             {/* HQ QR Payment details */}
             {isHqCollector && showCollectorOption && paymentMethod === "qr" && (
