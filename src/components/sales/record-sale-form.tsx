@@ -57,6 +57,7 @@ import { TrashIcon, UploadIcon, XIcon, CameraIcon, UserIcon, ShoppingBagIcon, Cr
 import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 import { PhoneInput } from "@/components/ui/phone-input";
+import { Checkbox } from "@/components/ui/checkbox";
 
 type FulfillmentSource = "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
 
@@ -171,6 +172,7 @@ export function RecordSaleForm({
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
+  const [customerPaidMore, setCustomerPaidMore] = useState(false);
   const [overpaymentRecipient, setOverpaymentRecipient] = useState<"seller" | "hq">("hq");
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
@@ -459,6 +461,9 @@ export function RecordSaleForm({
     };
   }, [unifiedItems, selectedOfferId, applicableOffers, productMap, variantMap]);
 
+  const pricingTotal = pricing ? Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100 : 0;
+  const showAmountReceivedCol = ((isHqCollector && showCollectorOption && needsProofOfPayment) || showAmountReceivedForSales) && !!pricing;
+
   function addItem(value: string) {
     // Value could be an inventory ID (for agent_stock) or a product ID (for pending/future)
     const inv = activeInventory.find((i) => i._id === value);
@@ -636,6 +641,15 @@ export function RecordSaleForm({
   function handleFormSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (unifiedItems.length === 0) return;
+
+    // Validate amount received is not less than the total
+    if (showAmountReceivedCol && amountReceived !== "") {
+      const received = Math.round(parseFloat(amountReceived) * 100) / 100;
+      if (isNaN(received) || received < pricingTotal) {
+        toast.error(`Amount received must be at least RM${pricingTotal.toFixed(2)}`);
+        return;
+      }
+    }
 
     // If agent collects payment directly, show confirmation dialog
     const agentCollects = !isHqCollector || (!showCollectorOption);
@@ -850,8 +864,6 @@ export function RecordSaleForm({
   const hasItems = unifiedItems.length > 0;
 
   // Overpayment calculation (used in payment section)
-  const showAmountReceivedCol = ((isHqCollector && showCollectorOption && needsProofOfPayment) || showAmountReceivedForSales) && !!pricing;
-  const pricingTotal = pricing ? Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100 : 0;
   const receivedNum = Math.round(parseFloat(amountReceived) * 100) / 100;
   const overpaymentAmt = showAmountReceivedCol && !isNaN(receivedNum) && receivedNum > pricingTotal
     ? (Math.round((receivedNum - pricingTotal) * 100) / 100).toFixed(2)
@@ -928,7 +940,7 @@ export function RecordSaleForm({
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div className="space-y-2 min-w-0">
+            <div className="space-y-2 min-w-0 overflow-hidden">
               <Label htmlFor="saleDate">Date</Label>
               <Input
                 id="saleDate"
@@ -936,7 +948,7 @@ export function RecordSaleForm({
                 value={saleDate}
                 onChange={(e) => setSaleDate(e.target.value)}
                 max={formatDateForInput(Date.now())}
-                className="w-full min-w-0"
+                className="w-full min-w-0 max-w-full"
               />
             </div>
             <div className="space-y-2">
@@ -1375,106 +1387,133 @@ export function RecordSaleForm({
           </CardHeader>
           <CardContent className="space-y-4">
             {/* Collector + Method + Amount + Overpayment in one row */}
-            <div className="flex flex-wrap gap-4">
-              {showCollectorOption && (
+            <div className="flex flex-col gap-4">
+              {/* Row 1: Collector + Payment Method */}
+              <div className="flex flex-wrap gap-4">
+                {showCollectorOption && (
+                  <div className="space-y-2 min-w-[48px]">
+                    <Label>Who Collects Payment?</Label>
+                    <Select
+                      value={paymentCollector}
+                      onValueChange={(v) => {
+                        if (v) setPaymentCollector(v as "agent" | "hq");
+                      }}
+                    >
+                      <SelectTrigger>
+                        <SelectValue>
+                          {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="agent">
+                          I collect from customer
+                        </SelectItem>
+                        <SelectItem value="hq">HQ collects directly</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
                 <div className="space-y-2 min-w-[48px]">
-                  <Label>Who Collects Payment?</Label>
+                  <Label htmlFor="paymentMethod">Payment Method</Label>
                   <Select
-                    value={paymentCollector}
+                    value={paymentMethod || "none"}
                     onValueChange={(v) => {
-                      if (v) setPaymentCollector(v as "agent" | "hq");
-                    }}
-                  >
-                    <SelectTrigger>
-                      <SelectValue>
-                        {COLLECTOR_LABELS[paymentCollector] ?? "Select..."}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="agent">
-                        I collect from customer
-                      </SelectItem>
-                      <SelectItem value="hq">HQ collects directly</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              <div className="space-y-2 min-w-[48px]">
-                <Label htmlFor="paymentMethod">Payment Method</Label>
-                <Select
-                  value={paymentMethod || "none"}
-                  onValueChange={(v) => {
-                    setPaymentMethod(v === "none" || !v ? "" : v);
-                    if (v === "cash" || v === "none" || !v) {
-                      clearPaymentProof();
-                      if (v !== "cash") setAmountReceived("");
-                    }
-                    setOverpaymentRecipient("hq");
-                  }}
-                >
-                  <SelectTrigger id="paymentMethod">
-                    <SelectValue placeholder="Select payment method...">
-                      {paymentMethod
-                        ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
-                        : "Not specified"}
-                    </SelectValue>
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Not specified</SelectItem>
-                    <SelectItem value="cash">Cash</SelectItem>
-                    <SelectItem value="qr">QR Payment</SelectItem>
-                    <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                    <SelectItem value="online">Online</SelectItem>
-                    <SelectItem value="other">Other</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              {showAmountReceivedCol && (
-                <div className="space-y-2 min-w-[48px]">
-                  <Label htmlFor="amountReceived">Amount Received (RM)</Label>
-                  <Input
-                    className="max-w-48"
-                    id="amountReceived"
-                    type="number"
-                    step="0.01"
-                    min={0}
-                    value={amountReceived || pricingTotal.toFixed(2)}
-                    onChange={(e) => {
-                      const raw = e.target.value;
-                      if (raw === "") { setAmountReceived(""); return; }
-                      const num = parseFloat(raw);
-                      if (!isNaN(num)) {
-                        setAmountReceived((Math.round(num * 100) / 100).toString());
-                      } else {
-                        setAmountReceived(raw);
+                      setPaymentMethod(v === "none" || !v ? "" : v);
+                      if (v === "cash" || v === "none" || !v) {
+                        clearPaymentProof();
+                        if (v !== "cash") { setAmountReceived(""); setCustomerPaidMore(false); }
                       }
+                      setOverpaymentRecipient("hq");
                     }}
-                  />
-                  <p className="text-xs text-muted-foreground max-w-48">Enter the actual amount received from the customer.</p>
-                  {overpaymentAmt && !isSalesperson && (
-                    <p className="text-sm text-muted-foreground">
-                      Overpayment of <span className="font-medium text-foreground">RM{overpaymentAmt}</span> — will be transferred to you as commission.
-                    </p>
-                  )}
-                </div>
-              )}
-              {showOverpaymentCol && (
-                <div className="space-y-2  min-w-[48px]">
-                  <Label>Overpayment of RM{overpaymentAmt} goes to</Label>
-                  <Select
-                    value={overpaymentRecipient}
-                    onValueChange={(v) => { if (v) setOverpaymentRecipient(v as "seller" | "hq"); }}
                   >
-                    <SelectTrigger>
-                      <SelectValue>
-                        {overpaymentRecipient === "hq" ? "HQ" : "Me (salesperson)"}
+                    <SelectTrigger id="paymentMethod">
+                      <SelectValue placeholder="Select payment method...">
+                        {paymentMethod
+                          ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
+                          : "Not specified"}
                       </SelectValue>
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="hq">HQ</SelectItem>
-                      <SelectItem value="seller">Me (salesperson)</SelectItem>
+                      <SelectItem value="none">Not specified</SelectItem>
+                      <SelectItem value="cash">Cash</SelectItem>
+                      <SelectItem value="qr">QR Payment</SelectItem>
+                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
+                      <SelectItem value="online">Online</SelectItem>
+                      <SelectItem value="other">Other</SelectItem>
                     </SelectContent>
                   </Select>
+                </div>
+              </div>
+
+              {/* Row 2: Overpayment checkbox + amount + recipient */}
+              {showAmountReceivedCol && (
+                <div className="flex flex-wrap items-start gap-4">
+                  <div className="space-y-3">
+                    <div className="flex items-center gap-2">
+                      <Checkbox
+                        id="customerPaidMore"
+                        checked={customerPaidMore}
+                        onCheckedChange={(checked) => {
+                          setCustomerPaidMore(!!checked);
+                          if (!checked) setAmountReceived("");
+                        }}
+                      />
+                      <Label htmlFor="customerPaidMore" className="cursor-pointer">
+                        Customer paid more than RM{pricingTotal.toFixed(2)}
+                      </Label>
+                    </div>
+                    {customerPaidMore && (
+                      <div className="flex flex-wrap items-end gap-4">
+                        <div className="space-y-1 pb-1">
+                          <Label htmlFor="amountReceived">Amount Received (RM)</Label>
+                          <Input
+                            className="max-w-48"
+                            id="amountReceived"
+                            type="number"
+                            step="0.01"
+                            min={0}
+                            placeholder={pricingTotal.toFixed(2)}
+                            value={amountReceived}
+                            autoFocus
+                            onChange={(e) => {
+                              const raw = e.target.value;
+                              if (raw === "") { setAmountReceived(""); return; }
+                              const num = parseFloat(raw);
+                              if (!isNaN(num)) {
+                                setAmountReceived((Math.round(num * 100) / 100).toString());
+                              } else {
+                                setAmountReceived(raw);
+                              }
+                            }}
+                          />
+                          {overpaymentAmt && !isSalesperson && (
+                            <p className="text-sm text-muted-foreground">
+                              Overpayment of <span className="font-medium text-foreground">RM{overpaymentAmt}</span> — will be transferred to you as commission.
+                            </p>
+                          )}
+                        </div>
+                        {showOverpaymentCol && (
+                          <div className="space-y-1 min-w-[48px]">
+                            <Label>Overpayment of RM{overpaymentAmt} goes to</Label>
+                            <Select
+                              value={overpaymentRecipient}
+                              onValueChange={(v) => { if (v) setOverpaymentRecipient(v as "seller" | "hq"); }}
+                            >
+                              <SelectTrigger>
+                                <SelectValue>
+                                  {overpaymentRecipient === "hq" ? "HQ" : "Me (salesperson)"}
+                                </SelectValue>
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="hq">HQ</SelectItem>
+                                <SelectItem value="seller">Me (salesperson)</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
                 </div>
               )}
             </div>
@@ -1655,6 +1694,15 @@ export function RecordSaleForm({
               <span className="font-medium">
                 RM{pricing ? (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2) : "0.00"}
               </span>
+              {overpaymentAmt && (
+                <>
+                  {" "}with an overpayment of{" "}
+                  <span className="font-medium">RM{overpaymentAmt}</span>
+                  {" "}(amount received:{" "}
+                  <span className="font-medium">RM{parseFloat(amountReceived).toFixed(2)}</span>
+                  )
+                </>
+              )}
               . Please confirm this is correct.
             </AlertDialogDescription>
           </AlertDialogHeader>
