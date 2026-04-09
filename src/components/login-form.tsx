@@ -51,13 +51,7 @@ export function LoginForm({
       setSignInComplete(true);
     } catch (err) {
       console.error("Sign-in error:", err);
-      const raw = err instanceof Error ? err.message : "";
-      const isCredentialError =
-        raw === "InvalidSecret" ||
-        raw === "InvalidAccountId" ||
-        raw.includes("InvalidSecret") ||
-        raw.includes("InvalidAccountId");
-      setError(isCredentialError ? "Invalid email or password." : (raw || "Sign-in failed. Please try again."));
+      setError("Invalid email or password.");
       setPending(false);
     }
   }
