@@ -19,7 +19,6 @@ import {
   PlusCircleIcon,
   HeartIcon,
   DollarSignIcon,
-  AlertCircleIcon,
   ClockIcon,
   TrendingUpIcon,
   ShoppingCartIcon,
@@ -49,15 +48,13 @@ function AdminDashboard() {
     const totalSales = sales.length;
     const totalUnits = sales.reduce((sum, s) => sum + s.totalQuantity, 0);
     const totalRevenue = sales.reduce((sum, s) => sum + s.totalAmount, 0);
+    const hqRevenue = sales.reduce((sum, s) => sum + (s.hqPrice ?? s.totalAmount), 0);
+    const totalAgentCommission = sales.reduce((sum, s) => sum + (s.agentCommission ?? 0), 0);
     const avgRevenue = totalSales > 0 ? totalRevenue / totalSales : 0;
-    const unpaidCount = sales.filter(
-      (s) => s.paymentStatus === "unpaid" || s.paymentStatus === "partial"
-    ).length;
-    const pendingStock = sales.filter(
-      (s) => s.fulfillmentStatus === "pending_stock"
-    ).length;
-    return { totalSales, totalUnits, totalRevenue, avgRevenue, unpaidCount, pendingStock };
+    return { totalSales, totalUnits, totalRevenue, hqRevenue, totalAgentCommission, avgRevenue };
   }, [sales]);
+
+  const pendingStockCount = pendingFulfillment?.length ?? 0;
 
   const recentSales = useMemo(() => {
     if (!sales) return [];
@@ -77,19 +74,7 @@ function AdminDashboard() {
   return (
     <>
       {/* Stats cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
-            <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold">RM{stats!.totalRevenue.toFixed(2)}</div>
-            <p className="text-xs text-muted-foreground">
-              RM{stats!.avgRevenue.toFixed(2)} avg per sale
-            </p>
-          </CardContent>
-        </Card>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Total Sales</CardTitle>
@@ -101,16 +86,40 @@ function AdminDashboard() {
               {stats!.totalUnits} units sold
             </p>
           </CardContent>
+        </Card>        
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Total Revenue</CardTitle>
+            <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-4xl font-bold">RM{Math.round(stats!.totalRevenue)}</div>
+            <p className="text-xs text-muted-foreground">
+              RM{Math.round(stats!.avgRevenue)} avg per sale
+            </p>
+          </CardContent>
         </Card>
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">Unpaid</CardTitle>
-            <AlertCircleIcon className="h-4 w-4 text-muted-foreground" />
+            <CardTitle className="text-sm font-medium">HQ Revenue</CardTitle>
+            <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">{stats!.unpaidCount}</div>
+            <div className="text-4xl font-bold">RM{Math.round(stats!.hqRevenue)}</div>
             <p className="text-xs text-muted-foreground">
-              {stats!.unpaidCount === 0 ? "All settled" : "pending payment"}
+              excluding agent commission
+            </p>
+          </CardContent>
+        </Card>
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between pb-2">
+            <CardTitle className="text-sm font-medium">Agent Commission</CardTitle>
+            <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
+          </CardHeader>
+          <CardContent>
+            <div className="text-4xl font-bold">RM{Math.round(stats!.totalAgentCommission)}</div>
+            <p className="text-xs text-muted-foreground">
+              total agent earnings
             </p>
           </CardContent>
         </Card>
@@ -120,9 +129,9 @@ function AdminDashboard() {
             <ClockIcon className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-4xl font-bold">{stats!.pendingStock}</div>
+            <div className="text-4xl font-bold">{pendingStockCount}</div>
             <p className="text-xs text-muted-foreground">
-              {stats!.pendingStock === 0 ? "All fulfilled" : "awaiting delivery"}
+              {pendingStockCount === 0 ? "All fulfilled" : "awaiting delivery"}
             </p>
           </CardContent>
         </Card>
@@ -152,6 +161,7 @@ function AdminDashboard() {
               agents={agents!}
               offers={offers!}
               showAgent
+              hideFilters
             />
           )}
         </CardContent>
@@ -181,6 +191,7 @@ function AdminDashboard() {
               agents={agents!}
               offers={offers!}
               showAgent
+              hideFilters
             />
           )}
         </CardContent>
@@ -300,27 +311,29 @@ function AgentSalesDashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-4xl font-bold">
-              RM{(stats?.totalRevenue ?? 0).toFixed(2)}
+              RM{Math.round(stats?.totalRevenue ?? 0)}
             </div>
             <p className="text-xs text-muted-foreground">
               across {stats?.totalSales ?? 0} sales
             </p>
           </CardContent>
         </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between pb-2">
-            <CardTitle className="text-sm font-medium">My Earnings</CardTitle>
-            <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
-          </CardHeader>
-          <CardContent>
-            <div className="text-4xl font-bold">
-              RM{(stats?.totalEarnings ?? 0).toFixed(2)}
-            </div>
-            <p className="text-xs text-muted-foreground">
-              total commission earned
-            </p>
-          </CardContent>
-        </Card>
+        {(stats?.totalEarnings ?? 0) > 0 && (
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between pb-2">
+              <CardTitle className="text-sm font-medium">My Earnings</CardTitle>
+              <DollarSignIcon className="h-4 w-4 text-muted-foreground" />
+            </CardHeader>
+            <CardContent>
+              <div className="text-4xl font-bold">
+                RM{Math.round(stats?.totalEarnings ?? 0)}
+              </div>
+              <p className="text-xs text-muted-foreground">
+                total commission earned
+              </p>
+            </CardContent>
+          </Card>
+        )}
         <Card>
           <CardHeader className="flex flex-row items-center justify-between pb-2">
             <CardTitle className="text-sm font-medium">Pending Fulfillment</CardTitle>
@@ -359,6 +372,7 @@ function AgentSalesDashboard() {
               products={products!}
               batches={batches!}
               offers={offers ?? []}
+              hideFilters
             />
           )}
         </CardContent>
@@ -388,6 +402,7 @@ function AgentSalesDashboard() {
               products={products!}
               batches={batches!}
               offers={offers ?? []}
+              hideFilters
             />
           )}
         </CardContent>
@@ -407,9 +422,11 @@ export default function DashboardPage() {
     <div className="space-y-6">
       <div>
         <h1 className="text-3xl font-semibold tracking-tight">Dashboard</h1>
-        <p className="text-muted-foreground">
-          Welcome back{user?.email ? `, ${user.email}` : ""}.
-        </p>
+        {user?.name && (
+          <p className="text-muted-foreground">
+            Welcome back, {user.name}.
+          </p>
+        )}
       </div>
 
       {user?.role === "admin" && <AdminDashboard />}

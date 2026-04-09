@@ -578,6 +578,7 @@ export function SalesTable({
   agents,
   offers,
   showAgent = false,
+  hideFilters = false,
 }: {
   sales: Doc<"sales">[];
   products: Doc<"products">[];
@@ -585,6 +586,7 @@ export function SalesTable({
   agents?: Doc<"users">[];
   offers?: Doc<"offers">[];
   showAgent?: boolean;
+  hideFilters?: boolean;
 }) {
   const productMap = new Map(products.map((p) => [p._id, p]));
   const batchMap = new Map(batches.map((b) => [b._id, b]));
@@ -727,7 +729,7 @@ export function SalesTable({
   return (
     <div className="space-y-3">
       {/* Filter bar */}
-      <div className="flex flex-1 flex-wrap items-center gap-2">
+      {!hideFilters && <div className="flex flex-1 flex-wrap items-center gap-2">
         <Input
           placeholder="Search customer..."
           value={search}
@@ -811,7 +813,7 @@ export function SalesTable({
             Clear
           </Button>
         )}
-      </div>
+      </div>}
 
       <div className="rounded-md border">
       <Table>
