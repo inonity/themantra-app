@@ -44,31 +44,60 @@ export async function requireAuth(
   return realUserId;
 }
 
+/**
+ * Checks whether the caller has an active quick switch session.
+ */
+async function hasActiveQuickSwitch(
+  ctx: QueryCtx | MutationCtx,
+  realUserId: Id<"users">
+): Promise<boolean> {
+  const session = await ctx.db
+    .query("quickSwitchSessions")
+    .withIndex("by_realUserId", (q) => q.eq("realUserId", realUserId))
+    .first();
+  return session !== null;
+}
+
 export async function requireRole(
   ctx: QueryCtx | MutationCtx,
   role: Role
 ): Promise<Doc<"users">> {
-  const userId = await requireAuth(ctx);
-  const user = await ctx.db.get(userId);
-  if (!user) {
+  const realUserId = await requireRealAuth(ctx);
+  const effectiveUserId = await requireAuth(ctx);
+  const effectiveUser = await ctx.db.get(effectiveUserId);
+  if (!effectiveUser) {
     throw new Error("User not found");
   }
-  if (user.role !== role) {
+
+  // During quick switch the real user (admin) is authorized for everything.
+  // Skip the role check so queries don't throw during page transitions.
+  if (realUserId !== effectiveUserId && await hasActiveQuickSwitch(ctx, realUserId)) {
+    return effectiveUser;
+  }
+
+  if (effectiveUser.role !== role) {
     throw new Error(`Requires role: ${role}`);
   }
-  return user;
+  return effectiveUser;
 }
 
 export async function requireSeller(
   ctx: QueryCtx | MutationCtx
 ): Promise<Doc<"users">> {
-  const userId = await requireAuth(ctx);
-  const user = await ctx.db.get(userId);
-  if (!user) {
+  const realUserId = await requireRealAuth(ctx);
+  const effectiveUserId = await requireAuth(ctx);
+  const effectiveUser = await ctx.db.get(effectiveUserId);
+  if (!effectiveUser) {
     throw new Error("User not found");
   }
-  if (!isSellerRole(user.role)) {
+
+  // During quick switch the real user (admin) is authorized for everything.
+  if (realUserId !== effectiveUserId && await hasActiveQuickSwitch(ctx, realUserId)) {
+    return effectiveUser;
+  }
+
+  if (!isSellerRole(effectiveUser.role)) {
     throw new Error("Requires agent or sales role");
   }
-  return user;
+  return effectiveUser;
 }
