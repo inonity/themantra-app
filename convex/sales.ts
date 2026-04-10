@@ -1848,6 +1848,8 @@ export const selfFulfillFromHQ = mutation({
       const resolved = await resolveAgentPrice(ctx, sellerId, lineItem.productId, variantId);
 
       // 2. Stock movement: business → agent (the "pull" from HQ)
+      // NOTE: Do NOT set saleId here — this is an intermediate transfer, not the sale itself.
+      // getWithLineItems queries stockMovements by saleId, so including it here would duplicate items.
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: lineItem.productId,
@@ -1858,7 +1860,6 @@ export const selfFulfillFromHQ = mutation({
         quantity: item.quantity,
         movedAt,
         recordedBy: userId,
-        saleId: args.saleId,
         stockModel: agentStockModel,
         hqUnitPrice: Math.round(resolved.hqUnitPrice * 100) / 100,
       });

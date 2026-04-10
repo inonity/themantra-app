@@ -517,6 +517,11 @@ export default defineSchema({
     .index("by_agentId_and_status", ["agentId", "status"])
     .index("by_agentId_and_createdAt", ["agentId", "createdAt"]),
 
+  quickSwitchSessions: defineTable({
+    realUserId: v.id("users"), // the admin who initiated the switch
+    actingAsUserId: v.id("users"), // the user being impersonated
+  }).index("by_realUserId", ["realUserId"]),
+
   stockRequests: defineTable({
     agentId: v.id("users"),
     productId: v.id("products"),

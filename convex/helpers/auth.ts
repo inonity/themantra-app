@@ -8,7 +8,11 @@ export function isSellerRole(role: string | undefined): boolean {
   return role === "agent" || role === "sales";
 }
 
-export async function requireAuth(
+/**
+ * Returns the real authenticated user ID (ignores quick switch).
+ * Use this for quick switch management and sensitive operations like password changes.
+ */
+export async function requireRealAuth(
   ctx: QueryCtx | MutationCtx
 ): Promise<Id<"users">> {
   const userId = await getAuthUserId(ctx);
@@ -16,6 +20,28 @@ export async function requireAuth(
     throw new Error("Not authenticated");
   }
   return userId;
+}
+
+/**
+ * Returns the effective user ID — the impersonated user if a quick switch
+ * session is active, otherwise the real authenticated user.
+ */
+export async function requireAuth(
+  ctx: QueryCtx | MutationCtx
+): Promise<Id<"users">> {
+  const realUserId = await requireRealAuth(ctx);
+
+  // Check for active quick switch session
+  const session = await ctx.db
+    .query("quickSwitchSessions")
+    .withIndex("by_realUserId", (q) => q.eq("realUserId", realUserId))
+    .first();
+
+  if (session) {
+    return session.actingAsUserId;
+  }
+
+  return realUserId;
 }
 
 export async function requireRole(

@@ -20,11 +20,15 @@ import {
   ChevronsUpDown,
   LogOut,
   Settings,
+  ArrowLeftRight,
 } from "lucide-react"
 import Link from "next/link"
-import { usePathname } from "next/navigation"
+import { usePathname, useRouter } from "next/navigation"
 import { useAuthActions } from "@convex-dev/auth/react"
+import { useQuery, useMutation } from "convex/react"
+import { api } from "../../convex/_generated/api"
 import { useCurrentUser } from "@/hooks/useStoreUserEffect"
+import { useQuickSwitchDialog } from "@/components/quick-switch-context"
 
 import {
   Sidebar,
@@ -48,6 +52,15 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Badge } from "@/components/ui/badge"
+import type { Id } from "../../convex/_generated/dataModel"
 
 const adminNav = [
   {
@@ -178,14 +191,59 @@ const salesNav = [
   },
 ]
 
+function capitalizeRole(role: string | undefined) {
+  if (!role) return ""
+  return role.charAt(0).toUpperCase() + role.slice(1)
+}
+
+function getInitials(name: string | undefined) {
+  if (!name) return "?"
+  return name
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
+    .toUpperCase()
+    .slice(0, 2)
+}
+
 export function AppSidebar() {
   const user = useCurrentUser()
   const pathname = usePathname()
+  const router = useRouter()
   const { signOut } = useAuthActions()
   const { isMobile, setOpenMobile } = useSidebar()
+  const { dialogOpen: switchDialogOpen, setDialogOpen: setSwitchDialogOpen } = useQuickSwitchDialog()
+
+  const quickSwitchStatus = useQuery(api.quickSwitch.getStatus)
+  const switchableUsers = useQuery(
+    api.quickSwitch.listSwitchableUsers,
+    quickSwitchStatus?.realUser ? {} : "skip"
+  )
+  const startSession = useMutation(api.quickSwitch.startSession)
+  const endSession = useMutation(api.quickSwitch.endSession)
+
+  const isAdmin = quickSwitchStatus?.realUser?.role === "admin"
+  const isImpersonating = quickSwitchStatus?.isActive === true
 
   function closeMobile() {
     if (isMobile) setOpenMobile(false)
+  }
+
+  function openSwitchDialog() {
+    if (isMobile) setOpenMobile(false)
+    setSwitchDialogOpen(true)
+  }
+
+  async function handleSwitchUser(targetUserId: Id<"users">) {
+    await startSession({ targetUserId })
+    setSwitchDialogOpen(false)
+    router.push("/dashboard")
+  }
+
+  async function handleSwitchBack() {
+    await endSession()
+    setSwitchDialogOpen(false)
+    router.push("/dashboard")
   }
 
   const navItems =
@@ -206,7 +264,20 @@ export function AppSidebar() {
         .slice(0, 2)
     : "?"
 
+  // Build the sorted user list for the dialog:
+  // When impersonating: current target first, then admin (switch back), then separator, then rest
+  // When not impersonating: all users with separators between each
+  const filteredUsers = switchableUsers?.filter(
+    (u) =>
+      !(
+        isImpersonating &&
+        quickSwitchStatus?.isActive &&
+        quickSwitchStatus.actingAsUser?._id === u._id
+      )
+  )
+
   return (
+    <>
     <Sidebar>
       <SidebarHeader>
         <SidebarMenu>
@@ -319,6 +390,15 @@ export function AppSidebar() {
                   </div>
                 </div>
                 <DropdownMenuSeparator />
+                {isAdmin && (
+                  <>
+                    <DropdownMenuItem onClick={openSwitchDialog}>
+                      <ArrowLeftRight />
+                      Switch Account
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                  </>
+                )}
                 <DropdownMenuItem render={<Link href="/dashboard/settings" />} onClick={closeMobile}>
                   <Settings />
                   Settings
@@ -335,5 +415,120 @@ export function AppSidebar() {
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>
+
+    {/* Dialog rendered outside Sidebar so it's not hidden when sidebar closes on mobile */}
+    <Dialog open={switchDialogOpen} onOpenChange={setSwitchDialogOpen}>
+      <DialogContent className="sm:max-w-md">
+        <DialogHeader>
+          <DialogTitle>Switch Account</DialogTitle>
+          <DialogDescription>
+            Switch to another account to view and act as that user.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="max-h-80 overflow-y-auto">
+          {/* Current target (the account admin is acting as) — shown first */}
+          {isImpersonating &&
+            quickSwitchStatus?.isActive &&
+            (() => {
+              const currentUser = quickSwitchStatus.actingAsUser
+              return (
+                <div className="flex items-center gap-3 rounded-lg border bg-muted/50 p-3">
+                  <Avatar className="h-9 w-9 rounded-lg">
+                    <AvatarFallback className="rounded-lg text-xs">
+                      {getInitials(currentUser.name)}
+                    </AvatarFallback>
+                  </Avatar>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">
+                        {currentUser.name}
+                      </span>
+                      <Badge variant="secondary">
+                        {capitalizeRole(currentUser.role)}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground truncate">
+                      {currentUser.email}
+                    </p>
+                  </div>
+                  <Badge variant="outline">Current</Badge>
+                </div>
+              )
+            })()}
+
+          {/* Switch back to admin */}
+          {isImpersonating && quickSwitchStatus?.realUser && (
+            <>
+              <div className="h-px bg-border my-2" />
+              <button
+                onClick={handleSwitchBack}
+                className="flex w-full items-center gap-3 rounded-lg border border-transparent p-3 text-left hover:bg-accent transition-colors"
+              >
+                <Avatar className="h-9 w-9 rounded-lg">
+                  <AvatarFallback className="rounded-lg text-xs">
+                    {getInitials(quickSwitchStatus.realUser.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {quickSwitchStatus.realUser.name}
+                    </span>
+                    <Badge variant="secondary">Admin</Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {quickSwitchStatus.realUser.email}
+                  </p>
+                </div>
+                <span className="text-xs text-primary font-medium shrink-0">
+                  Switch back
+                </span>
+              </button>
+            </>
+          )}
+
+          {/* Separator before user list */}
+          {filteredUsers && filteredUsers.length > 0 && (
+            <div className="h-px bg-border my-2" />
+          )}
+
+          {/* Other switchable users (exclude current target) */}
+          {filteredUsers?.map((u, i) => (
+            <div key={u._id}>
+              {i > 0 && <div className="h-px bg-border my-1" />}
+              <button
+                onClick={() => handleSwitchUser(u._id)}
+                className="flex w-full items-center gap-3 rounded-lg border border-transparent p-3 text-left hover:bg-accent transition-colors"
+              >
+                <Avatar className="h-9 w-9 rounded-lg">
+                  <AvatarFallback className="rounded-lg text-xs">
+                    {getInitials(u.name)}
+                  </AvatarFallback>
+                </Avatar>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">
+                      {u.name}
+                    </span>
+                    <Badge variant="secondary">
+                      {capitalizeRole(u.role)}
+                    </Badge>
+                  </div>
+                  <p className="text-xs text-muted-foreground truncate">
+                    {u.email}
+                  </p>
+                </div>
+              </button>
+            </div>
+          ))}
+          {switchableUsers?.length === 0 && (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              No agents or salespersons to switch to.
+            </p>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+    </>
   )
 }

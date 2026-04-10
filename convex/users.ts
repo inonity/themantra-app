@@ -9,11 +9,23 @@ const EMAIL_CONFIRM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 export const current = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
+    const realUserId = await getAuthUserId(ctx);
+    if (!realUserId) {
       return null;
     }
-    return await ctx.db.get(userId);
+
+    // Check for active quick switch session
+    const session = await ctx.db
+      .query("quickSwitchSessions")
+      .withIndex("by_realUserId", (q) => q.eq("realUserId", realUserId))
+      .first();
+
+    if (session) {
+      const actingAsUser = await ctx.db.get(session.actingAsUserId);
+      if (actingAsUser) return actingAsUser;
+    }
+
+    return await ctx.db.get(realUserId);
   },
 });
 
@@ -210,8 +222,18 @@ export const cancelPendingEmail = mutation({
 export const getSettingsData = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) return null;
+    const realUserId = await getAuthUserId(ctx);
+    if (!realUserId) return null;
+
+    // Resolve effective user (quick switch aware)
+    let userId = realUserId;
+    const session = await ctx.db
+      .query("quickSwitchSessions")
+      .withIndex("by_realUserId", (q) => q.eq("realUserId", realUserId))
+      .first();
+    if (session) {
+      userId = session.actingAsUserId;
+    }
 
     const user = await ctx.db.get(userId);
     if (!user) return null;
