@@ -57,7 +57,7 @@ function customerKey(sale: Doc<"sales">): string | null {
   const c = sale.customerDetail;
   if (!c) return null;
   const email = c.email?.trim().toLowerCase();
-  const phone = c.phone?.replace(/\s+/g, "");
+  const phone = c.phone?.replace(/[^\d+]/g, "");
   if (email) return `e:${email}`;
   if (phone) return `p:${phone}`;
   if (c.name) return `n:${c.name.trim().toLowerCase()}`;
