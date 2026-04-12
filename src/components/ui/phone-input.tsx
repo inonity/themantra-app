@@ -20,7 +20,8 @@ const COUNTRIES = [
 const SORTED = [...COUNTRIES].sort((a, b) => b.dial.length - a.dial.length);
 
 function sanitize(v: string): string {
-  return v.replace(/[\s\-]/g, "");
+  // Only keep digits and +, strip everything else
+  return v.replace(/[^0-9+]/g, "");
 }
 
 function parse(value: string): { dial: string; number: string } {
@@ -76,7 +77,7 @@ export function PhoneInput({
         type="tel"
         value={number}
         onChange={(e) => {
-          const sanitized = e.target.value.replace(/[\s\-]/g, "");
+          const sanitized = sanitize(e.target.value);
           // If pasted value already has a country code, parse it as a full number
           if (sanitized.startsWith("+")) {
             const parsed = parse(sanitized);
