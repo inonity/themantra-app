@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { PhoneInput } from "@/components/ui/phone-input";
 
 function formatDateForInput(timestamp: number): string {
   const d = new Date(timestamp);
@@ -122,11 +123,10 @@ export function EditSaleDialog({
               </div>
               <div className="space-y-2">
                 <Label htmlFor="edit-customer-phone">Phone</Label>
-                <Input
+                <PhoneInput
                   id="edit-customer-phone"
                   value={customerPhone}
-                  onChange={(e) => setCustomerPhone(e.target.value)}
-                  placeholder="Phone number"
+                  onChange={setCustomerPhone}
                 />
               </div>
               <div className="space-y-2">

@@ -19,13 +19,18 @@ const COUNTRIES = [
 // Sort longest dial code first so prefix matching is unambiguous
 const SORTED = [...COUNTRIES].sort((a, b) => b.dial.length - a.dial.length);
 
+function sanitize(v: string): string {
+  return v.replace(/[\s\-]/g, "");
+}
+
 function parse(value: string): { dial: string; number: string } {
+  const clean = sanitize(value);
   for (const c of SORTED) {
-    if (value.startsWith(c.dial)) {
-      return { dial: c.dial, number: value.slice(c.dial.length) };
+    if (clean.startsWith(c.dial)) {
+      return { dial: c.dial, number: clean.slice(c.dial.length) };
     }
   }
-  return { dial: "+60", number: value };
+  return { dial: "+60", number: clean };
 }
 
 interface PhoneInputProps {
@@ -70,7 +75,16 @@ export function PhoneInput({
         id={id}
         type="tel"
         value={number}
-        onChange={(e) => onChange(dial + e.target.value)}
+        onChange={(e) => {
+          const sanitized = e.target.value.replace(/[\s\-]/g, "");
+          // If pasted value already has a country code, parse it as a full number
+          if (sanitized.startsWith("+")) {
+            const parsed = parse(sanitized);
+            onChange(parsed.dial + parsed.number);
+          } else {
+            onChange(dial + sanitized);
+          }
+        }}
         placeholder={placeholder}
         required={required}
         className="flex-1 bg-transparent px-2.5 py-1 outline-none placeholder:text-muted-foreground md:text-sm"
