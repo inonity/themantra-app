@@ -20,19 +20,29 @@ type Row = {
   threshold: number;
 };
 
-export function LowStockCard({ rows }: { rows: Row[] }) {
+export function LowStockCard({
+  rows,
+  description = "HQ inventory below threshold",
+  href = "/dashboard/stock",
+  linkLabel = "Stock",
+}: {
+  rows: Row[];
+  description?: string;
+  href?: string;
+  linkLabel?: string;
+}) {
   return (
     <Card>
       <CardHeader className="flex flex-row items-center justify-between">
         <div>
           <CardTitle>Low stock</CardTitle>
-          <CardDescription>HQ inventory below threshold</CardDescription>
+          <CardDescription>{description}</CardDescription>
         </div>
         <Link
-          href="/dashboard/inventory"
+          href={href}
           className={buttonVariants({ variant: "outline", size: "sm" })}
         >
-          Inventory
+          {linkLabel}
         </Link>
       </CardHeader>
       <CardContent>

@@ -7,8 +7,10 @@ import { Calendar } from "@/components/ui/calendar";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Separator } from "@/components/ui/separator";
 import {
+  BUSINESS_START_MS,
   DateRange,
   DateRangePreset,
+  MY_OFFSET_MS,
   PRESET_LABELS,
   customRange,
   formatRangeLabel,
@@ -100,6 +102,7 @@ export function DateRangePicker({ preset, range, onChange, className }: Props) {
             <Calendar
               mode="range"
               numberOfMonths={2}
+              disabled={{ before: new Date(BUSINESS_START_MS + MY_OFFSET_MS) }}
               selected={selected}
               onSelect={(sel) => {
                 if (!sel?.from) return;

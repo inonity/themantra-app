@@ -1330,6 +1330,72 @@ export const markPaid = mutation({
   },
 });
 
+export const updateSaleDetails = mutation({
+  args: {
+    saleId: v.id("sales"),
+    customerDetail: v.optional(
+      v.object({
+        name: v.string(),
+        phone: v.optional(v.string()),
+        email: v.optional(v.string()),
+      })
+    ),
+    // Per-line-item fulfilled dates: { lineItemIndex: timestamp }
+    lineItemFulfilledDates: v.optional(
+      v.array(v.object({ index: v.number(), fulfilledAt: v.number() }))
+    ),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale) throw new Error("Sale not found");
+
+    // Only the seller or admin can edit
+    if (user.role !== "admin" && sale.sellerId !== userId) {
+      throw new Error("Not authorized to edit this sale");
+    }
+
+    const patch: Record<string, unknown> = {};
+
+    if (args.customerDetail !== undefined) {
+      patch.customerDetail = args.customerDetail;
+    }
+
+    if (args.lineItemFulfilledDates && args.lineItemFulfilledDates.length > 0) {
+      if (!sale.lineItems) throw new Error("Sale has no line items");
+
+      const updatedLineItems = [...sale.lineItems];
+      for (const entry of args.lineItemFulfilledDates) {
+        if (entry.index < 0 || entry.index >= updatedLineItems.length) {
+          throw new Error(`Invalid line item index: ${entry.index}`);
+        }
+        const li = updatedLineItems[entry.index];
+        if (!li.fulfilledQuantity || li.fulfilledQuantity === 0) {
+          throw new Error(`Line item ${entry.index} is not fulfilled`);
+        }
+        updatedLineItems[entry.index] = { ...li, fulfilledAt: entry.fulfilledAt };
+      }
+      patch.lineItems = updatedLineItems;
+
+      // Recalculate sale-level fulfilledAt as the latest line item date
+      if (sale.fulfillmentStatus === "fulfilled") {
+        let maxDate = 0;
+        for (const li of updatedLineItems) {
+          if (li.fulfilledAt && li.fulfilledAt > maxDate) maxDate = li.fulfilledAt;
+        }
+        if (maxDate > 0) patch.fulfilledAt = maxDate;
+      }
+    }
+
+    if (Object.keys(patch).length > 0) {
+      await ctx.db.patch(args.saleId, patch);
+    }
+  },
+});
+
 // Admin: list all sales
 export const list = query({
   args: {},

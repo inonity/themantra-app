@@ -18,10 +18,11 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filter";
+import { EditSaleDialog } from "./edit-sale-dialog";
 
 const PAYMENT_LABELS: Record<string, string> = {
   paid: "Paid",
@@ -239,7 +240,7 @@ function SaleLineItems({
   const variantSizeMap = new Map(
     (allVariants ?? []).filter((v) => v.sizeMl != null).map((v) => [v._id, v.sizeMl!])
   );
-  const totalCols = showAgent ? 8 : 7;
+  const totalCols = showAgent ? 9 : 8;
 
   // Use snapshotted offer if available, fall back to live offer for old sales
   const effectiveOffer: OfferLike | null | undefined = sale.offerSnapshot ?? offer;
@@ -606,6 +607,7 @@ export function SalesTable({
   const [dateTo, setDateTo] = useState("");
   const [sortCol, setSortCol] = useState<"date" | "amount">("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
+  const [editingSale, setEditingSale] = useState<Doc<"sales"> | null>(null);
 
   function handleSort(col: "date" | "amount") {
     if (sortCol === col) {
@@ -845,6 +847,7 @@ export function SalesTable({
                 Amount
               </Button>
             </TableHead>
+            <TableHead className="w-[40px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -920,6 +923,19 @@ export function SalesTable({
                     </span>
                   </div>
                 </TableCell>
+                <TableCell className="w-[40px] pl-0">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 w-7 p-0"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setEditingSale(sale);
+                    }}
+                  >
+                    <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                  </Button>
+                </TableCell>
               </TableRow>
 
               {isExpanded && (
@@ -934,7 +950,7 @@ export function SalesTable({
                   />
                   <SalePaymentDetails
                     sale={sale}
-                    totalCols={showAgent ? 8 : 7}
+                    totalCols={showAgent ? 9 : 8}
                   />
                 </>
               )}
@@ -944,6 +960,16 @@ export function SalesTable({
         </TableBody>
       </Table>
       </div>
+
+      {editingSale && (
+        <EditSaleDialog
+          sale={editingSale}
+          open={!!editingSale}
+          onOpenChange={(open) => {
+            if (!open) setEditingSale(null);
+          }}
+        />
+      )}
     </div>
   );
 }

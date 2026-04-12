@@ -290,6 +290,8 @@ function AdminDashboard() {
             productId: r.productId as unknown as string,
             variantId: r.variantId as unknown as string | undefined,
           }))}
+          href="/dashboard/stock"
+          linkLabel="Stock"
         />
       </div>
 
@@ -387,6 +389,7 @@ function AgentSalesDashboard() {
     to: range.to,
     groupByVariant,
   });
+  const lowStock = useQuery(api.dashboard.getLowStockProducts, {});
 
   // Existing tables
   const sales = useQuery(api.sales.listByAgent);
@@ -440,16 +443,18 @@ function AgentSalesDashboard() {
       </div>
 
       {/* Filter */}
-      <div className="flex flex-col gap-1">
-        <Label className="text-xs text-muted-foreground">Period</Label>
-        <DateRangePicker
-          preset={preset}
-          range={range}
-          onChange={(p, r) => {
-            setPreset(p);
-            setRange(r);
-          }}
-        />
+      <div className="flex flex-wrap items-end gap-3">
+        <div className="flex flex-col gap-1">
+          <Label className="text-xs text-muted-foreground">Period</Label>
+          <DateRangePicker
+            preset={preset}
+            range={range}
+            onChange={(p, r) => {
+              setPreset(p);
+              setRange(r);
+            }}
+          />
+        </div>
       </div>
 
       {/* Stat cards */}
@@ -515,7 +520,7 @@ function AgentSalesDashboard() {
       </div>
 
       {/* Extras */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MiniMetricCard
           title="Interest → Sale"
           description="Your conversion rate"
@@ -545,6 +550,16 @@ function AgentSalesDashboard() {
               ? `${stats.repeatCustomer.repeatSales} of ${stats.repeatCustomer.totalSales}`
               : undefined
           }
+        />
+        <LowStockCard
+          rows={(lowStock ?? []).map((r) => ({
+            ...r,
+            productId: r.productId as unknown as string,
+            variantId: r.variantId as unknown as string | undefined,
+          }))}
+          description="Your inventory below threshold"
+          href="/dashboard/inventory"
+          linkLabel="Inventory"
         />
         <FulfillmentHealth
           avgDaysToFulfill={stats?.fulfillment.avgDaysToFulfill ?? null}

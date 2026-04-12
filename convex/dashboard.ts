@@ -472,14 +472,22 @@ export const getBatchMaturationAlerts = query({
 export const getLowStockProducts = query({
   args: { threshold: v.optional(v.number()) },
   handler: async (ctx, args) => {
-    const { isAdmin } = await resolveSellerScope(ctx, undefined);
-    if (!isAdmin) return [];
+    const { sellerId, isAdmin } = await resolveSellerScope(ctx, undefined);
 
     const threshold = args.threshold ?? 10;
-    const inv = await ctx.db
-      .query("inventory")
-      .withIndex("by_heldByType_and_heldById", (q) => q.eq("heldByType", "business"))
-      .take(1000);
+
+    // Admins see HQ (business) inventory; agents see their own held inventory
+    const inv = isAdmin
+      ? await ctx.db
+          .query("inventory")
+          .withIndex("by_heldByType_and_heldById", (q) => q.eq("heldByType", "business"))
+          .take(1000)
+      : await ctx.db
+          .query("inventory")
+          .withIndex("by_heldByType_and_heldById", (q) =>
+            q.eq("heldByType", "agent").eq("heldById", sellerId!)
+          )
+          .take(1000);
 
     type Row = { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number };
     const rows: Record<string, Row> = {};

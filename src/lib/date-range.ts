@@ -1,6 +1,10 @@
 // Malaysia is fixed UTC+8 (no DST).
 export const MY_OFFSET_MS = 8 * 60 * 60 * 1000;
 
+// Business started on 13 March 2026 (Malaysia time).
+// All date ranges are clamped so they never start before this date.
+export const BUSINESS_START_MS = Date.UTC(2026, 2, 13) - MY_OFFSET_MS; // 2026-03-13 00:00 MYT
+
 export type DateRange = { from: number; to: number };
 
 export type DateRangePreset =
@@ -61,28 +65,36 @@ export function rangeForPreset(preset: DateRangePreset, now: number = Date.now()
   const today = myParts(now);
   const todayKey = myDateKey(now);
 
+  let range: DateRange;
+
   switch (preset) {
     case "today":
-      return dayRange(todayKey, todayKey);
+      range = dayRange(todayKey, todayKey);
+      break;
     case "yesterday": {
       const y = myDateKey(now - 24 * 3600 * 1000);
-      return dayRange(y, y);
+      range = dayRange(y, y);
+      break;
     }
     case "last7": {
       const startKey = myDateKey(now - 6 * 24 * 3600 * 1000);
-      return dayRange(startKey, todayKey);
+      range = dayRange(startKey, todayKey);
+      break;
     }
     case "last30": {
       const startKey = myDateKey(now - 29 * 24 * 3600 * 1000);
-      return dayRange(startKey, todayKey);
+      range = dayRange(startKey, todayKey);
+      break;
     }
     case "last90": {
       const startKey = myDateKey(now - 89 * 24 * 3600 * 1000);
-      return dayRange(startKey, todayKey);
+      range = dayRange(startKey, todayKey);
+      break;
     }
     case "thisMonth": {
       const startKey = `${today.year}-${String(today.month + 1).padStart(2, "0")}-01`;
-      return dayRange(startKey, todayKey);
+      range = dayRange(startKey, todayKey);
+      break;
     }
     case "lastMonth": {
       const prev = new Date(Date.UTC(today.year, today.month - 1, 1));
@@ -91,17 +103,27 @@ export function rangeForPreset(preset: DateRangePreset, now: number = Date.now()
       const startKey = `${py}-${String(pm + 1).padStart(2, "0")}-01`;
       const lastDay = new Date(Date.UTC(py, pm + 1, 0)).getUTCDate();
       const endKey = `${py}-${String(pm + 1).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
-      return dayRange(startKey, endKey);
+      range = dayRange(startKey, endKey);
+      break;
     }
     case "thisYear": {
       const startKey = `${today.year}-01-01`;
-      return dayRange(startKey, todayKey);
+      range = dayRange(startKey, todayKey);
+      break;
     }
     case "allTime":
-      return { from: 0, to: now };
+      range = { from: BUSINESS_START_MS, to: now };
+      break;
     case "custom":
-      return dayRange(todayKey, todayKey);
+      range = dayRange(todayKey, todayKey);
+      break;
   }
+
+  // Clamp: never start before the business launch date
+  if (range.from < BUSINESS_START_MS) {
+    range = { ...range, from: BUSINESS_START_MS };
+  }
+  return range;
 }
 
 // For delta comparisons: return a range of equal length immediately preceding `range`.
@@ -133,7 +155,11 @@ export function localDateToMyKey(date: Date): string {
 }
 
 export function customRange(fromKey: string, toKey: string): DateRange {
-  return dayRange(fromKey, toKey);
+  const range = dayRange(fromKey, toKey);
+  if (range.from < BUSINESS_START_MS) {
+    return { ...range, from: BUSINESS_START_MS };
+  }
+  return range;
 }
 
 export function dayCount(range: DateRange): number {
