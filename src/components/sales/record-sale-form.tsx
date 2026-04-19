@@ -851,8 +851,8 @@ export function RecordSaleForm({
       )
     : [];
 
-  // HQ inventory available for auto-fulfill (salesperson only, non-presell)
-  const availableHQInventory = isSalesperson && !isPresell
+  // HQ inventory available for auto-fulfill (salesperson only — works in any stock model)
+  const availableHQInventory = isSalesperson
     ? (businessInventory ?? []).filter(
         (inv) => inv.quantity > 0 && (usedHQBatchCounts.get(inv.batchId) ?? 0) < inv.quantity
       )
@@ -1200,8 +1200,8 @@ export function RecordSaleForm({
                   </TableRow>
                 )}
 
-                {/* Add from HQ inventory — auto-fulfill (non-presell: pull from HQ + fulfill in 1 click) */}
-                {!isPresell && availableHQInventory.length > 0 && (
+                {/* Add from HQ inventory — auto-fulfill (salesperson: pull from HQ + fulfill in 1 click, any stock model) */}
+                {availableHQInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
