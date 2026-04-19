@@ -437,28 +437,19 @@ export function InventoryBreakdown({
                       const holderCompositeKey = `${product._id}_${holder.holderKey}`;
                       const isHolderExpanded =
                         expandedHolders.has(holderCompositeKey);
-                      const hasMultipleEntries = holder.entries.length > 1;
 
                       return (
                         <Fragment key={holder.holderKey}>
                           <TableRow
-                            className={
-                              hasMultipleEntries
-                                ? "bg-muted/30 cursor-pointer hover:bg-muted/50"
-                                : "bg-muted/30"
-                            }
-                            onClick={() =>
-                              hasMultipleEntries &&
-                              toggleHolder(holderCompositeKey)
-                            }
+                            className="bg-muted/30 cursor-pointer hover:bg-muted/50"
+                            onClick={() => toggleHolder(holderCompositeKey)}
                           >
                             <TableCell className="pl-6">
-                              {hasMultipleEntries &&
-                                (isHolderExpanded ? (
-                                  <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                                ) : (
-                                  <ChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                                ))}
+                              {isHolderExpanded ? (
+                                <ChevronDownIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                              ) : (
+                                <ChevronRightIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                              )}
                             </TableCell>
                             <TableCell className="pl-8 text-sm">
                               <span className="font-medium">{holder.label}</span>
