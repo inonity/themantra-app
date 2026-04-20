@@ -41,15 +41,19 @@ const PRESETS: DateRangePreset[] = [
 
 export function DateRangePicker({ preset, range, onChange, className }: Props) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState<{ from: Date; to?: Date } | undefined>(
+    undefined,
+  );
 
-  // react-day-picker range selection state, derived from incoming range
-  const selected =
-    preset === "allTime"
+  // react-day-picker range selection state — prefer in-progress draft over committed range
+  const selected: { from: Date; to?: Date } | undefined =
+    draft ??
+    (preset === "allTime"
       ? undefined
       : {
-          from: new Date(range.from + 8 * 3600 * 1000),
-          to: new Date(range.to + 8 * 3600 * 1000),
-        };
+          from: new Date(range.from + MY_OFFSET_MS),
+          to: new Date(range.to + MY_OFFSET_MS),
+        });
 
   const label =
     preset === "custom"
@@ -57,7 +61,13 @@ export function DateRangePicker({ preset, range, onChange, className }: Props) {
       : PRESET_LABELS[preset];
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover
+      open={open}
+      onOpenChange={(o) => {
+        setOpen(o);
+        if (!o) setDraft(undefined);
+      }}
+    >
       <PopoverTrigger
         render={
           <Button variant="outline" className={cn("justify-start gap-2", className)} />
@@ -81,6 +91,7 @@ export function DateRangePicker({ preset, range, onChange, className }: Props) {
                 size="sm"
                 className="justify-start"
                 onClick={() => {
+                  setDraft(undefined);
                   onChange(p, rangeForPreset(p));
                   setOpen(false);
                 }}
@@ -93,7 +104,10 @@ export function DateRangePicker({ preset, range, onChange, className }: Props) {
               variant={preset === "custom" ? "secondary" : "ghost"}
               size="sm"
               className="justify-start"
-              onClick={() => onChange("custom", range)}
+              onClick={() => {
+                setDraft(undefined);
+                onChange("custom", range);
+              }}
             >
               {PRESET_LABELS.custom}
             </Button>
@@ -104,15 +118,24 @@ export function DateRangePicker({ preset, range, onChange, className }: Props) {
               numberOfMonths={2}
               disabled={{ before: new Date(BUSINESS_START_MS + MY_OFFSET_MS) }}
               selected={selected}
-              onSelect={(sel) => {
-                if (!sel?.from) return;
-                const fromKey = localDateToMyKey(sel.from);
-                const toKey = sel.to
-                  ? localDateToMyKey(sel.to)
-                  : fromKey;
-                const r = customRange(fromKey, toKey);
-                onChange("custom", r);
-                if (sel.to) setOpen(false);
+              onSelect={() => {
+                // managed via onDayClick so clicks after a complete range start a new selection
+              }}
+              onDayClick={(day, modifiers) => {
+                if (modifiers.disabled) return;
+                if (!draft || !draft.from || draft.to) {
+                  setDraft({ from: day, to: undefined });
+                  return;
+                }
+                let from = draft.from;
+                let to = day;
+                if (to < from) [from, to] = [to, from];
+                setDraft(undefined);
+                onChange(
+                  "custom",
+                  customRange(localDateToMyKey(from), localDateToMyKey(to)),
+                );
+                setOpen(false);
               }}
               defaultMonth={
                 selected?.from ?? myDateKeyToLocalDate(new Date().toISOString().slice(0, 10))
