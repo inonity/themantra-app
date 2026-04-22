@@ -5,7 +5,9 @@ import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { InventoryBreakdown } from "@/components/stock/inventory-breakdown";
+import { ReportStockLossDialog } from "@/components/stock/report-loss-dialog";
 import { ReturnFormDialog } from "@/components/stock/return-form-dialog";
+import { StockLossesTable } from "@/components/stock/stock-losses-table";
 import { TransferFormDialog } from "@/components/stock/transfer-form-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,13 +25,15 @@ import {
   TabsList,
   TabsTrigger,
 } from "@/components/ui/tabs";
-import {
-  Card,
-  CardContent,
-} from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FacetedFilter } from "@/components/stock/faceted-filter";
-import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, Undo2Icon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, Undo2Icon, AlertTriangleIcon, ChevronDownIcon } from "lucide-react";
 import { useState, useMemo } from "react";
 
 type EnrichedRequest = {
@@ -261,6 +265,10 @@ export default function StockPage() {
   const pending = useQuery(api.stockRequests.listPending) ?? [];
   const allRequests = useQuery(api.stockRequests.listAll) ?? [];
 
+  const [activeDialog, setActiveDialog] = useState<
+    null | "loss" | "return" | "transfer"
+  >(null);
+
   const isLoading =
     inventory === undefined ||
     products === undefined ||
@@ -281,65 +289,109 @@ export default function StockPage() {
             </p>
           </div>
           {products && (
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <ReturnFormDialog products={products}>
-                <Button variant="outline" className="w-full sm:w-auto">
-                  <Undo2Icon className="h-4 w-4 mr-2" />
-                  Return Stock
-                </Button>
-              </ReturnFormDialog>
-              <TransferFormDialog products={products}>
-                <Button className="w-full sm:w-auto">
-                  <ArrowRightLeftIcon className="h-4 w-4 mr-2" />
-                  Distribute Stock
-                </Button>
-              </TransferFormDialog>
-            </div>
+            <>
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button className="w-full sm:w-auto">
+                      Stock Actions
+                      <ChevronDownIcon className="h-4 w-4 ml-1" />
+                    </Button>
+                  }
+                />
+                <DropdownMenuContent align="end" className="w-52">
+                  <DropdownMenuItem onClick={() => setActiveDialog("transfer")}>
+                    <ArrowRightLeftIcon className="h-4 w-4" />
+                    Distribute Stock
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveDialog("return")}>
+                    <Undo2Icon className="h-4 w-4" />
+                    Return Stock
+                  </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveDialog("loss")}>
+                    <AlertTriangleIcon className="h-4 w-4" />
+                    Report Loss
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+
+              <ReportStockLossDialog
+                products={products}
+                open={activeDialog === "loss"}
+                onOpenChange={(v) => setActiveDialog(v ? "loss" : null)}
+              />
+              <ReturnFormDialog
+                products={products}
+                open={activeDialog === "return"}
+                onOpenChange={(v) => setActiveDialog(v ? "return" : null)}
+              />
+              <TransferFormDialog
+                products={products}
+                open={activeDialog === "transfer"}
+                onOpenChange={(v) => setActiveDialog(v ? "transfer" : null)}
+              />
+            </>
           )}
         </div>
 
-        {/* Inventory Section */}
-        {isLoading ? (
-          <div className="text-muted-foreground">Loading...</div>
-        ) : (
-          <InventoryBreakdown
-            inventory={inventory}
-            products={products}
-            batches={batches}
-            agents={agents}
-          />
-        )}
+        <Tabs defaultValue="stock">
+          <TabsList>
+            <TabsTrigger value="stock">Current Stock</TabsTrigger>
+            <TabsTrigger value="requests">
+              Stock Requests
+              {pending.length > 0 && (
+                <Badge variant="default" className="ml-2 bg-orange-500">
+                  {pending.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="losses">Stock Losses</TabsTrigger>
+          </TabsList>
 
-        {/* Stock Requests Section */}
-        <div className="space-y-4">
-          <h2 className="text-xl font-semibold tracking-tight">
-            Stock Requests
-          </h2>
-          <Tabs defaultValue="pending">
-            <TabsList>
-              <TabsTrigger value="pending">
-                Pending
-                {pending.length > 0 && (
-                  <Badge variant="default" className="ml-2 bg-orange-500">
-                    {pending.length}
-                  </Badge>
-                )}
-              </TabsTrigger>
-              <TabsTrigger value="all">All</TabsTrigger>
-            </TabsList>
-
-            <TabsContent value="pending" className="mt-4">
-              <RequestsTable
-                requests={pending as EnrichedRequest[]}
-                showActions
+          <TabsContent value="stock" className="mt-4">
+            {isLoading ? (
+              <div className="text-muted-foreground">Loading...</div>
+            ) : (
+              <InventoryBreakdown
+                inventory={inventory}
+                products={products}
+                batches={batches}
+                agents={agents}
               />
-            </TabsContent>
+            )}
+          </TabsContent>
 
-            <TabsContent value="all" className="mt-4">
-              <RequestsTable requests={allRequests as EnrichedRequest[]} />
-            </TabsContent>
-          </Tabs>
-        </div>
+          <TabsContent value="requests" className="mt-4 space-y-4">
+            <Tabs defaultValue="pending">
+              <TabsList>
+                <TabsTrigger value="pending">
+                  Pending
+                  {pending.length > 0 && (
+                    <Badge variant="default" className="ml-2 bg-orange-500">
+                      {pending.length}
+                    </Badge>
+                  )}
+                </TabsTrigger>
+                <TabsTrigger value="all">All</TabsTrigger>
+              </TabsList>
+
+              <TabsContent value="pending" className="mt-4">
+                <RequestsTable
+                  requests={pending as EnrichedRequest[]}
+                  showActions
+                />
+              </TabsContent>
+
+              <TabsContent value="all" className="mt-4">
+                <RequestsTable requests={allRequests as EnrichedRequest[]} />
+              </TabsContent>
+            </Tabs>
+          </TabsContent>
+
+          <TabsContent value="losses" className="mt-4">
+            <StockLossesTable />
+          </TabsContent>
+        </Tabs>
       </div>
     </RoleGuard>
   );

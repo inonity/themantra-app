@@ -118,6 +118,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   tiktok: "TikTok",
   shopee: "Shopee",
   other: "Other",
+  internal: "Internal",
 };
 
 function stockModelLabel(model?: string) {
@@ -774,6 +775,7 @@ export default function AgentPaymentsPage() {
   const settlements = useQuery(api.agentSettlements.listMy);
 
   const [historySortCol, setHistorySortCol] = useState<SortCol>("payment_date");
+  const [breakdownTab, setBreakdownTab] = useState<"to_hq" | "from_hq">("to_hq");
   const [historySortDir, setHistorySortDir] = useState<SortDir>("desc");
 
   function handleHistorySort(col: SortCol) {
@@ -906,7 +908,16 @@ export default function AgentPaymentsPage() {
             {(activeSettlement || activeCommission) && (
               <div className="space-y-3">
                 <h2 className="text-xl font-semibold">Sales Breakdown</h2>
-                <Tabs defaultValue={activeSettlement ? "to_hq" : "from_hq"}>
+                <Tabs
+                  value={
+                    breakdownTab === "to_hq" && !activeSettlement
+                      ? "from_hq"
+                      : breakdownTab === "from_hq" && !activeCommission
+                        ? "to_hq"
+                        : breakdownTab
+                  }
+                  onValueChange={(v) => setBreakdownTab(v as "to_hq" | "from_hq")}
+                >
                   <TabsList>
                     <TabsTrigger value="to_hq" disabled={!activeSettlement}>
                       Payment to HQ

@@ -77,9 +77,13 @@ function parseInventoryKey(key: string): { batchId: string; stockModel: Returnab
 export function ReturnFormDialog({
   products,
   children,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: {
   products: Doc<"products">[];
-  children: React.ReactElement;
+  children?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const returnBulk = useMutation(api.stockMovements.returnBulkToBusiness);
   const sellers = useQuery(api.users.listSellers);
@@ -87,7 +91,13 @@ export function ReturnFormDialog({
   const allVariants = useQuery(api.productVariants.listAll);
   const allInventory = useQuery(api.inventory.getBreakdown);
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    onOpenChangeProp?.(v);
+  };
   const [agentId, setAgentId] = useState<string>("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState("");
@@ -234,7 +244,7 @@ export function ReturnFormDialog({
         if (!v) resetForm();
       }}
     >
-      <DialogTrigger render={children} />
+      {children && <DialogTrigger render={children} />}
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Return Stock to HQ</DialogTitle>

@@ -126,7 +126,16 @@ export default defineSchema({
       v.literal("agent"),
       v.literal("tiktok"),
       v.literal("shopee"),
-      v.literal("other")
+      v.literal("other"),
+      v.literal("internal")
+    ),
+    // Only set when saleChannel === "internal" — why the agent pulled stock out without a customer
+    internalReason: v.optional(
+      v.union(
+        v.literal("damage"),
+        v.literal("self_use"),
+        v.literal("lost")
+      )
     ),
     offerId: v.optional(v.id("offers")),
     // Snapshot of offer at time of sale (immutable historical record)
@@ -247,7 +256,12 @@ export default defineSchema({
     variantId: v.optional(v.id("productVariants")),
     fromPartyType: v.union(v.literal("business"), v.literal("agent")),
     fromPartyId: v.optional(v.id("users")),
-    toPartyType: v.union(v.literal("business"), v.literal("agent"), v.literal("customer")),
+    toPartyType: v.union(
+      v.literal("business"),
+      v.literal("agent"),
+      v.literal("customer"),
+      v.literal("writeoff")
+    ),
     toPartyId: v.optional(v.id("users")),
     quantity: v.number(),
     movedAt: v.number(),
@@ -265,6 +279,20 @@ export default defineSchema({
       )
     ),
     hqUnitPrice: v.optional(v.number()),
+    // Set when toPartyType === "writeoff" — why the stock was written off
+    writeOffCategory: v.optional(
+      v.union(
+        v.literal("damaged"),
+        v.literal("expired"),
+        v.literal("lost"),
+        v.literal("miscount"),
+        v.literal("sample"),
+        v.literal("self_use"),
+        v.literal("other")
+      )
+    ),
+    // Salesperson or user blamed for the loss (HQ-side write-offs only — agent losses already identified via fromPartyId)
+    attributedToUserId: v.optional(v.id("users")),
   })
     .index("by_productId", ["productId"])
     .index("by_batchId", ["batchId"])

@@ -65,9 +65,13 @@ function emptyRow(): TransferRow {
 export function TransferFormDialog({
   products,
   children,
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: {
   products: Doc<"products">[];
-  children: React.ReactElement;
+  children?: React.ReactElement;
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }) {
   const transferBulk = useMutation(api.stockMovements.transferBulkToAgent);
   const sellers = useQuery(api.users.listSellers);
@@ -75,7 +79,13 @@ export function TransferFormDialog({
   const allVariants = useQuery(api.productVariants.listAll);
   const businessInventory = useQuery(api.inventory.getBusinessInventory);
 
-  const [open, setOpen] = useState(false);
+  const [internalOpen, setInternalOpen] = useState(false);
+  const isControlled = openProp !== undefined;
+  const open = isControlled ? openProp : internalOpen;
+  const setOpen = (v: boolean) => {
+    if (!isControlled) setInternalOpen(v);
+    onOpenChangeProp?.(v);
+  };
   const [agentId, setAgentId] = useState<string>("");
   const [stockModel, setStockModel] = useState<"hold_paid" | "consignment" | "presell">(
     "hold_paid"
@@ -210,7 +220,7 @@ export function TransferFormDialog({
         if (!v) resetForm();
       }}
     >
-      <DialogTrigger render={children} />
+      {children && <DialogTrigger render={children} />}
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>Distribute Stock</DialogTitle>

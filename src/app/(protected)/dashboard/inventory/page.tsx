@@ -16,7 +16,9 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, AlertTriangleIcon } from "lucide-react";
+import { ReportStockLossDialog } from "@/components/stock/report-loss-dialog";
+import { useCurrentUser } from "@/hooks/useStoreUserEffect";
 
 const stockModelLabels: Record<string, string> = {
   hold_paid: "Hold & Paid",
@@ -44,6 +46,7 @@ export default function AgentInventoryPage() {
   const products = useQuery(api.products.list);
   const batches = useQuery(api.batches.listAll);
   const allVariants = useQuery(api.productVariants.listAll);
+  const currentUser = useCurrentUser();
 
   const [expandedProducts, setExpandedProducts] = useState<Set<Id<"products">>>(
     new Set()
@@ -121,11 +124,21 @@ export default function AgentInventoryPage() {
   return (
     <RoleGuard allowed={["agent", "sales"]}>
       <div className="space-y-6">
-        <div>
-          <h1 className="text-3xl font-semibold tracking-tight">My Inventory</h1>
-          <p className="text-muted-foreground">
-            View your current stock per product and batch.
-          </p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-3xl font-semibold tracking-tight">My Inventory</h1>
+            <p className="text-muted-foreground">
+              View your current stock per product and batch.
+            </p>
+          </div>
+          {products && currentUser && (
+            <ReportStockLossDialog products={products} lockedAgentId={currentUser._id}>
+              <Button variant="outline">
+                <AlertTriangleIcon className="h-4 w-4 mr-2" />
+                Report Loss / Self-Use
+              </Button>
+            </ReportStockLossDialog>
+          )}
         </div>
 
         {isLoading ? (

@@ -86,6 +86,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   tiktok: "TikTok",
   shopee: "Shopee",
   other: "Other",
+  internal: "Internal",
 };
 
 function stockModelLabel(model?: string) {

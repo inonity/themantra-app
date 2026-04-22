@@ -36,6 +36,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   tiktok: "TikTok",
   shopee: "Shopee",
   other: "Other",
+  internal: "Internal",
 };
 
 function PaymentBadge({ status }: { status: Doc<"sales">["paymentStatus"] }) {
@@ -403,12 +404,17 @@ function SaleLineItems({
   }));
   const { bundles, nonBundledIndices } = computeOfferGrouping(fulfilledItems, effectiveOffer, products, hasSnapshots);
 
+  const isInternalSale = sale.saleChannel === "internal";
   const renderFulfilledItem = (m: typeof lineItems[number], _idx: number, indented: boolean) => {
     const snapshot = snapshotMap.get(m.variantId ?? m.productId);
     const product = products.get(m.productId);
     const itemName = snapshot?.productName ?? product?.name ?? "Unknown";
     const variantName = snapshot?.variantName;
-    const itemPrice = snapshot?.productPrice ?? product?.price ?? 0;
+    // For internal sales (loss charges, self-use) the meaningful per-unit price
+    // is what the agent was charged (hqUnitPrice on the movement), not the retail.
+    const itemPrice = isInternalSale
+      ? (m.unitPrice ?? m.hqUnitPrice ?? 0)
+      : (snapshot?.productPrice ?? product?.price ?? 0);
     const qty = m.quantity;
     const batch = batches.get(m.batchId);
     return (

@@ -4,6 +4,31 @@ import type { MutationCtx } from "./_generated/server";
 import type { Doc, Id } from "./_generated/dataModel";
 import { requireAuth, requireRole, isSellerRole } from "./helpers/auth";
 
+// Helper: mark all linked sales as settled. For internal b2b sales
+// (loss charges, self-use) the settlement payment IS the sale payment,
+// so paymentStatus is also flipped to "paid". Regular b2c sales track
+// customer→agent payment separately and aren't touched here.
+async function markLinkedSalesSettled(
+  ctx: MutationCtx,
+  settlement: Doc<"agentSettlements">
+) {
+  for (const saleId of settlement.saleIds) {
+    const sale = await ctx.db.get(saleId);
+    if (!sale) continue;
+    const isInternal = sale.saleChannel === "internal";
+    await ctx.db.patch(saleId, {
+      hqSettled: true,
+      settlementId: settlement._id,
+      ...(isInternal
+        ? {
+            paymentStatus: "paid" as const,
+            amountPaid: sale.totalAmount,
+          }
+        : {}),
+    });
+  }
+}
+
 // Helper: find or create the current pending settlement for an agent,
 // then add a sale to it. Called internally from sales mutations.
 export async function addSaleToSettlement(
@@ -120,13 +145,7 @@ export const confirmPayment = mutation({
       notes: args.notes,
     });
 
-    // Mark all linked sales as settled
-    for (const saleId of settlement.saleIds) {
-      await ctx.db.patch(saleId, {
-        hqSettled: true,
-        settlementId: args.settlementId,
-      });
-    }
+    await markLinkedSalesSettled(ctx, settlement);
   },
 });
 
@@ -310,12 +329,7 @@ export const markPaid = mutation({
 
     // When fully paid, mark all linked sales as settled
     if (paymentStatus === "paid") {
-      for (const saleId of settlement.saleIds) {
-        await ctx.db.patch(saleId, {
-          hqSettled: true,
-          settlementId: args.settlementId,
-        });
-      }
+      await markLinkedSalesSettled(ctx, settlement);
     }
   },
 });
@@ -410,6 +424,37 @@ export const listMy = query({
       .withIndex("by_agentId", (q) => q.eq("agentId", userId))
       .order("desc")
       .take(100);
+  },
+});
+
+// Admin: one-shot repair — flip paymentStatus on internal b2b sales
+// linked to already-paid settlements. Safe to call repeatedly.
+export const repairPaidInternalSales = mutation({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, "admin");
+
+    const paidSettlements = await ctx.db
+      .query("agentSettlements")
+      .filter((q) => q.eq(q.field("paymentStatus"), "paid"))
+      .collect();
+
+    let fixed = 0;
+    for (const s of paidSettlements) {
+      for (const saleId of s.saleIds) {
+        const sale = await ctx.db.get(saleId);
+        if (!sale) continue;
+        if (sale.saleChannel !== "internal") continue;
+        if (sale.paymentStatus === "paid") continue;
+        await ctx.db.patch(saleId, {
+          paymentStatus: "paid",
+          amountPaid: sale.totalAmount,
+          hqSettled: true,
+        });
+        fixed += 1;
+      }
+    }
+    return { fixed };
   },
 });
 

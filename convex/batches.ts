@@ -427,14 +427,25 @@ export const releaseUnits = mutation({
   },
 });
 
+const writeOffCategoryValidator = v.union(
+  v.literal("damaged"),
+  v.literal("expired"),
+  v.literal("lost"),
+  v.literal("miscount"),
+  v.literal("sample"),
+  v.literal("other")
+);
+
 export const adjustStock = mutation({
   args: {
     id: v.id("batches"),
     adjustment: v.number(), // positive = add, negative = deduct
     reason: v.string(),
+    category: v.optional(writeOffCategoryValidator),
+    attributedToUserId: v.optional(v.id("users")),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, "admin");
+    const admin = await requireRole(ctx, "admin");
 
     if (args.adjustment === 0) {
       throw new Error("Adjustment amount cannot be zero.");
@@ -449,6 +460,10 @@ export const adjustStock = mutation({
       throw new Error(
         "Stock adjustments can only be made on available or partial batches."
       );
+    }
+
+    if (args.attributedToUserId && args.adjustment >= 0) {
+      throw new Error("attributedToUserId only applies to deductions.");
     }
 
     const newTotal = batch.totalQuantity + args.adjustment;
@@ -495,6 +510,37 @@ export const adjustStock = mutation({
         variantId: batch.variantId,
         heldByType: "business",
         quantity: args.adjustment,
+      });
+    }
+
+    // Record an audit movement. Deductions flow to the "writeoff" sink and carry
+    // the category. Additions stay from→to business (count correction / restock).
+    if (args.adjustment < 0) {
+      await ctx.db.insert("stockMovements", {
+        batchId: args.id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        fromPartyType: "business",
+        toPartyType: "writeoff",
+        quantity: Math.abs(args.adjustment),
+        movedAt: Date.now(),
+        notes: args.reason,
+        recordedBy: admin._id,
+        writeOffCategory: args.category ?? "other",
+        attributedToUserId: args.attributedToUserId,
+      });
+    } else {
+      await ctx.db.insert("stockMovements", {
+        batchId: args.id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        fromPartyType: "business",
+        toPartyType: "business",
+        quantity: args.adjustment,
+        movedAt: Date.now(),
+        notes: args.reason,
+        recordedBy: admin._id,
+        writeOffCategory: args.category ?? "miscount",
       });
     }
   },
