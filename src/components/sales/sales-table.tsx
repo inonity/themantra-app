@@ -255,7 +255,7 @@ function SaleLineItems({
         <TableCell />
         <TableCell />
         <TableCell
-          colSpan={totalCols - 3}
+          colSpan={totalCols - 4}
           className="text-sm font-semibold"
         >
           {effectiveOffer.name}
@@ -263,12 +263,13 @@ function SaleLineItems({
             {effectiveOffer.minQuantity} for RM{effectiveOffer.bundlePrice.toFixed(2)}
           </span>
         </TableCell>
-        <TableCell className="text-right text-sm font-semibold">
+        <TableCell className="text-right text-sm font-semibold whitespace-nowrap">
           <span className="text-muted-foreground line-through mr-2">
             RM{bundle.originalPrice.toFixed(2)}
           </span>
           RM{bundle.bundlePrice.toFixed(2)}
         </TableCell>
+        <TableCell />
       </TableRow>
     );
   }
