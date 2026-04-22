@@ -247,7 +247,7 @@ export default defineSchema({
     variantId: v.optional(v.id("productVariants")),
     fromPartyType: v.union(v.literal("business"), v.literal("agent")),
     fromPartyId: v.optional(v.id("users")),
-    toPartyType: v.union(v.literal("agent"), v.literal("customer")),
+    toPartyType: v.union(v.literal("business"), v.literal("agent"), v.literal("customer")),
     toPartyId: v.optional(v.id("users")),
     quantity: v.number(),
     movedAt: v.number(),

@@ -5,6 +5,7 @@ import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { InventoryBreakdown } from "@/components/stock/inventory-breakdown";
+import { ReturnFormDialog } from "@/components/stock/return-form-dialog";
 import { TransferFormDialog } from "@/components/stock/transfer-form-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -28,7 +29,7 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { FacetedFilter } from "@/components/stock/faceted-filter";
-import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon } from "lucide-react";
+import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, Undo2Icon } from "lucide-react";
 import { useState, useMemo } from "react";
 
 type EnrichedRequest = {
@@ -280,12 +281,20 @@ export default function StockPage() {
             </p>
           </div>
           {products && (
-            <TransferFormDialog products={products}>
-              <Button className="w-full sm:w-auto">
-                <ArrowRightLeftIcon className="h-4 w-4 mr-2" />
-                Distribute Stock
-              </Button>
-            </TransferFormDialog>
+            <div className="flex flex-col gap-2 sm:flex-row">
+              <ReturnFormDialog products={products}>
+                <Button variant="outline" className="w-full sm:w-auto">
+                  <Undo2Icon className="h-4 w-4 mr-2" />
+                  Return Stock
+                </Button>
+              </ReturnFormDialog>
+              <TransferFormDialog products={products}>
+                <Button className="w-full sm:w-auto">
+                  <ArrowRightLeftIcon className="h-4 w-4 mr-2" />
+                  Distribute Stock
+                </Button>
+              </TransferFormDialog>
+            </div>
           )}
         </div>
 

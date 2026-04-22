@@ -211,6 +211,102 @@ export const transferBulkToAgent = mutation({
   },
 });
 
+export const returnBulkToBusiness = mutation({
+  args: {
+    agentId: v.id("users"),
+    notes: v.optional(v.string()),
+    movedAt: v.optional(v.number()),
+    items: v.array(
+      v.object({
+        batchId: v.id("batches"),
+        stockModel: v.union(v.literal("consignment"), v.literal("presell")),
+        quantity: v.number(),
+      })
+    ),
+  },
+  handler: async (ctx, args) => {
+    const user = await requireRole(ctx, "admin");
+
+    if (args.items.length === 0) throw new ConvexError("No items to return");
+
+    const movedAt = args.movedAt ?? Date.now();
+
+    const agent = await ctx.db.get(args.agentId);
+    if (!agent || !isSellerRole(agent.role)) throw new ConvexError("Invalid agent");
+
+    for (const item of args.items) {
+      if (item.quantity < 1) throw new ConvexError("Quantity must be at least 1");
+
+      const batch = await ctx.db.get(item.batchId);
+      if (!batch) throw new ConvexError("Batch not found");
+
+      const agentInventory = await ctx.db
+        .query("inventory")
+        .withIndex("by_batchId_and_heldByType_and_heldById_and_stockModel", (q) =>
+          q
+            .eq("batchId", item.batchId)
+            .eq("heldByType", "agent")
+            .eq("heldById", args.agentId)
+            .eq("stockModel", item.stockModel)
+        )
+        .unique();
+
+      if (!agentInventory || agentInventory.quantity < item.quantity) {
+        throw new ConvexError(
+          `Insufficient ${item.stockModel} stock for batch ${batch.batchCode}`
+        );
+      }
+
+      const newAgentQty = agentInventory.quantity - item.quantity;
+      if (newAgentQty === 0) {
+        await ctx.db.delete(agentInventory._id);
+      } else {
+        await ctx.db.patch(agentInventory._id, {
+          quantity: newAgentQty,
+          updatedAt: Date.now(),
+        });
+      }
+
+      const businessInventory = await ctx.db
+        .query("inventory")
+        .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+          q.eq("batchId", item.batchId).eq("heldByType", "business")
+        )
+        .first();
+
+      if (businessInventory) {
+        await ctx.db.patch(businessInventory._id, {
+          quantity: businessInventory.quantity + item.quantity,
+          updatedAt: Date.now(),
+        });
+      } else {
+        await ctx.db.insert("inventory", {
+          batchId: item.batchId,
+          productId: batch.productId,
+          variantId: batch.variantId,
+          heldByType: "business",
+          heldById: undefined,
+          quantity: item.quantity,
+        });
+      }
+
+      await ctx.db.insert("stockMovements", {
+        batchId: item.batchId,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        fromPartyType: "agent",
+        fromPartyId: args.agentId,
+        toPartyType: "business",
+        quantity: item.quantity,
+        movedAt,
+        notes: args.notes,
+        recordedBy: user._id,
+        stockModel: item.stockModel,
+      });
+    }
+  },
+});
+
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
