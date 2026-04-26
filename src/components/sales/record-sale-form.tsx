@@ -1225,11 +1225,11 @@ export function RecordSaleForm({
                 {(isPresell ? pickableAgentInventory : pickableInventory).length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
-                      <Select value="" onValueChange={(v) => v && (isPresell ? addFromOwnInventory(v) : addItem(v))}>
+                      <Select modal={false} value="" onValueChange={(v) => v && (isPresell ? addFromOwnInventory(v) : addItem(v))}>
                         <SelectTrigger className="w-full md:w-[350px]">
                           <SelectValue placeholder="Add from your inventory..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent alignItemWithTrigger={false}>
                           {(() => {
                             const source = isPresell ? pickableAgentInventory : pickableInventory;
                             const enriched = source.map((inv) => {
@@ -1280,11 +1280,11 @@ export function RecordSaleForm({
                 {pickableHQInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
-                      <Select value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
+                      <Select modal={false} value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
                         <SelectTrigger className="w-full md:w-[350px]">
                           <SelectValue placeholder="Add from HQ stock (auto-fulfill)..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent alignItemWithTrigger={false}>
                           {(() => {
                             const enriched = pickableHQInventory.map((inv) => {
                               const product = productMap.get(inv.productId);
@@ -1333,11 +1333,11 @@ export function RecordSaleForm({
                 {isPresell && pickableInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
-                      <Select value="" onValueChange={(v) => v && addItem(v)}>
+                      <Select modal={false} value="" onValueChange={(v) => v && addItem(v)}>
                         <SelectTrigger className="w-full md:w-[350px]">
                           <SelectValue placeholder="Add from HQ inventory (pending transfer)..." />
                         </SelectTrigger>
-                        <SelectContent>
+                        <SelectContent alignItemWithTrigger={false}>
                           {(() => {
                             const enriched = pickableInventory.map((inv) => {
                               const product = productMap.get(inv.productId);
@@ -1415,11 +1415,11 @@ export function RecordSaleForm({
                   return (
                     <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={6}>
-                        <Select value="" onValueChange={(v) => v && addPendingProduct(v)}>
+                        <Select modal={false} value="" onValueChange={(v) => v && addPendingProduct(v)}>
                           <SelectTrigger className="w-full md:w-[350px]">
                             <SelectValue placeholder="Add product (no stock needed)..." />
                           </SelectTrigger>
-                          <SelectContent>
+                          <SelectContent alignItemWithTrigger={false}>
                             {pendingGroups.map((group) => (
                               <SelectGroup key={group.product._id}>
                                 <SelectLabel>
