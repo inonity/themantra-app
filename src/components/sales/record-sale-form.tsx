@@ -18,7 +18,9 @@ import {
 import {
   Select,
   SelectContent,
+  SelectGroup,
   SelectItem,
+  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -893,6 +895,17 @@ export function RecordSaleForm({
       )
     : [];
 
+  // Picker-only lists: hide items already added (use +/- on the row to bump qty)
+  const pickableInventory = availableInventory.filter(
+    (inv) => (usedInventoryCounts.get(inv._id) ?? 0) === 0
+  );
+  const pickableAgentInventory = availableAgentInventory.filter(
+    (inv) => (usedInventoryCounts.get(inv._id) ?? 0) === 0
+  );
+  const pickableHQInventory = availableHQInventory.filter(
+    (inv) => (usedHQBatchCounts.get(inv.batchId) ?? 0) === 0
+  );
+
   const sellableProducts = products ?? [];
 
   const hasPendingItems = unifiedItems.some((li) => li.source !== "agent_stock");
@@ -1209,7 +1222,7 @@ export function RecordSaleForm({
                 })()}
 
                 {/* Add from agent's own inventory (all modes) */}
-                {(isPresell ? availableAgentInventory : availableInventory).length > 0 && (
+                {(isPresell ? pickableAgentInventory : pickableInventory).length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && (isPresell ? addFromOwnInventory(v) : addItem(v))}>
@@ -1217,18 +1230,46 @@ export function RecordSaleForm({
                           <SelectValue placeholder="Add from your inventory..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {(isPresell ? availableAgentInventory : availableInventory).map((inv) => {
-                            const product = productMap.get(inv.productId);
-                            const batch = batchMap.get(inv.batchId);
-                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                            const remaining = inv.quantity - (usedInventoryCounts.get(inv._id) ?? 0);
-                            return (
-                              <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
-                                {batch?.batchCode ?? "?"} (avail: {remaining})
-                              </SelectItem>
-                            );
-                          })}
+                          {(() => {
+                            const source = isPresell ? pickableAgentInventory : pickableInventory;
+                            const enriched = source.map((inv) => {
+                              const product = productMap.get(inv.productId);
+                              const batch = batchMap.get(inv.batchId);
+                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
+                              return {
+                                inv,
+                                productName: product?.name ?? "Unknown",
+                                variantName: variant?.name,
+                                batchCode: batch?.batchCode ?? "?",
+                                remaining: inv.quantity,
+                              };
+                            });
+                            enriched.sort((a, b) => {
+                              const np = a.productName.localeCompare(b.productName);
+                              if (np !== 0) return np;
+                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+                              if (nv !== 0) return nv;
+                              return a.batchCode.localeCompare(b.batchCode);
+                            });
+                            const groups: { name: string; items: typeof enriched }[] = [];
+                            for (const item of enriched) {
+                              const last = groups[groups.length - 1];
+                              if (last && last.name === item.productName) last.items.push(item);
+                              else groups.push({ name: item.productName, items: [item] });
+                            }
+                            return groups.map((group, gi) => (
+                              <SelectGroup key={`${group.name}-${gi}`}>
+                                <SelectLabel>{group.name}</SelectLabel>
+                                {group.items.map((item) => (
+                                  <SelectItem key={item.inv._id} value={item.inv._id}>
+                                    {item.variantName ? `${item.variantName} · ` : ""}
+                                    <span className="text-muted-foreground">{item.batchCode}</span>
+                                    <span className="text-muted-foreground"> (avail: {item.remaining})</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ));
+                          })()}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -1236,7 +1277,7 @@ export function RecordSaleForm({
                 )}
 
                 {/* Add from HQ inventory — auto-fulfill (salesperson: pull from HQ + fulfill in 1 click, any stock model) */}
-                {availableHQInventory.length > 0 && (
+                {pickableHQInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
@@ -1244,17 +1285,44 @@ export function RecordSaleForm({
                           <SelectValue placeholder="Add from HQ stock (auto-fulfill)..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableHQInventory.map((inv) => {
-                            const product = productMap.get(inv.productId);
-                            const batch = batchMap.get(inv.batchId);
-                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                            return (
-                              <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
-                                {batch?.batchCode ?? "?"} (HQ: {inv.quantity})
-                              </SelectItem>
-                            );
-                          })}
+                          {(() => {
+                            const enriched = pickableHQInventory.map((inv) => {
+                              const product = productMap.get(inv.productId);
+                              const batch = batchMap.get(inv.batchId);
+                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
+                              return {
+                                inv,
+                                productName: product?.name ?? "Unknown",
+                                variantName: variant?.name,
+                                batchCode: batch?.batchCode ?? "?",
+                              };
+                            });
+                            enriched.sort((a, b) => {
+                              const np = a.productName.localeCompare(b.productName);
+                              if (np !== 0) return np;
+                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+                              if (nv !== 0) return nv;
+                              return a.batchCode.localeCompare(b.batchCode);
+                            });
+                            const groups: { name: string; items: typeof enriched }[] = [];
+                            for (const item of enriched) {
+                              const last = groups[groups.length - 1];
+                              if (last && last.name === item.productName) last.items.push(item);
+                              else groups.push({ name: item.productName, items: [item] });
+                            }
+                            return groups.map((group, gi) => (
+                              <SelectGroup key={`${group.name}-${gi}`}>
+                                <SelectLabel>{group.name}</SelectLabel>
+                                {group.items.map((item) => (
+                                  <SelectItem key={item.inv._id} value={item.inv._id}>
+                                    {item.variantName ? `${item.variantName} · ` : ""}
+                                    <span className="text-muted-foreground">{item.batchCode}</span>
+                                    <span className="text-muted-foreground"> (HQ: {item.inv.quantity})</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ));
+                          })()}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -1262,7 +1330,7 @@ export function RecordSaleForm({
                 )}
 
                 {/* Add from HQ inventory (pre-sell — pending hq_transfer) */}
-                {isPresell && availableInventory.length > 0 && (
+                {isPresell && pickableInventory.length > 0 && (
                   <TableRow className="hover:bg-transparent">
                     <TableCell colSpan={6}>
                       <Select value="" onValueChange={(v) => v && addItem(v)}>
@@ -1270,17 +1338,44 @@ export function RecordSaleForm({
                           <SelectValue placeholder="Add from HQ inventory (pending transfer)..." />
                         </SelectTrigger>
                         <SelectContent>
-                          {availableInventory.map((inv) => {
-                            const product = productMap.get(inv.productId);
-                            const batch = batchMap.get(inv.batchId);
-                            const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                            return (
-                              <SelectItem key={inv._id} value={inv._id}>
-                                {product?.name ?? "Unknown"}{variant?.name ? ` — ${variant.name}` : ""} — Batch{" "}
-                                {batch?.batchCode ?? "?"} (avail: {inv.quantity})
-                              </SelectItem>
-                            );
-                          })}
+                          {(() => {
+                            const enriched = pickableInventory.map((inv) => {
+                              const product = productMap.get(inv.productId);
+                              const batch = batchMap.get(inv.batchId);
+                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
+                              return {
+                                inv,
+                                productName: product?.name ?? "Unknown",
+                                variantName: variant?.name,
+                                batchCode: batch?.batchCode ?? "?",
+                              };
+                            });
+                            enriched.sort((a, b) => {
+                              const np = a.productName.localeCompare(b.productName);
+                              if (np !== 0) return np;
+                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+                              if (nv !== 0) return nv;
+                              return a.batchCode.localeCompare(b.batchCode);
+                            });
+                            const groups: { name: string; items: typeof enriched }[] = [];
+                            for (const item of enriched) {
+                              const last = groups[groups.length - 1];
+                              if (last && last.name === item.productName) last.items.push(item);
+                              else groups.push({ name: item.productName, items: [item] });
+                            }
+                            return groups.map((group, gi) => (
+                              <SelectGroup key={`${group.name}-${gi}`}>
+                                <SelectLabel>{group.name}</SelectLabel>
+                                {group.items.map((item) => (
+                                  <SelectItem key={item.inv._id} value={item.inv._id}>
+                                    {item.variantName ? `${item.variantName} · ` : ""}
+                                    <span className="text-muted-foreground">{item.batchCode}</span>
+                                    <span className="text-muted-foreground"> (avail: {item.inv.quantity})</span>
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
+                            ));
+                          })()}
                         </SelectContent>
                       </Select>
                     </TableCell>
@@ -1289,24 +1384,34 @@ export function RecordSaleForm({
 
                 {/* Add product without stock (pending/future release) */}
                 {sellableProducts.length > 0 && (() => {
-                  const pendingOptions = sellableProducts.flatMap((product) => {
+                  const pendingGroups = sellableProducts.flatMap((product) => {
                     const variants = variantsByProduct.get(product._id) ?? [];
+                    const futureSuffix = product.status === "future_release" ? " (Future Release)" : "";
                     if (variants.length === 0) {
-                      const key = product._id;
-                      if (usedPendingKeys.has(key)) return [];
+                      if (usedPendingKeys.has(product._id)) return [];
                       return [{
-                        value: product._id,
-                        label: `${product.name} — RM${(product.price ?? 0).toFixed(2)}${product.status === "future_release" ? " (Future Release)" : ""}`,
+                        product,
+                        futureSuffix,
+                        items: [{
+                          value: product._id,
+                          label: `RM${(product.price ?? 0).toFixed(2)}`,
+                        }],
                       }];
                     }
-                    return variants
-                      .filter((v) => !usedPendingKeys.has(`${product._id}__${v._id}`))
-                      .map((v) => ({
+                    const filtered = variants.filter(
+                      (v) => !usedPendingKeys.has(`${product._id}__${v._id}`)
+                    );
+                    if (filtered.length === 0) return [];
+                    return [{
+                      product,
+                      futureSuffix,
+                      items: filtered.map((v) => ({
                         value: `${product._id}__${v._id}`,
-                        label: `${product.name} — ${v.name} — RM${v.price.toFixed(2)}${product.status === "future_release" ? " (Future Release)" : ""}`,
-                      }));
+                        label: `${v.name} · RM${v.price.toFixed(2)}`,
+                      })),
+                    }];
                   });
-                  if (pendingOptions.length === 0) return null;
+                  if (pendingGroups.length === 0) return null;
                   return (
                     <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={6}>
@@ -1315,10 +1420,18 @@ export function RecordSaleForm({
                             <SelectValue placeholder="Add product (no stock needed)..." />
                           </SelectTrigger>
                           <SelectContent>
-                            {pendingOptions.map((opt) => (
-                              <SelectItem key={opt.value} value={opt.value}>
-                                {opt.label}
-                              </SelectItem>
+                            {pendingGroups.map((group) => (
+                              <SelectGroup key={group.product._id}>
+                                <SelectLabel>
+                                  {group.product.name}
+                                  {group.futureSuffix}
+                                </SelectLabel>
+                                {group.items.map((item) => (
+                                  <SelectItem key={item.value} value={item.value}>
+                                    {item.label}
+                                  </SelectItem>
+                                ))}
+                              </SelectGroup>
                             ))}
                           </SelectContent>
                         </Select>

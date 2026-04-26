@@ -115,6 +115,22 @@ export function BatchFormDialog({
     }
   }, [batch, open]);
 
+  // Auto-select product when only one is available (create mode, no fixed product)
+  useEffect(() => {
+    if (!open || isEdit || fixedProductId || selectedProductId) return;
+    if (!products || products.length !== 1) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedProductId(products[0]._id);
+  }, [open, isEdit, fixedProductId, selectedProductId, products]);
+
+  // Auto-select variant when only one active variant exists (create mode)
+  useEffect(() => {
+    if (!open || isEdit || selectedVariantId) return;
+    if (activeVariants.length !== 1) return;
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setSelectedVariantId(activeVariants[0]._id);
+  }, [open, isEdit, selectedVariantId, activeVariants]);
+
   function handleManufacturedDateChange(value: string) {
     setManufacturedDate(value);
     if (value && !expectedReadyDateManuallyEdited) {

@@ -66,8 +66,7 @@ const hqReasonLabels: Record<HQReason, string> = {
 
 type LossRow = {
   id: string;
-  productId: string;
-  inventoryKey: string; // `${batchId}__${stockModel}`
+  inventoryKey: string; // `${batchId}__${stockModel}` for agent, just batchId for HQ
   quantity: string;
 };
 
@@ -76,7 +75,7 @@ function genId() {
 }
 
 function emptyRow(): LossRow {
-  return { id: genId(), productId: "", inventoryKey: "", quantity: "" };
+  return { id: genId(), inventoryKey: "", quantity: "" };
 }
 
 function makeKey(batchId: string, stockModel: string) {
@@ -188,24 +187,6 @@ export function ReportStockLossDialog({
     );
   }, [agentId, allInventory, isHQSubject]);
 
-  const inventoryByProduct = useMemo(() => {
-    const map = new Map<string, Doc<"inventory">[]>();
-    for (const inv of holderInventory) {
-      const list = map.get(inv.productId) ?? [];
-      list.push(inv);
-      map.set(inv.productId, list);
-    }
-    return map;
-  }, [holderInventory]);
-
-  const productTotal = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [pid, list] of inventoryByProduct) {
-      map.set(pid, list.reduce((sum, inv) => sum + inv.quantity, 0));
-    }
-    return map;
-  }, [inventoryByProduct]);
-
   const inventoryByKey = useMemo(() => {
     const map = new Map<string, Doc<"inventory">>();
     for (const inv of holderInventory) {
@@ -218,6 +199,59 @@ export function ReportStockLossDialog({
     }
     return map;
   }, [holderInventory, isHQSubject]);
+
+  type LossOption = {
+    key: string;
+    productName: string;
+    variantName?: string;
+    batchCode: string;
+    stockModel?: LossStockModel;
+    held: number;
+  };
+
+  const availableLossOptions = useMemo<LossOption[]>(() => {
+    const opts: LossOption[] = [];
+    for (const inv of holderInventory) {
+      const product = productMap.get(inv.productId as Id<"products">);
+      const batch = batchMap.get(inv.batchId as Id<"batches">);
+      if (!product || !batch) continue;
+      let key: string;
+      let stockModel: LossStockModel | undefined;
+      if (isHQSubject) {
+        key = inv.batchId;
+      } else if (
+        inv.stockModel === "hold_paid" ||
+        inv.stockModel === "consignment" ||
+        inv.stockModel === "presell"
+      ) {
+        key = makeKey(inv.batchId, inv.stockModel);
+        stockModel = inv.stockModel;
+      } else {
+        continue;
+      }
+      opts.push({
+        key,
+        productName: product.name,
+        variantName: batch.variantId ? variantMap.get(batch.variantId)?.name : undefined,
+        batchCode: batch.batchCode,
+        stockModel,
+        held: inv.quantity,
+      });
+    }
+    opts.sort((a, b) => {
+      const np = a.productName.localeCompare(b.productName);
+      if (np !== 0) return np;
+      const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+      if (nv !== 0) return nv;
+      return a.batchCode.localeCompare(b.batchCode);
+    });
+    return opts;
+  }, [holderInventory, isHQSubject, batchMap, productMap, variantMap]);
+
+  const optionMap = useMemo(
+    () => new Map(availableLossOptions.map((o) => [o.key, o])),
+    [availableLossOptions]
+  );
 
   const usedKeys = useMemo(
     () => new Set(rows.filter((r) => r.inventoryKey).map((r) => r.inventoryKey)),
@@ -239,6 +273,24 @@ export function ReportStockLossDialog({
       setReason("damage");
     }
   }, [reason, subjectIsSales]);
+
+  // Auto-select subject when only HQ is available (no agents, no sales staff)
+  useEffect(() => {
+    if (!open || lockedAgentId || agentId) return;
+    if (!sellers) return;
+    if (agents.length === 0 && salesStaff.length === 0) {
+      setAgentId(HQ_SUBJECT_ID);
+    }
+  }, [open, lockedAgentId, agentId, sellers, agents, salesStaff]);
+
+  // Auto-fill the initial row when only one option exists for the selected subject
+  useEffect(() => {
+    if (!open) return;
+    if (rows.length !== 1) return;
+    if (rows[0].inventoryKey) return;
+    if (availableLossOptions.length !== 1) return;
+    setRows([{ id: rows[0].id, inventoryKey: availableLossOptions[0].key, quantity: "" }]);
+  }, [open, rows, availableLossOptions]);
 
   function updateRow(id: string, patch: Partial<LossRow>) {
     setRows((prev) => prev.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -509,153 +561,86 @@ export function ReportStockLossDialog({
                   <Table>
                     <TableHeader>
                       <TableRow>
-                        <TableHead>Product</TableHead>
-                        <TableHead>{isHQSubject ? "Batch" : "Batch · Model"}</TableHead>
+                        <TableHead>Item</TableHead>
                         <TableHead className="w-[120px]">Qty / Held</TableHead>
                         <TableHead className="w-[40px]" />
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {rows.map((row) => {
-                        const inventoryForProduct = row.productId
-                          ? (inventoryByProduct.get(row.productId) ?? [])
-                          : [];
+                        const selected = row.inventoryKey ? optionMap.get(row.inventoryKey) : undefined;
+                        const held = selected?.held ?? 0;
+                        const isHoldPaid = selected?.stockModel === "hold_paid";
 
-                        const selectableEntries = inventoryForProduct.filter((inv) => {
-                          if (isHQSubject) {
-                            const key = inv.batchId;
-                            return !usedKeys.has(key) || key === row.inventoryKey;
-                          }
-                          if (!inv.stockModel) return false;
-                          const key = makeKey(inv.batchId, inv.stockModel);
-                          return !usedKeys.has(key) || key === row.inventoryKey;
-                        });
-
-                        const selectedInv = row.inventoryKey
-                          ? inventoryByKey.get(row.inventoryKey)
-                          : null;
-                        const selectedBatch = selectedInv
-                          ? batchMap.get(selectedInv.batchId)
-                          : null;
-                        const held = selectedInv?.quantity ?? 0;
-                        const isHoldPaid = selectedInv?.stockModel === "hold_paid";
+                        const selectableOptions = availableLossOptions.filter(
+                          (opt) => !usedKeys.has(opt.key) || opt.key === row.inventoryKey
+                        );
 
                         return (
                           <TableRow key={row.id}>
                             <TableCell className="align-top py-2">
                               <Select
-                                value={row.productId}
-                                disabled={!agentId}
-                                onValueChange={(v) =>
-                                  updateRow(row.id, {
-                                    productId: v ?? "",
-                                    inventoryKey: "",
-                                    quantity: "",
-                                  })
-                                }
-                              >
-                                <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select product">
-                                    {row.productId
-                                      ? productMap.get(row.productId as Id<"products">)?.name
-                                      : undefined}
-                                  </SelectValue>
-                                </SelectTrigger>
-                                <SelectContent alignItemWithTrigger={false}>
-                                  {Array.from(inventoryByProduct.keys()).length === 0 ? (
-                                    <SelectItem value="_none" disabled>
-                                      No stock held
-                                    </SelectItem>
-                                  ) : (
-                                    Array.from(inventoryByProduct.keys()).map((pid) => {
-                                      const product = productMap.get(pid as Id<"products">);
-                                      if (!product) return null;
-                                      const total = productTotal.get(pid) ?? 0;
-                                      return (
-                                        <SelectItem key={pid} value={pid}>
-                                          <div className="flex items-center justify-between w-full gap-4">
-                                            <span>{product.name}</span>
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                              {total} held
-                                            </span>
-                                          </div>
-                                        </SelectItem>
-                                      );
-                                    })
-                                  )}
-                                </SelectContent>
-                              </Select>
-                            </TableCell>
-
-                            <TableCell className="align-top py-2">
-                              <Select
                                 value={row.inventoryKey}
-                                disabled={!row.productId}
+                                disabled={!agentId}
                                 onValueChange={(v) =>
                                   updateRow(row.id, { inventoryKey: v ?? "", quantity: "" })
                                 }
                               >
                                 <SelectTrigger className="h-8 text-sm">
-                                  <SelectValue placeholder="Select batch">
-                                    {selectedBatch
-                                      ? isHQSubject
-                                        ? `${selectedBatch.batchCode}${
-                                            selectedBatch.variantId
-                                              ? ` · ${variantMap.get(selectedBatch.variantId)?.name ?? ""}`
-                                              : ""
-                                          }`
-                                        : selectedInv?.stockModel
-                                          ? `${selectedBatch.batchCode}${
-                                              selectedBatch.variantId
-                                                ? ` · ${variantMap.get(selectedBatch.variantId)?.name ?? ""}`
-                                                : ""
-                                            } · ${stockModelLabels[selectedInv.stockModel] ?? selectedInv.stockModel}`
-                                          : undefined
+                                  <SelectValue placeholder="Select product">
+                                    {selected
+                                      ? `${selected.productName}${selected.variantName ? ` — ${selected.variantName}` : ""} — ${selected.batchCode}${selected.stockModel ? ` · ${stockModelLabels[selected.stockModel] ?? selected.stockModel}` : ""}`
                                       : undefined}
                                   </SelectValue>
                                 </SelectTrigger>
                                 <SelectContent alignItemWithTrigger={false}>
-                                  {selectableEntries.length === 0 ? (
+                                  {selectableOptions.length === 0 ? (
                                     <SelectItem value="_none" disabled>
-                                      No batches available
+                                      No items available
                                     </SelectItem>
                                   ) : (
-                                    selectableEntries.map((inv) => {
-                                      const batch = batchMap.get(inv.batchId);
-                                      if (!batch) return null;
-                                      const key = isHQSubject
-                                        ? inv.batchId
-                                        : inv.stockModel
-                                          ? makeKey(inv.batchId, inv.stockModel)
-                                          : null;
-                                      if (!key) return null;
-                                      return (
-                                        <SelectItem key={key} value={key}>
-                                          <div className="flex items-center justify-between w-full gap-4">
-                                            <span className="truncate">
-                                              {batch.batchCode}
-                                              {batch.variantId && (
-                                                <span className="ml-1.5 text-muted-foreground">
-                                                  {variantMap.get(batch.variantId)?.name}
+                                    (() => {
+                                      const groups: { name: string; items: typeof selectableOptions }[] = [];
+                                      for (const opt of selectableOptions) {
+                                        const last = groups[groups.length - 1];
+                                        if (last && last.name === opt.productName) {
+                                          last.items.push(opt);
+                                        } else {
+                                          groups.push({ name: opt.productName, items: [opt] });
+                                        }
+                                      }
+                                      return groups.map((group, gi) => (
+                                        <SelectGroup key={`${group.name}-${gi}`}>
+                                          <SelectLabel>{group.name}</SelectLabel>
+                                          {group.items.map((opt) => (
+                                            <SelectItem key={opt.key} value={opt.key}>
+                                              <div className="flex items-center justify-between w-full gap-4">
+                                                <span className="truncate">
+                                                  {opt.variantName && (
+                                                    <span>{opt.variantName} · </span>
+                                                  )}
+                                                  <span className="text-muted-foreground">
+                                                    {opt.batchCode}
+                                                  </span>
+                                                  {opt.stockModel && (
+                                                    <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                                                      {stockModelLabels[opt.stockModel] ?? opt.stockModel}
+                                                    </Badge>
+                                                  )}
                                                 </span>
-                                              )}
-                                              {!isHQSubject && inv.stockModel && (
-                                                <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
-                                                  {stockModelLabels[inv.stockModel] ?? inv.stockModel}
-                                                </Badge>
-                                              )}
-                                            </span>
-                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                              {inv.quantity} held
-                                            </span>
-                                          </div>
-                                        </SelectItem>
-                                      );
-                                    })
+                                                <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                                  {opt.held} held
+                                                </span>
+                                              </div>
+                                            </SelectItem>
+                                          ))}
+                                        </SelectGroup>
+                                      ));
+                                    })()
                                   )}
                                 </SelectContent>
                               </Select>
-                              {selectedInv && (
+                              {selected && (
                                 <p className="text-[10px] text-muted-foreground mt-1">
                                   {isHQSubject
                                     ? "HQ write-off"
@@ -706,14 +691,24 @@ export function ReportStockLossDialog({
                       })}
 
                       <TableRow>
-                        <TableCell colSpan={4} className="py-2">
+                        <TableCell colSpan={3} className="py-2">
                           <Button
                             type="button"
                             variant="ghost"
                             size="sm"
                             className="h-7 text-xs"
                             disabled={!agentId}
-                            onClick={() => setRows((prev) => [...prev, emptyRow()])}
+                            onClick={() =>
+                              setRows((prev) => {
+                                const used = new Set(prev.filter((r) => r.inventoryKey).map((r) => r.inventoryKey));
+                                const remaining = availableLossOptions.filter((opt) => !used.has(opt.key));
+                                const next: LossRow =
+                                  remaining.length === 1
+                                    ? { id: genId(), inventoryKey: remaining[0].key, quantity: "" }
+                                    : emptyRow();
+                                return [...prev, next];
+                              })
+                            }
                           >
                             <PlusIcon className="h-3 w-3 mr-1" />
                             Add row

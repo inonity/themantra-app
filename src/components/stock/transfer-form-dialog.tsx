@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -45,7 +45,6 @@ const stockModelLabels: Record<string, string> = {
 
 type TransferRow = {
   id: string;
-  productId: string;
   batchId: string;
   quantity: string;
 };
@@ -59,7 +58,7 @@ function genId() {
 }
 
 function emptyRow(): TransferRow {
-  return { id: genId(), productId: "", batchId: "", quantity: "" };
+  return { id: genId(), batchId: "", quantity: "" };
 }
 
 export function TransferFormDialog({
@@ -120,33 +119,92 @@ export function TransferFormDialog({
     return map;
   }, [businessInventory]);
 
-  const batchMap = useMemo(
-    () => new Map((allBatches ?? []).map((b) => [b._id, b])),
-    [allBatches]
-  );
-
   const variantMap = useMemo(
     () => new Map((allVariants ?? []).map((v) => [v._id, v])),
     [allVariants]
   );
 
-  const productTotalStock = useMemo(() => {
-    const map = new Map<string, number>();
+  const productMap = useMemo(
+    () => new Map(products.map((p) => [p._id, p])),
+    [products]
+  );
+
+  type BatchOption = {
+    batchId: Id<"batches">;
+    productId: Id<"products">;
+    productName: string;
+    variantName?: string;
+    batchCode: string;
+    stock: number;
+  };
+
+  const availableBatchOptions = useMemo<BatchOption[]>(() => {
+    const opts: BatchOption[] = [];
     for (const [productId, batches] of availableBatchesByProduct) {
-      let total = 0;
+      const product = productMap.get(productId as Id<"products">);
+      if (!product) continue;
+      if (product.status !== "active" && product.status !== "future_release") continue;
       for (const b of batches) {
-        total += businessStockByBatch.get(b._id) ?? 0;
+        const stock = businessStockByBatch.get(b._id) ?? 0;
+        if (stock <= 0) continue;
+        opts.push({
+          batchId: b._id,
+          productId: b.productId,
+          productName: product.name,
+          variantName: b.variantId ? variantMap.get(b.variantId)?.name : undefined,
+          batchCode: b.batchCode,
+          stock,
+        });
       }
-      map.set(productId, total);
     }
-    return map;
-  }, [availableBatchesByProduct, businessStockByBatch]);
+    opts.sort((a, b) => {
+      const np = a.productName.localeCompare(b.productName);
+      if (np !== 0) return np;
+      const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+      if (nv !== 0) return nv;
+      return a.batchCode.localeCompare(b.batchCode);
+    });
+    return opts;
+  }, [availableBatchesByProduct, businessStockByBatch, productMap, variantMap]);
+
+  const optionMap = useMemo(
+    () => new Map(availableBatchOptions.map((o) => [o.batchId, o])),
+    [availableBatchOptions]
+  );
 
   // All batch IDs already selected across all rows (to prevent duplicates)
   const usedBatchIds = useMemo(
     () => new Set(rows.filter((r) => r.batchId).map((r) => r.batchId)),
     [rows]
   );
+
+  // Auto-select recipient when only one is available across both groups
+  useEffect(() => {
+    if (!open || agentId) return;
+    if (!sellers) return;
+    const total = agents.length + salesStaff.length;
+    if (total !== 1) return;
+    const only = agents[0] ?? salesStaff[0];
+    if (!only) return;
+    setAgentId(only._id);
+    if (only.role === "sales") {
+      setStockModel("presell");
+    } else {
+      const defaultModel = only.defaultStockModel;
+      setStockModel(
+        defaultModel === "dropship" ? "presell" : defaultModel ?? "consignment"
+      );
+    }
+  }, [open, agentId, sellers, agents, salesStaff]);
+
+  // Auto-fill the initial row when only one batch option exists
+  useEffect(() => {
+    if (!open) return;
+    if (rows.length !== 1) return;
+    if (rows[0].batchId) return;
+    if (availableBatchOptions.length !== 1) return;
+    setRows([{ id: rows[0].id, batchId: availableBatchOptions[0].batchId, quantity: "" }]);
+  }, [open, rows, availableBatchOptions]);
 
   function resetForm() {
     setAgentId("");
@@ -344,117 +402,76 @@ export function TransferFormDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Batch</TableHead>
+                    <TableHead>Item</TableHead>
                     <TableHead className="w-[120px]">Qty / Stock</TableHead>
                     <TableHead className="w-[40px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => {
-                    const batchesForProduct = row.productId
-                      ? (availableBatchesByProduct.get(row.productId) ?? [])
-                      : [];
+                    const selected = row.batchId ? optionMap.get(row.batchId as Id<"batches">) : undefined;
+                    const stock = selected?.stock ?? 0;
 
-                    const selectableBatches = batchesForProduct.filter(
-                      (b) =>
-                        (businessStockByBatch.get(b._id) ?? 0) > 0 &&
-                        (!usedBatchIds.has(b._id) || b._id === row.batchId)
+                    const selectableOptions = availableBatchOptions.filter(
+                      (opt) => !usedBatchIds.has(opt.batchId) || opt.batchId === row.batchId
                     );
-
-                    const selectedBatch = row.batchId
-                      ? batchMap.get(row.batchId as Id<"batches">)
-                      : null;
-                    const stock = row.batchId
-                      ? (businessStockByBatch.get(row.batchId) ?? 0)
-                      : 0;
 
                     return (
                       <TableRow key={row.id}>
-                        {/* Product */}
-                        <TableCell className="align-top py-2">
-                          <Select
-                            value={row.productId}
-                            onValueChange={(v) =>
-                              updateRow(row.id, { productId: v ?? "", batchId: "", quantity: "" })
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Select product">
-                                {row.productId
-                                  ? products.find((p) => p._id === row.productId)?.name
-                                  : undefined}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent alignItemWithTrigger={false}>
-                              {products.map((p) => {
-                                const totalStock = productTotalStock.get(p._id) ?? 0;
-                                const isOutOfStock = totalStock === 0;
-                                const isUnavailable =
-                                  p.status !== "active" && p.status !== "future_release";
-                                return (
-                                  <SelectItem
-                                    key={p._id}
-                                    value={p._id}
-                                    disabled={isOutOfStock || isUnavailable}
-                                  >
-                                    <span
-                                      className={
-                                        isOutOfStock || isUnavailable
-                                          ? "line-through opacity-50"
-                                          : ""
-                                      }
-                                    >
-                                      {p.name}
-                                      {p.status === "future_release" ? " (Future)" : ""}
-                                      {isUnavailable ? ` (${p.status})` : ""}
-                                    </span>
-                                  </SelectItem>
-                                );
-                              })}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-
-                        {/* Batch */}
+                        {/* Item: product + variant + batch */}
                         <TableCell className="align-top py-2">
                           <Select
                             value={row.batchId}
-                            disabled={!row.productId}
                             onValueChange={(v) =>
                               updateRow(row.id, { batchId: v ?? "", quantity: "" })
                             }
                           >
                             <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Select batch">
-                                {selectedBatch
-                                  ? `${selectedBatch.batchCode}${selectedBatch.variantId ? ` · ${variantMap.get(selectedBatch.variantId)?.name ?? ""}` : ""}`
+                              <SelectValue placeholder="Select product">
+                                {selected
+                                  ? `${selected.productName}${selected.variantName ? ` — ${selected.variantName}` : ""} — ${selected.batchCode}`
                                   : undefined}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent alignItemWithTrigger={false}>
-                              {selectableBatches.length === 0 ? (
+                              {selectableOptions.length === 0 ? (
                                 <SelectItem value="_none" disabled>
-                                  No batches available
+                                  No items available
                                 </SelectItem>
                               ) : (
-                                selectableBatches.map((b) => (
-                                  <SelectItem key={b._id} value={b._id}>
-                                    <div className="flex items-center justify-between w-full gap-4">
-                                      <span className="truncate">
-                                        {b.batchCode}
-                                        {b.variantId && (
-                                          <span className="ml-1.5 text-muted-foreground">
-                                            {variantMap.get(b.variantId)?.name}
-                                          </span>
-                                        )}
-                                      </span>
-                                      <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                        {businessStockByBatch.get(b._id) ?? 0} in stock
-                                      </span>
-                                    </div>
-                                  </SelectItem>
-                                ))
+                                (() => {
+                                  const groups: { name: string; items: typeof selectableOptions }[] = [];
+                                  for (const opt of selectableOptions) {
+                                    const last = groups[groups.length - 1];
+                                    if (last && last.name === opt.productName) {
+                                      last.items.push(opt);
+                                    } else {
+                                      groups.push({ name: opt.productName, items: [opt] });
+                                    }
+                                  }
+                                  return groups.map((group, gi) => (
+                                    <SelectGroup key={`${group.name}-${gi}`}>
+                                      <SelectLabel>{group.name}</SelectLabel>
+                                      {group.items.map((opt) => (
+                                        <SelectItem key={opt.batchId} value={opt.batchId}>
+                                          <div className="flex items-center justify-between w-full gap-4">
+                                            <span className="truncate">
+                                              {opt.variantName && (
+                                                <span>{opt.variantName} · </span>
+                                              )}
+                                              <span className="text-muted-foreground">
+                                                {opt.batchCode}
+                                              </span>
+                                            </span>
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                              {opt.stock} in stock
+                                            </span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  ));
+                                })()
                               )}
                             </SelectContent>
                           </Select>
@@ -501,13 +518,23 @@ export function TransferFormDialog({
 
                   {/* Add row */}
                   <TableRow>
-                    <TableCell colSpan={4} className="py-2">
+                    <TableCell colSpan={3} className="py-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         className="h-7 text-xs"
-                        onClick={() => setRows((prev) => [...prev, emptyRow()])}
+                        onClick={() =>
+                          setRows((prev) => {
+                            const used = new Set(prev.filter((r) => r.batchId).map((r) => r.batchId));
+                            const remaining = availableBatchOptions.filter((opt) => !used.has(opt.batchId));
+                            const next: TransferRow =
+                              remaining.length === 1
+                                ? { id: genId(), batchId: remaining[0].batchId, quantity: "" }
+                                : emptyRow();
+                            return [...prev, next];
+                          })
+                        }
                       >
                         <PlusIcon className="h-3 w-3 mr-1" />
                         Add row

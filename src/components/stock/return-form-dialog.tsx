@@ -3,7 +3,7 @@
 import { useMutation, useQuery } from "convex/react";
 import { api } from "../../../convex/_generated/api";
 import { Doc, Id } from "../../../convex/_generated/dataModel";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -46,7 +46,6 @@ type ReturnableStockModel = "consignment" | "presell";
 
 type ReturnRow = {
   id: string;
-  productId: string;
   // Composite key: `${batchId}__${stockModel}` — identifies a single inventory row.
   inventoryKey: string;
   quantity: string;
@@ -61,7 +60,7 @@ function genId() {
 }
 
 function emptyRow(): ReturnRow {
-  return { id: genId(), productId: "", inventoryKey: "", quantity: "" };
+  return { id: genId(), inventoryKey: "", quantity: "" };
 }
 
 function makeInventoryKey(batchId: string, stockModel: string) {
@@ -136,30 +135,71 @@ export function ReturnFormDialog({
     );
   }, [agentId, allInventory]);
 
-  // Group returnable inventory by product for the product dropdown.
-  const returnableByProduct = useMemo(() => {
-    const map = new Map<string, Doc<"inventory">[]>();
-    for (const inv of agentReturnableInventory) {
-      const list = map.get(inv.productId) ?? [];
-      list.push(inv);
-      map.set(inv.productId, list);
-    }
-    return map;
-  }, [agentReturnableInventory]);
+  type ReturnOption = {
+    key: string;
+    productName: string;
+    variantName?: string;
+    batchCode: string;
+    stockModel: ReturnableStockModel;
+    held: number;
+  };
 
-  const productTotal = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const [pid, list] of returnableByProduct) {
-      map.set(pid, list.reduce((sum, inv) => sum + inv.quantity, 0));
+  // Flat list: one option per returnable inventory row, sorted by product → variant → batch.
+  const availableReturnOptions = useMemo<ReturnOption[]>(() => {
+    const opts: ReturnOption[] = [];
+    for (const inv of agentReturnableInventory) {
+      if (inv.stockModel !== "consignment" && inv.stockModel !== "presell") continue;
+      const product = productMap.get(inv.productId as Id<"products">);
+      const batch = batchMap.get(inv.batchId as Id<"batches">);
+      if (!product || !batch) continue;
+      opts.push({
+        key: makeInventoryKey(inv.batchId, inv.stockModel),
+        productName: product.name,
+        variantName: batch.variantId ? variantMap.get(batch.variantId)?.name : undefined,
+        batchCode: batch.batchCode,
+        stockModel: inv.stockModel,
+        held: inv.quantity,
+      });
     }
-    return map;
-  }, [returnableByProduct]);
+    opts.sort((a, b) => {
+      const np = a.productName.localeCompare(b.productName);
+      if (np !== 0) return np;
+      const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
+      if (nv !== 0) return nv;
+      return a.batchCode.localeCompare(b.batchCode);
+    });
+    return opts;
+  }, [agentReturnableInventory, batchMap, productMap, variantMap]);
+
+  const optionMap = useMemo(
+    () => new Map(availableReturnOptions.map((o) => [o.key, o])),
+    [availableReturnOptions]
+  );
 
   // Inventory key set already used across rows (prevent duplicates).
   const usedKeys = useMemo(
     () => new Set(rows.filter((r) => r.inventoryKey).map((r) => r.inventoryKey)),
     [rows]
   );
+
+  // Auto-select source when only one is available across both groups
+  useEffect(() => {
+    if (!open || agentId) return;
+    if (!sellers) return;
+    const total = agents.length + salesStaff.length;
+    if (total !== 1) return;
+    const only = agents[0] ?? salesStaff[0];
+    if (only) setAgentId(only._id);
+  }, [open, agentId, sellers, agents, salesStaff]);
+
+  // Auto-fill the initial row when only one returnable option exists for the selected source
+  useEffect(() => {
+    if (!open) return;
+    if (rows.length !== 1) return;
+    if (rows[0].inventoryKey) return;
+    if (availableReturnOptions.length !== 1) return;
+    setRows([{ id: rows[0].id, inventoryKey: availableReturnOptions[0].key, quantity: "" }]);
+  }, [open, rows, availableReturnOptions]);
 
   function resetForm() {
     setAgentId("");
@@ -354,128 +394,80 @@ export function ReturnFormDialog({
               <Table>
                 <TableHeader>
                   <TableRow>
-                    <TableHead>Product</TableHead>
-                    <TableHead>Batch · Model</TableHead>
+                    <TableHead>Item</TableHead>
                     <TableHead className="w-[120px]">Qty / Held</TableHead>
                     <TableHead className="w-[40px]" />
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {rows.map((row) => {
-                    const inventoryForProduct = row.productId
-                      ? (returnableByProduct.get(row.productId) ?? [])
-                      : [];
+                    const selected = row.inventoryKey ? optionMap.get(row.inventoryKey) : undefined;
+                    const held = selected?.held ?? 0;
 
-                    const selectableEntries = inventoryForProduct.filter((inv) => {
-                      if (!inv.stockModel) return false;
-                      const key = makeInventoryKey(inv.batchId, inv.stockModel);
-                      return !usedKeys.has(key) || key === row.inventoryKey;
-                    });
-
-                    const selectedInv = row.inventoryKey
-                      ? inventoryByKey.get(row.inventoryKey)
-                      : null;
-                    const selectedBatch = selectedInv
-                      ? batchMap.get(selectedInv.batchId)
-                      : null;
-                    const held = selectedInv?.quantity ?? 0;
+                    const selectableOptions = availableReturnOptions.filter(
+                      (opt) => !usedKeys.has(opt.key) || opt.key === row.inventoryKey
+                    );
 
                     return (
                       <TableRow key={row.id}>
-                        {/* Product */}
-                        <TableCell className="align-top py-2">
-                          <Select
-                            value={row.productId}
-                            disabled={!agentId}
-                            onValueChange={(v) =>
-                              updateRow(row.id, { productId: v ?? "", inventoryKey: "", quantity: "" })
-                            }
-                          >
-                            <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Select product">
-                                {row.productId
-                                  ? productMap.get(row.productId as Id<"products">)?.name
-                                  : undefined}
-                              </SelectValue>
-                            </SelectTrigger>
-                            <SelectContent alignItemWithTrigger={false}>
-                              {Array.from(returnableByProduct.keys()).length === 0 ? (
-                                <SelectItem value="_none" disabled>
-                                  No returnable products
-                                </SelectItem>
-                              ) : (
-                                Array.from(returnableByProduct.keys()).map((pid) => {
-                                  const product = productMap.get(pid as Id<"products">);
-                                  if (!product) return null;
-                                  const total = productTotal.get(pid) ?? 0;
-                                  return (
-                                    <SelectItem key={pid} value={pid}>
-                                      <div className="flex items-center justify-between w-full gap-4">
-                                        <span>{product.name}</span>
-                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                          {total} held
-                                        </span>
-                                      </div>
-                                    </SelectItem>
-                                  );
-                                })
-                              )}
-                            </SelectContent>
-                          </Select>
-                        </TableCell>
-
-                        {/* Batch + stock model */}
+                        {/* Item: product + variant + batch + model */}
                         <TableCell className="align-top py-2">
                           <Select
                             value={row.inventoryKey}
-                            disabled={!row.productId}
+                            disabled={!agentId}
                             onValueChange={(v) =>
                               updateRow(row.id, { inventoryKey: v ?? "", quantity: "" })
                             }
                           >
                             <SelectTrigger className="h-8 text-sm">
-                              <SelectValue placeholder="Select batch">
-                                {selectedBatch && selectedInv?.stockModel
-                                  ? `${selectedBatch.batchCode}${
-                                      selectedBatch.variantId
-                                        ? ` · ${variantMap.get(selectedBatch.variantId)?.name ?? ""}`
-                                        : ""
-                                    } · ${stockModelLabels[selectedInv.stockModel] ?? selectedInv.stockModel}`
+                              <SelectValue placeholder="Select product">
+                                {selected
+                                  ? `${selected.productName}${selected.variantName ? ` — ${selected.variantName}` : ""} — ${selected.batchCode} · ${stockModelLabels[selected.stockModel] ?? selected.stockModel}`
                                   : undefined}
                               </SelectValue>
                             </SelectTrigger>
                             <SelectContent alignItemWithTrigger={false}>
-                              {selectableEntries.length === 0 ? (
+                              {selectableOptions.length === 0 ? (
                                 <SelectItem value="_none" disabled>
-                                  No batches available
+                                  No items available
                                 </SelectItem>
                               ) : (
-                                selectableEntries.map((inv) => {
-                                  if (!inv.stockModel) return null;
-                                  const batch = batchMap.get(inv.batchId);
-                                  if (!batch) return null;
-                                  const key = makeInventoryKey(inv.batchId, inv.stockModel);
-                                  return (
-                                    <SelectItem key={key} value={key}>
-                                      <div className="flex items-center justify-between w-full gap-4">
-                                        <span className="truncate">
-                                          {batch.batchCode}
-                                          {batch.variantId && (
-                                            <span className="ml-1.5 text-muted-foreground">
-                                              {variantMap.get(batch.variantId)?.name}
+                                (() => {
+                                  const groups: { name: string; items: typeof selectableOptions }[] = [];
+                                  for (const opt of selectableOptions) {
+                                    const last = groups[groups.length - 1];
+                                    if (last && last.name === opt.productName) {
+                                      last.items.push(opt);
+                                    } else {
+                                      groups.push({ name: opt.productName, items: [opt] });
+                                    }
+                                  }
+                                  return groups.map((group, gi) => (
+                                    <SelectGroup key={`${group.name}-${gi}`}>
+                                      <SelectLabel>{group.name}</SelectLabel>
+                                      {group.items.map((opt) => (
+                                        <SelectItem key={opt.key} value={opt.key}>
+                                          <div className="flex items-center justify-between w-full gap-4">
+                                            <span className="truncate">
+                                              {opt.variantName && (
+                                                <span>{opt.variantName} · </span>
+                                              )}
+                                              <span className="text-muted-foreground">
+                                                {opt.batchCode}
+                                              </span>
+                                              <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
+                                                {stockModelLabels[opt.stockModel] ?? opt.stockModel}
+                                              </Badge>
                                             </span>
-                                          )}
-                                          <Badge variant="outline" className="ml-2 text-[10px] px-1.5 py-0">
-                                            {stockModelLabels[inv.stockModel] ?? inv.stockModel}
-                                          </Badge>
-                                        </span>
-                                        <span className="text-xs text-muted-foreground whitespace-nowrap">
-                                          {inv.quantity} held
-                                        </span>
-                                      </div>
-                                    </SelectItem>
-                                  );
-                                })
+                                            <span className="text-xs text-muted-foreground whitespace-nowrap">
+                                              {opt.held} held
+                                            </span>
+                                          </div>
+                                        </SelectItem>
+                                      ))}
+                                    </SelectGroup>
+                                  ));
+                                })()
                               )}
                             </SelectContent>
                           </Select>
@@ -521,14 +513,24 @@ export function ReturnFormDialog({
                   })}
 
                   <TableRow>
-                    <TableCell colSpan={4} className="py-2">
+                    <TableCell colSpan={3} className="py-2">
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         className="h-7 text-xs"
                         disabled={!agentId}
-                        onClick={() => setRows((prev) => [...prev, emptyRow()])}
+                        onClick={() =>
+                          setRows((prev) => {
+                            const used = new Set(prev.filter((r) => r.inventoryKey).map((r) => r.inventoryKey));
+                            const remaining = availableReturnOptions.filter((opt) => !used.has(opt.key));
+                            const next: ReturnRow =
+                              remaining.length === 1
+                                ? { id: genId(), inventoryKey: remaining[0].key, quantity: "" }
+                                : emptyRow();
+                            return [...prev, next];
+                          })
+                        }
                       >
                         <PlusIcon className="h-3 w-3 mr-1" />
                         Add row
