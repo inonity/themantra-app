@@ -3,6 +3,7 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { requireAuth } from "./helpers/auth";
+import { Doc } from "./_generated/dataModel";
 
 const EMAIL_CONFIRM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 
@@ -239,12 +240,16 @@ export const getSettingsData = query({
     if (!user) return null;
 
     // Get agent profile if seller
-    let agentProfile = null;
+    let agentProfile: Doc<"agentProfiles"> | null = null;
+    let paymentQrUrl: string | null = null;
     if (user.role === "agent" || user.role === "sales") {
       agentProfile = await ctx.db
         .query("agentProfiles")
         .withIndex("by_agentId", (q) => q.eq("agentId", userId))
         .unique();
+      if (agentProfile?.paymentQrStorageId) {
+        paymentQrUrl = await ctx.storage.getUrl(agentProfile.paymentQrStorageId);
+      }
     }
 
     // Get agent's assigned rate
@@ -278,6 +283,7 @@ export const getSettingsData = query({
     return {
       user,
       agentProfile,
+      paymentQrUrl,
       rate,
       applicableOffers,
       offerPricing: offerPricingList,

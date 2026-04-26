@@ -129,7 +129,12 @@ export function RecordSaleForm({
 }: {
   inventory: Doc<"inventory">[];
   businessInventory?: Doc<"inventory">[];
-  agentProfile?: { defaultStockModel?: string } | null;
+  agentProfile?: {
+    defaultStockModel?: string;
+    paymentCollectorPreference?: "agent" | "hq";
+    preferredPaymentMethod?: "cash" | "qr" | "bank_transfer";
+    paymentQrUrl?: string | null;
+  } | null;
   userRole?: string;
 }) {
   const recordSale = useMutation(api.sales.recordB2CSale);
@@ -157,7 +162,9 @@ export function RecordSaleForm({
   const [unifiedItems, setUnifiedItems] = useState<UnifiedLineItem[]>([]);
   const [saleChannel, setSaleChannel] = useState<string>("direct");
   const stockModel = defaultModel;
-  const [paymentCollector, setPaymentCollector] = useState<"agent" | "hq">("agent");
+  const [paymentCollector, setPaymentCollector] = useState<"agent" | "hq">(
+    agentProfile?.paymentCollectorPreference ?? "agent"
+  );
   const [customerName, setCustomerName] = useState("");
   const [customerPhone, setCustomerPhone] = useState("");
   const [customerEmail, setCustomerEmail] = useState("");
@@ -168,7 +175,9 @@ export function RecordSaleForm({
   const [interestPreFilled, setInterestPreFilled] = useState(false);
 
   // Payment flow state
-  const [paymentMethod, setPaymentMethod] = useState<string>("");
+  const [paymentMethod, setPaymentMethod] = useState<string>(
+    agentProfile?.preferredPaymentMethod ?? ""
+  );
   const [paymentProofFile, setPaymentProofFile] = useState<File | null>(null);
   const [paymentProofPreview, setPaymentProofPreview] = useState<string | null>(null);
   const [amountReceived, setAmountReceived] = useState<string>("");
@@ -190,6 +199,32 @@ export function RecordSaleForm({
   const isSalesperson = userRole === "sales";
   const isCashOrNonCash = paymentMethod === "cash" || isNonCashPayment;
   const showAmountReceivedForSales = isSalesperson && isCashOrNonCash;
+
+  // Whether the seller is the collector (always true for hold_paid; otherwise determined by collector dropdown)
+  const sellerCollects = !showCollectorOption || paymentCollector === "agent";
+  // Allowed payment methods based on who collects:
+  // - Seller collects: cash, qr (hide bank_transfer, online, other)
+  // - HQ collects: cash, qr, bank_transfer (hide online, other)
+  const allowedPaymentMethods = useMemo(
+    () =>
+      sellerCollects
+        ? (["cash", "qr"] as const)
+        : (["cash", "qr", "bank_transfer"] as const),
+    [sellerCollects]
+  );
+
+  // If the current selection becomes invalid after a collector change, clear it
+  useEffect(() => {
+    if (
+      paymentMethod &&
+      !(allowedPaymentMethods as readonly string[]).includes(paymentMethod)
+    ) {
+      setPaymentMethod("");
+      setPaymentProofFile(null);
+      setPaymentProofPreview(null);
+      if (fileInputRef.current) fileInputRef.current.value = "";
+    }
+  }, [allowedPaymentMethods, paymentMethod]);
 
   const allVariants = useQuery(api.productVariants.listAll);
 
@@ -664,9 +699,9 @@ export function RecordSaleForm({
   async function submitSale() {
     setSubmitting(true);
     try {
-      // Upload proof of payment if provided
+      // Upload proof of payment if provided (any non-cash method, regardless of collector)
       let paymentProofStorageId: Id<"_storage"> | undefined;
-      if (paymentProofFile && needsProofOfPayment) {
+      if (paymentProofFile && isNonCashPayment) {
         setUploadingProof(true);
         const uploadUrl = await generateUploadUrl();
         const result = await fetch(uploadUrl, {
@@ -1435,11 +1470,11 @@ export function RecordSaleForm({
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="none">Not specified</SelectItem>
-                      <SelectItem value="cash">Cash</SelectItem>
-                      <SelectItem value="qr">QR Payment</SelectItem>
-                      <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                      <SelectItem value="online">Online</SelectItem>
-                      <SelectItem value="other">Other</SelectItem>
+                      {allowedPaymentMethods.map((m) => (
+                        <SelectItem key={m} value={m}>
+                          {PAYMENT_METHOD_LABELS[m]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
@@ -1534,6 +1569,34 @@ export function RecordSaleForm({
                   />
                 </button>
                 <p className="text-xs text-muted-foreground text-center">Tap to enlarge</p>
+              </div>
+            )}
+
+            {/* Seller's own QR — when the seller collects via QR */}
+            {sellerCollects && paymentMethod === "qr" && (
+              <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+                {agentProfile?.paymentQrUrl ? (
+                  <>
+                    <p className="text-sm font-medium">Show your QR to customer</p>
+                    <button
+                      type="button"
+                      onClick={() => setShowQrDialog(true)}
+                      className="block rounded-lg border overflow-hidden hover:opacity-75 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring mx-auto"
+                    >
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={agentProfile.paymentQrUrl}
+                        alt="Your QR Payment"
+                        className="h-64 w-64 object-contain"
+                      />
+                    </button>
+                    <p className="text-xs text-muted-foreground text-center">Tap to enlarge</p>
+                  </>
+                ) : (
+                  <p className="text-sm text-muted-foreground text-center">
+                    No QR uploaded yet. Add one in <span className="font-medium">Settings → Payment Preferences</span> to show it here.
+                  </p>
+                )}
               </div>
             )}
 
@@ -1664,9 +1727,14 @@ export function RecordSaleForm({
         <DialogContent className="flex flex-col gap-4 sm:max-w-md">
           <DialogTitle>QR Payment</DialogTitle>
           <div className="flex flex-1 items-center justify-center px-4 py-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img
               alt="QR Payment"
-              src="/qr-payment.png"
+              src={
+                sellerCollects && agentProfile?.paymentQrUrl
+                  ? agentProfile.paymentQrUrl
+                  : "/qr-payment.png"
+              }
               className="h-auto block"
             />
           </div>

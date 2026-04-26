@@ -4,6 +4,7 @@ import { useQuery } from "convex/react";
 import { api } from "../../../../../convex/_generated/api";
 import { AccountSection } from "@/components/settings/account-section";
 import { RoleSection } from "@/components/settings/role-section";
+import { PaymentPreferencesSection } from "@/components/settings/payment-preferences-section";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function SettingsSkeleton() {
@@ -45,6 +46,13 @@ export default function SettingsPage() {
 
       <AccountSection user={settingsData.user} />
       <RoleSection data={settingsData} />
+      {(settingsData.user.role === "agent" ||
+        settingsData.user.role === "sales") && (
+        <PaymentPreferencesSection
+          agentProfile={settingsData.agentProfile}
+          paymentQrUrl={settingsData.paymentQrUrl}
+        />
+      )}
     </div>
   );
 }

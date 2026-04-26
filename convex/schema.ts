@@ -424,6 +424,22 @@ export default defineSchema({
         v.literal("dropship") // legacy — kept for existing records
       )
     ),
+    // Default collector when recording a sale (only applies for consignment/presell;
+    // hold_paid is always collected by the seller)
+    paymentCollectorPreference: v.optional(
+      v.union(v.literal("agent"), v.literal("hq"))
+    ),
+    // Default payment method shown in the sale form. Limited to methods that the
+    // visibility rules allow: cash/qr (seller collects) or cash/qr/bank_transfer (HQ collects).
+    preferredPaymentMethod: v.optional(
+      v.union(
+        v.literal("cash"),
+        v.literal("qr"),
+        v.literal("bank_transfer")
+      )
+    ),
+    // Seller's own QR image — shown when the seller collects via QR
+    paymentQrStorageId: v.optional(v.id("_storage")),
     notes: v.optional(v.string()),
     updatedAt: v.optional(v.number()),
   }).index("by_agentId", ["agentId"]),
