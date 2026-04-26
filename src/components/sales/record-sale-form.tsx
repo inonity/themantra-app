@@ -18,9 +18,7 @@ import {
 import {
   Select,
   SelectContent,
-  SelectGroup,
   SelectItem,
-  SelectLabel,
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
@@ -60,6 +58,7 @@ import { toast } from "sonner";
 import { getErrorMessage } from "@/lib/utils";
 import { PhoneInput } from "@/components/ui/phone-input";
 import { Checkbox } from "@/components/ui/checkbox";
+import { AddItemPickerDialog, type PickerSource } from "@/components/sales/add-item-picker-dialog";
 
 type FulfillmentSource = "agent_stock" | "hq_transfer" | "hq_direct" | "pending_batch" | "future_release";
 
@@ -188,6 +187,7 @@ export function RecordSaleForm({
   const [showConfirmDialog, setShowConfirmDialog] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
   const [showQrDialog, setShowQrDialog] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const generateUploadUrl = useMutation(api.files.generateUploadUrl);
 
@@ -1221,170 +1221,13 @@ export function RecordSaleForm({
                   return rows;
                 })()}
 
-                {/* Add from agent's own inventory (all modes) */}
-                {(isPresell ? pickableAgentInventory : pickableInventory).length > 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6}>
-                      <Select modal={false} value="" onValueChange={(v) => v && (isPresell ? addFromOwnInventory(v) : addItem(v))}>
-                        <SelectTrigger className="w-full md:w-[350px]">
-                          <SelectValue placeholder="Add from your inventory..." />
-                        </SelectTrigger>
-                        <SelectContent alignItemWithTrigger={false}>
-                          {(() => {
-                            const source = isPresell ? pickableAgentInventory : pickableInventory;
-                            const enriched = source.map((inv) => {
-                              const product = productMap.get(inv.productId);
-                              const batch = batchMap.get(inv.batchId);
-                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                              return {
-                                inv,
-                                productName: product?.name ?? "Unknown",
-                                variantName: variant?.name,
-                                batchCode: batch?.batchCode ?? "?",
-                                remaining: inv.quantity,
-                              };
-                            });
-                            enriched.sort((a, b) => {
-                              const np = a.productName.localeCompare(b.productName);
-                              if (np !== 0) return np;
-                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
-                              if (nv !== 0) return nv;
-                              return a.batchCode.localeCompare(b.batchCode);
-                            });
-                            const groups: { name: string; items: typeof enriched }[] = [];
-                            for (const item of enriched) {
-                              const last = groups[groups.length - 1];
-                              if (last && last.name === item.productName) last.items.push(item);
-                              else groups.push({ name: item.productName, items: [item] });
-                            }
-                            return groups.map((group, gi) => (
-                              <SelectGroup key={`${group.name}-${gi}`}>
-                                <SelectLabel>{group.name}</SelectLabel>
-                                {group.items.map((item) => (
-                                  <SelectItem key={item.inv._id} value={item.inv._id}>
-                                    {item.variantName ? `${item.variantName} · ` : ""}
-                                    <span className="text-muted-foreground">{item.batchCode}</span>
-                                    <span className="text-muted-foreground"> (avail: {item.remaining})</span>
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ));
-                          })()}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {/* Add from HQ inventory — auto-fulfill (salesperson: pull from HQ + fulfill in 1 click, any stock model) */}
-                {pickableHQInventory.length > 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6}>
-                      <Select modal={false} value="" onValueChange={(v) => v && addFromHQAutoFulfill(v)}>
-                        <SelectTrigger className="w-full md:w-[350px]">
-                          <SelectValue placeholder="Add from HQ stock (auto-fulfill)..." />
-                        </SelectTrigger>
-                        <SelectContent alignItemWithTrigger={false}>
-                          {(() => {
-                            const enriched = pickableHQInventory.map((inv) => {
-                              const product = productMap.get(inv.productId);
-                              const batch = batchMap.get(inv.batchId);
-                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                              return {
-                                inv,
-                                productName: product?.name ?? "Unknown",
-                                variantName: variant?.name,
-                                batchCode: batch?.batchCode ?? "?",
-                              };
-                            });
-                            enriched.sort((a, b) => {
-                              const np = a.productName.localeCompare(b.productName);
-                              if (np !== 0) return np;
-                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
-                              if (nv !== 0) return nv;
-                              return a.batchCode.localeCompare(b.batchCode);
-                            });
-                            const groups: { name: string; items: typeof enriched }[] = [];
-                            for (const item of enriched) {
-                              const last = groups[groups.length - 1];
-                              if (last && last.name === item.productName) last.items.push(item);
-                              else groups.push({ name: item.productName, items: [item] });
-                            }
-                            return groups.map((group, gi) => (
-                              <SelectGroup key={`${group.name}-${gi}`}>
-                                <SelectLabel>{group.name}</SelectLabel>
-                                {group.items.map((item) => (
-                                  <SelectItem key={item.inv._id} value={item.inv._id}>
-                                    {item.variantName ? `${item.variantName} · ` : ""}
-                                    <span className="text-muted-foreground">{item.batchCode}</span>
-                                    <span className="text-muted-foreground"> (HQ: {item.inv.quantity})</span>
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ));
-                          })()}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {/* Add from HQ inventory (pre-sell — pending hq_transfer) */}
-                {isPresell && pickableInventory.length > 0 && (
-                  <TableRow className="hover:bg-transparent">
-                    <TableCell colSpan={6}>
-                      <Select modal={false} value="" onValueChange={(v) => v && addItem(v)}>
-                        <SelectTrigger className="w-full md:w-[350px]">
-                          <SelectValue placeholder="Add from HQ inventory (pending transfer)..." />
-                        </SelectTrigger>
-                        <SelectContent alignItemWithTrigger={false}>
-                          {(() => {
-                            const enriched = pickableInventory.map((inv) => {
-                              const product = productMap.get(inv.productId);
-                              const batch = batchMap.get(inv.batchId);
-                              const variant = inv.variantId ? variantMap.get(inv.variantId) : undefined;
-                              return {
-                                inv,
-                                productName: product?.name ?? "Unknown",
-                                variantName: variant?.name,
-                                batchCode: batch?.batchCode ?? "?",
-                              };
-                            });
-                            enriched.sort((a, b) => {
-                              const np = a.productName.localeCompare(b.productName);
-                              if (np !== 0) return np;
-                              const nv = (a.variantName ?? "").localeCompare(b.variantName ?? "");
-                              if (nv !== 0) return nv;
-                              return a.batchCode.localeCompare(b.batchCode);
-                            });
-                            const groups: { name: string; items: typeof enriched }[] = [];
-                            for (const item of enriched) {
-                              const last = groups[groups.length - 1];
-                              if (last && last.name === item.productName) last.items.push(item);
-                              else groups.push({ name: item.productName, items: [item] });
-                            }
-                            return groups.map((group, gi) => (
-                              <SelectGroup key={`${group.name}-${gi}`}>
-                                <SelectLabel>{group.name}</SelectLabel>
-                                {group.items.map((item) => (
-                                  <SelectItem key={item.inv._id} value={item.inv._id}>
-                                    {item.variantName ? `${item.variantName} · ` : ""}
-                                    <span className="text-muted-foreground">{item.batchCode}</span>
-                                    <span className="text-muted-foreground"> (avail: {item.inv.quantity})</span>
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ));
-                          })()}
-                        </SelectContent>
-                      </Select>
-                    </TableCell>
-                  </TableRow>
-                )}
-
-                {/* Add product without stock (pending/future release) */}
-                {sellableProducts.length > 0 && (() => {
-                  const pendingGroups = sellableProducts.flatMap((product) => {
+                {/* Single "Add item" trigger — opens picker dialog */}
+                {(() => {
+                  const ownInv = isPresell ? pickableAgentInventory : pickableInventory;
+                  const presellHQInv = isPresell ? pickableInventory : [];
+                  type PendingItem = { value: string; label: string; variant?: Doc<"productVariants"> };
+                  type PendingGroupLocal = { product: Doc<"products">; futureSuffix: string; items: PendingItem[] };
+                  const pendingGroups: PendingGroupLocal[] = sellableProducts.flatMap((product): PendingGroupLocal[] => {
                     const variants = variantsByProduct.get(product._id) ?? [];
                     const futureSuffix = product.status === "future_release" ? " (Future Release)" : "";
                     if (variants.length === 0) {
@@ -1393,7 +1236,7 @@ export function RecordSaleForm({
                         product,
                         futureSuffix,
                         items: [{
-                          value: product._id,
+                          value: product._id as string,
                           label: `RM${(product.price ?? 0).toFixed(2)}`,
                         }],
                       }];
@@ -1408,33 +1251,77 @@ export function RecordSaleForm({
                       items: filtered.map((v) => ({
                         value: `${product._id}__${v._id}`,
                         label: `${v.name} · RM${v.price.toFixed(2)}`,
+                        variant: v,
                       })),
                     }];
                   });
-                  if (pendingGroups.length === 0) return null;
+
+                  const sources: PickerSource[] = [];
+                  if (ownInv.length > 0) {
+                    sources.push({
+                      kind: "inventory",
+                      key: "own",
+                      label: "Your stock",
+                      description: "Items in your own inventory — deducted on sale.",
+                      inventory: ownInv,
+                      qtyLabel: (q) => `avail: ${q}`,
+                      onPick: (v) => (isPresell ? addFromOwnInventory(v) : addItem(v)),
+                    });
+                  }
+                  if (pickableHQInventory.length > 0) {
+                    sources.push({
+                      kind: "inventory",
+                      key: "hqAuto",
+                      label: "From HQ",
+                      description: "Pull from HQ stock and fulfill the sale in one click — no transfer needed.",
+                      inventory: pickableHQInventory,
+                      qtyLabel: (q) => `HQ: ${q}`,
+                      onPick: (v) => addFromHQAutoFulfill(v),
+                    });
+                  }
+                  if (presellHQInv.length > 0) {
+                    sources.push({
+                      kind: "inventory",
+                      key: "hqPresell",
+                      label: "Order from HQ",
+                      description: "HQ will transfer the stock to you so you can deliver it to the customer.",
+                      inventory: presellHQInv,
+                      qtyLabel: (q) => `avail: ${q}`,
+                      onPick: (v) => addItem(v),
+                    });
+                  }
+                  if (pendingGroups.length > 0) {
+                    sources.push({
+                      kind: "pending",
+                      key: "pending",
+                      label: "Pre-orders",
+                      description: "Products with no immediate stock — fulfilled when the next batch is ready or released.",
+                      groups: pendingGroups,
+                      onPick: (v) => addPendingProduct(v),
+                    });
+                  }
+
+                  if (sources.length === 0) return null;
                   return (
                     <TableRow className="hover:bg-transparent">
                       <TableCell colSpan={6}>
-                        <Select modal={false} value="" onValueChange={(v) => v && addPendingProduct(v)}>
-                          <SelectTrigger className="w-full md:w-[350px]">
-                            <SelectValue placeholder="Add product (no stock needed)..." />
-                          </SelectTrigger>
-                          <SelectContent alignItemWithTrigger={false}>
-                            {pendingGroups.map((group) => (
-                              <SelectGroup key={group.product._id}>
-                                <SelectLabel>
-                                  {group.product.name}
-                                  {group.futureSuffix}
-                                </SelectLabel>
-                                {group.items.map((item) => (
-                                  <SelectItem key={item.value} value={item.value}>
-                                    {item.label}
-                                  </SelectItem>
-                                ))}
-                              </SelectGroup>
-                            ))}
-                          </SelectContent>
-                        </Select>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={() => setPickerOpen(true)}
+                          className="w-full md:w-auto"
+                        >
+                          <PlusIcon />
+                          Add item
+                        </Button>
+                        <AddItemPickerDialog
+                          open={pickerOpen}
+                          onOpenChange={setPickerOpen}
+                          sources={sources}
+                          productMap={productMap}
+                          batchMap={batchMap}
+                          variantMap={variantMap}
+                        />
                       </TableCell>
                     </TableRow>
                   );
