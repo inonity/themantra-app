@@ -84,6 +84,7 @@ export function RecordPaymentDialog({
   const [proofPreview, setProofPreview] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [uploadingProof, setUploadingProof] = useState(false);
+  const [showQrDialog, setShowQrDialog] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const isNonCash = method === "qr" || method === "bank_transfer";
@@ -200,8 +201,22 @@ export function RecordPaymentDialog({
     return `TM-BT-${yy}${mm}${dd}-${phoneLast4}`;
   })();
 
+  const enlargedQrSrc =
+    sellerCollects && sellerProfile?.paymentQrUrl
+      ? sellerProfile.paymentQrUrl
+      : "/qr-payment.png";
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
+      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+        <DialogContent className="flex flex-col gap-4 sm:max-w-md">
+          <DialogTitle>QR Payment</DialogTitle>
+          <div className="flex flex-1 items-center justify-center px-4 py-2">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img alt="QR Payment" src={enlargedQrSrc} className="h-auto block" />
+          </div>
+        </DialogContent>
+      </Dialog>
       <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <DialogHeader>
           <DialogTitle>Record Payment</DialogTitle>
@@ -336,14 +351,19 @@ export function RecordPaymentDialog({
           {hqCollects && method === "qr" && (
             <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
               <p className="text-sm font-medium">HQ QR — show to customer</p>
-              <div className="flex justify-center">
+              <button
+                type="button"
+                onClick={() => setShowQrDialog(true)}
+                className="block rounded-lg border overflow-hidden hover:opacity-75 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring mx-auto"
+              >
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
                   src="/qr-payment.png"
                   alt="HQ QR Payment"
-                  className="h-48 w-48 object-contain rounded-lg border"
+                  className="h-48 w-48 object-contain"
                 />
-              </div>
+              </button>
+              <p className="text-xs text-muted-foreground text-center">Tap to enlarge</p>
             </div>
           )}
 
@@ -355,14 +375,19 @@ export function RecordPaymentDialog({
                   <p className="text-sm font-medium">
                     {isCurrentUserSeller ? "Your QR" : `${sellerName}'s QR`} — show to customer
                   </p>
-                  <div className="flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => setShowQrDialog(true)}
+                    className="block rounded-lg border overflow-hidden hover:opacity-75 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring mx-auto"
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={sellerProfile.paymentQrUrl}
                       alt="Seller QR"
-                      className="h-48 w-48 object-contain rounded-lg border"
+                      className="h-48 w-48 object-contain"
                     />
-                  </div>
+                  </button>
+                  <p className="text-xs text-muted-foreground text-center">Tap to enlarge</p>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground text-center">
