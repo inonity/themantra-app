@@ -182,7 +182,13 @@ function AdminDashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+      <div
+        className={
+          pendingPayments.length > 0
+            ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-6"
+            : "grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
+        }
+      >
         <StatCard
           title="Total Sales"
           icon={<ShoppingCartIcon className="h-4 w-4 text-muted-foreground" />}
@@ -225,6 +231,14 @@ function AdminDashboard() {
           value={String(stats?.pendingStockCount ?? 0)}
           hint={(stats?.pendingStockCount ?? 0) === 0 ? "All fulfilled" : "awaiting delivery"}
         />
+        {pendingPayments.length > 0 && (
+          <StatCard
+            title="Pending Payments"
+            icon={<BanknoteIcon className="h-4 w-4 text-muted-foreground" />}
+            value={fmtMoney(pendingPaymentsTotalOutstanding)}
+            hint={`across ${pendingPayments.length} ${pendingPayments.length === 1 ? "sale" : "sales"}`}
+          />
+        )}
       </div>
 
       {/* Timeseries chart */}
@@ -542,7 +556,13 @@ function AgentSalesDashboard() {
       </div>
 
       {/* Stat cards */}
-      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      <div
+        className={
+          3 + (hasEarnings ? 1 : 0) + (pendingPayments.length > 0 ? 1 : 0) >= 5
+            ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
+            : "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
+        }
+      >
         <StatCard
           title="My Sales"
           icon={<TrendingUpIcon className="h-4 w-4 text-muted-foreground" />}
@@ -579,6 +599,14 @@ function AgentSalesDashboard() {
               : "awaiting delivery"
           }
         />
+        {pendingPayments.length > 0 && (
+          <StatCard
+            title="Pending Payments"
+            icon={<BanknoteIcon className="h-4 w-4 text-muted-foreground" />}
+            value={fmtMoney(pendingPaymentsTotalOutstanding)}
+            hint={`across ${pendingPayments.length} ${pendingPayments.length === 1 ? "sale" : "sales"}`}
+          />
+        )}
       </div>
 
       {/* Timeseries */}
