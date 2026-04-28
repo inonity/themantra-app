@@ -181,14 +181,8 @@ function AdminDashboard() {
         <AgentFilter value={agentId} onChange={setAgentId} />
       </div>
 
-      {/* Stat cards */}
-      <div
-        className={
-          pendingPayments.length > 0
-            ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-6"
-            : "grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
-        }
-      >
+      {/* Stat cards — admin always has 5 or 6, so wrap into 2 rows */}
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         <StatCard
           title="Total Sales"
           icon={<ShoppingCartIcon className="h-4 w-4 text-muted-foreground" />}
@@ -555,13 +549,14 @@ function AgentSalesDashboard() {
         </div>
       </div>
 
-      {/* Stat cards */}
+      {/* Stat cards — wrap into 2 rows once we exceed 4 */}
       <div
-        className={
-          3 + (hasEarnings ? 1 : 0) + (pendingPayments.length > 0 ? 1 : 0) >= 5
-            ? "grid gap-4 sm:grid-cols-2 lg:grid-cols-5"
-            : "grid gap-4 sm:grid-cols-2 lg:grid-cols-4"
-        }
+        className={(() => {
+          const count = 3 + (hasEarnings ? 1 : 0) + (pendingPayments.length > 0 ? 1 : 0);
+          if (count > 4) return "grid gap-4 sm:grid-cols-2 lg:grid-cols-3";
+          if (count === 4) return "grid gap-4 sm:grid-cols-2 lg:grid-cols-4";
+          return "grid gap-4 sm:grid-cols-3";
+        })()}
       >
         <StatCard
           title="My Sales"
