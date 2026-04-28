@@ -317,6 +317,93 @@ export const listAll = query({
   },
 });
 
+// Admin: list HQ↔agent transfer/return movements with enriched names.
+// Excludes write-offs (separate tab), sales (toPartyType=customer), and HQ-only adjustments.
+export const listTransfers = query({
+  args: {},
+  handler: async (ctx) => {
+    await requireRole(ctx, "admin");
+
+    const movements = await ctx.db
+      .query("stockMovements")
+      .order("desc")
+      .take(500);
+
+    const transfers = movements.filter(
+      (m) =>
+        (m.fromPartyType === "business" && m.toPartyType === "agent") ||
+        (m.fromPartyType === "agent" && m.toPartyType === "business")
+    );
+
+    const userIds = new Set<Id<"users">>();
+    const productIds = new Set<Id<"products">>();
+    const variantIds = new Set<Id<"productVariants">>();
+    const batchIds = new Set<Id<"batches">>();
+
+    for (const m of transfers) {
+      if (m.fromPartyId) userIds.add(m.fromPartyId);
+      if (m.toPartyId) userIds.add(m.toPartyId);
+      productIds.add(m.productId);
+      if (m.variantId) variantIds.add(m.variantId);
+      batchIds.add(m.batchId);
+    }
+
+    const [users, products, variants, batches] = await Promise.all([
+      Promise.all(Array.from(userIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(productIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(variantIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(batchIds).map((id) => ctx.db.get(id))),
+    ]);
+
+    const userMap = new Map(
+      users
+        .filter((u): u is NonNullable<typeof u> => u !== null)
+        .map((u) => [u._id, u])
+    );
+    const productMap = new Map(
+      products
+        .filter((p): p is NonNullable<typeof p> => p !== null)
+        .map((p) => [p._id, p])
+    );
+    const variantMap = new Map(
+      variants
+        .filter((v): v is NonNullable<typeof v> => v !== null)
+        .map((v) => [v._id, v])
+    );
+    const batchMap = new Map(
+      batches
+        .filter((b): b is NonNullable<typeof b> => b !== null)
+        .map((b) => [b._id, b])
+    );
+
+    const userDisplayName = (uid: Id<"users"> | undefined) => {
+      if (!uid) return null;
+      const u = userMap.get(uid);
+      if (!u) return null;
+      return u.nickname || u.name || u.email || "Unnamed";
+    };
+
+    return transfers.map((m) => {
+      const direction =
+        m.fromPartyType === "business" ? ("transfer" as const) : ("return" as const);
+      const agentId = direction === "transfer" ? m.toPartyId : m.fromPartyId;
+      const agentName = userDisplayName(agentId);
+      const product = productMap.get(m.productId);
+      const variant = m.variantId ? variantMap.get(m.variantId) : null;
+      const batch = batchMap.get(m.batchId);
+      return {
+        ...m,
+        direction,
+        agentId,
+        agentName,
+        productName: product?.name ?? "Unknown product",
+        variantName: variant?.name,
+        batchCode: batch?.batchCode ?? "—",
+      };
+    });
+  },
+});
+
 // Admin: list all write-off movements (damage/lost/self-use/etc) with enriched info.
 // Includes both agent-side losses (recordStockLoss) and HQ-side write-offs (adjustStock).
 export const listStockLosses = query({

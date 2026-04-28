@@ -7,6 +7,7 @@ import { RoleGuard } from "@/components/role-guard";
 import { InventoryBreakdown } from "@/components/stock/inventory-breakdown";
 import { ReportStockLossDialog } from "@/components/stock/report-loss-dialog";
 import { ReturnFormDialog } from "@/components/stock/return-form-dialog";
+import { MovementsTable } from "@/components/stock/movements-table";
 import { StockLossesTable } from "@/components/stock/stock-losses-table";
 import { TransferFormDialog } from "@/components/stock/transfer-form-dialog";
 import { Button } from "@/components/ui/button";
@@ -345,6 +346,7 @@ export default function StockPage() {
                 </Badge>
               )}
             </TabsTrigger>
+            <TabsTrigger value="movements">Movements</TabsTrigger>
             <TabsTrigger value="losses">Stock Losses</TabsTrigger>
           </TabsList>
 
@@ -386,6 +388,10 @@ export default function StockPage() {
                 <RequestsTable requests={allRequests as EnrichedRequest[]} />
               </TabsContent>
             </Tabs>
+          </TabsContent>
+
+          <TabsContent value="movements" className="mt-4">
+            <MovementsTable />
           </TabsContent>
 
           <TabsContent value="losses" className="mt-4">
