@@ -4,6 +4,7 @@ import { useMemo, useState } from "react";
 import Link from "next/link";
 import { useQuery } from "convex/react";
 import {
+  BanknoteIcon,
   ClockIcon,
   DollarSignIcon,
   HeartIcon,
@@ -132,6 +133,7 @@ function AdminDashboard() {
   // Existing tables
   const allSales = useQuery(api.sales.list);
   const pendingFulfillment = useQuery(api.sales.listPendingFulfillment);
+  const unpaidSales = useQuery(api.sales.listUnpaid);
   const allProducts = useQuery(api.products.list);
   const allBatches = useQuery(api.batches.listAll);
   const agents = useQuery(api.users.listAgents);
@@ -141,6 +143,24 @@ function AdminDashboard() {
   const oldestPending = useMemo(
     () => [...(pendingFulfillment ?? [])].reverse().slice(0, 4),
     [pendingFulfillment]
+  );
+
+  // Pending customer payments — exclude internal sales (those are bookkeeping, not customer payments)
+  const pendingPayments = useMemo(
+    () => (unpaidSales ?? []).filter((s) => s.saleChannel !== "internal"),
+    [unpaidSales]
+  );
+  const pendingPaymentsTotalOutstanding = useMemo(
+    () =>
+      pendingPayments.reduce(
+        (sum, s) => sum + (s.totalAmount - s.amountPaid),
+        0
+      ),
+    [pendingPayments]
+  );
+  const recentPendingPayments = useMemo(
+    () => pendingPayments.slice(0, 4),
+    [pendingPayments]
   );
 
   return (
@@ -295,6 +315,48 @@ function AdminDashboard() {
         />
       </div>
 
+      {/* Pending customer payments — only when there are any */}
+      {pendingPayments.length > 0 && (
+        <Card className="border-amber-500/30">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
+                <BanknoteIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  Pending Customer Payments
+                  <span className="inline-flex h-5 min-w-5 px-1.5 items-center justify-center rounded-full bg-amber-500/15 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {pendingPayments.length}
+                  </span>
+                </CardTitle>
+                <CardDescription>
+                  RM{pendingPaymentsTotalOutstanding.toFixed(2)} outstanding across{" "}
+                  {pendingPayments.length} {pendingPayments.length === 1 ? "sale" : "sales"}
+                </CardDescription>
+              </div>
+            </div>
+            <Link
+              href="/dashboard/sales?status=unpaid,partial"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              View all
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <SalesTable
+              sales={recentPendingPayments}
+              products={allProducts ?? []}
+              batches={allBatches ?? []}
+              agents={agents ?? []}
+              offers={offers ?? []}
+              showAgent
+              hideFilters
+            />
+          </CardContent>
+        </Card>
+      )}
+
       {/* Recent sales + pending fulfillment */}
       <Card>
         <CardHeader className="flex flex-row items-center justify-between">
@@ -419,6 +481,28 @@ function AgentSalesDashboard() {
       .reverse()
       .slice(0, 4);
   }, [sales]);
+
+  // Pending customer payments (unpaid/partial), excluding internal bookkeeping sales
+  const pendingPayments = useMemo(() => {
+    if (!sales) return [];
+    return sales.filter(
+      (s) =>
+        (s.paymentStatus === "unpaid" || s.paymentStatus === "partial") &&
+        s.saleChannel !== "internal"
+    );
+  }, [sales]);
+  const pendingPaymentsTotalOutstanding = useMemo(
+    () =>
+      pendingPayments.reduce(
+        (sum, s) => sum + (s.totalAmount - s.amountPaid),
+        0
+      ),
+    [pendingPayments]
+  );
+  const recentPendingPayments = useMemo(
+    () => pendingPayments.slice(0, 4),
+    [pendingPayments]
+  );
 
   const hasEarnings = (stats?.current.commission ?? 0) > 0;
 
@@ -568,6 +652,46 @@ function AgentSalesDashboard() {
           buckets={stats?.fulfillment.buckets ?? { "0-7": 0, "7-14": 0, "14+": 0 }}
         />
       </div>
+
+      {/* Pending customer payments — only when there are any */}
+      {pendingPayments.length > 0 && (
+        <Card className="border-amber-500/30">
+          <CardHeader className="flex flex-row items-center justify-between">
+            <div className="flex items-start gap-3">
+              <div className="rounded-md bg-amber-500/10 p-2 text-amber-600 dark:text-amber-400">
+                <BanknoteIcon className="h-5 w-5" />
+              </div>
+              <div>
+                <CardTitle className="flex items-center gap-2">
+                  Pending Customer Payments
+                  <span className="inline-flex h-5 min-w-5 px-1.5 items-center justify-center rounded-full bg-amber-500/15 text-xs font-medium text-amber-600 dark:text-amber-400">
+                    {pendingPayments.length}
+                  </span>
+                </CardTitle>
+                <CardDescription>
+                  RM{pendingPaymentsTotalOutstanding.toFixed(2)} outstanding across{" "}
+                  {pendingPayments.length} {pendingPayments.length === 1 ? "sale" : "sales"}
+                </CardDescription>
+              </div>
+            </div>
+            <Link
+              href="/dashboard/my-sales?status=unpaid,partial"
+              className={buttonVariants({ variant: "outline", size: "sm" })}
+            >
+              View all
+            </Link>
+          </CardHeader>
+          <CardContent>
+            <SalesTable
+              sales={recentPendingPayments}
+              products={allProducts ?? []}
+              batches={allBatches ?? []}
+              offers={offers ?? []}
+              hideFilters
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Recent sales + pending */}
       <Card>

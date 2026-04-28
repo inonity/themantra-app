@@ -1,19 +1,28 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { useSearchParams } from "next/navigation";
+import { Suspense, useMemo } from "react";
 import { api } from "../../../../../convex/_generated/api";
 import { RoleGuard } from "@/components/role-guard";
 import { SalesTable } from "@/components/sales/sales-table";
 import { SalesAnalytics } from "@/components/sales/sales-analytics";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
-export default function SalesOverviewPage() {
+function SalesOverviewPageInner() {
   const sales = useQuery(api.sales.list);
   const pendingFulfillment = useQuery(api.sales.listPendingFulfillment);
   const products = useQuery(api.products.list);
   const batches = useQuery(api.batches.listAll);
   const agents = useQuery(api.users.listAgents);
   const offers = useQuery(api.offers.list);
+  const searchParams = useSearchParams();
+
+  const initialPaymentStatuses = useMemo(() => {
+    const raw = searchParams.get("status");
+    if (!raw) return undefined;
+    return raw.split(",").filter((s) => ["paid", "partial", "unpaid"].includes(s));
+  }, [searchParams]);
 
   const isLoading =
     sales === undefined ||
@@ -59,6 +68,7 @@ export default function SalesOverviewPage() {
                   agents={agents}
                   offers={offers}
                   showAgent
+                  initialPaymentStatuses={initialPaymentStatuses}
                 />
               </TabsContent>
               <TabsContent value={1}>
@@ -84,5 +94,13 @@ export default function SalesOverviewPage() {
         )}
       </div>
     </RoleGuard>
+  );
+}
+
+export default function SalesOverviewPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+      <SalesOverviewPageInner />
+    </Suspense>
   );
 }

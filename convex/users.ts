@@ -30,6 +30,22 @@ export const current = query({
   },
 });
 
+export const getDisplayNameById = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const callerId = await requireAuth(ctx);
+    const caller = await ctx.db.get(callerId);
+    if (!caller) throw new Error("Not authenticated");
+    // Admin can look up any user; non-admins only themselves
+    if (caller.role !== "admin" && callerId !== args.userId) {
+      throw new Error("Not authorized");
+    }
+    const user = await ctx.db.get(args.userId);
+    if (!user) return null;
+    return user.nickname || user.name || user.email || "Unnamed";
+  },
+});
+
 export const listAgents = query({
   args: {},
   handler: async (ctx) => {

@@ -176,6 +176,8 @@ export function RecordSaleForm({
   const [interestPreFilled, setInterestPreFilled] = useState(false);
 
   // Payment flow state
+  const [paymentTiming, setPaymentTiming] = useState<"paid" | "partial" | "unpaid">("paid");
+  const [amountPaidNow, setAmountPaidNow] = useState<string>("");
   const [paymentMethod, setPaymentMethod] = useState<string>(
     agentProfile?.preferredPaymentMethod ?? ""
   );
@@ -195,12 +197,14 @@ export function RecordSaleForm({
   const isConsignment = stockModel === "consignment";
   const showCollectorOption = isPresell || isConsignment;
 
-  const isNonCashPayment = paymentMethod === "qr" || paymentMethod === "bank_transfer";
+  const isUnpaid = paymentTiming === "unpaid";
+  const isPartial = paymentTiming === "partial";
+  const isNonCashPayment = !isUnpaid && (paymentMethod === "qr" || paymentMethod === "bank_transfer");
   const isHqCollector = paymentCollector === "hq";
   const needsProofOfPayment = isNonCashPayment && isHqCollector && showCollectorOption;
   const isSalesperson = userRole === "sales";
-  const isCashOrNonCash = paymentMethod === "cash" || isNonCashPayment;
-  const showAmountReceivedForSales = isSalesperson && isCashOrNonCash;
+  const isCashOrNonCash = !isUnpaid && (paymentMethod === "cash" || isNonCashPayment);
+  const showAmountReceivedForSales = isSalesperson && isCashOrNonCash && !isPartial;
 
   // Whether the seller is the collector (always true for hold_paid; otherwise determined by collector dropdown)
   const sellerCollects = !showCollectorOption || paymentCollector === "agent";
@@ -499,7 +503,8 @@ export function RecordSaleForm({
   }, [unifiedItems, selectedOfferId, applicableOffers, productMap, variantMap]);
 
   const pricingTotal = pricing ? Math.round((pricing.offerTotal ?? pricing.defaultTotal) * 100) / 100 : 0;
-  const showAmountReceivedCol = ((isHqCollector && showCollectorOption && needsProofOfPayment) || showAmountReceivedForSales) && !!pricing;
+  // Overpayment ("customer paid more") only makes sense for fully paid sales — hide when partial/unpaid.
+  const showAmountReceivedCol = ((isHqCollector && showCollectorOption && needsProofOfPayment) || showAmountReceivedForSales) && !!pricing && !isPartial && !isUnpaid;
 
   function addItem(value: string) {
     // Value could be an inventory ID (for agent_stock) or a product ID (for pending/future)
@@ -679,8 +684,8 @@ export function RecordSaleForm({
     e.preventDefault();
     if (unifiedItems.length === 0) return;
 
-    // Validate amount received is not less than the total
-    if (showAmountReceivedCol && amountReceived !== "") {
+    // Validate amount received is not less than the total (paid/overpayment scenario only)
+    if (!isUnpaid && !isPartial && showAmountReceivedCol && amountReceived !== "") {
       const received = Math.round(parseFloat(amountReceived) * 100) / 100;
       if (isNaN(received) || received < pricingTotal) {
         toast.error(`Amount received must be at least RM${pricingTotal.toFixed(2)}`);
@@ -688,9 +693,22 @@ export function RecordSaleForm({
       }
     }
 
+    // Validate partial payment amount
+    if (isPartial) {
+      const paidNow = parseFloat(amountPaidNow);
+      if (isNaN(paidNow) || paidNow <= 0) {
+        toast.error("Enter the amount paid now");
+        return;
+      }
+      if (paidNow >= pricingTotal) {
+        toast.error(`Partial payment must be less than the total (RM${pricingTotal.toFixed(2)})`);
+        return;
+      }
+    }
+
     // If agent collects payment directly, show confirmation dialog
     const agentCollects = !isHqCollector || (!showCollectorOption);
-    if (agentCollects && paymentMethod) {
+    if (!isUnpaid && agentCollects && paymentMethod) {
       setShowConfirmDialog(true);
       return;
     }
@@ -728,11 +746,14 @@ export function RecordSaleForm({
         : undefined;
       const saleDateTs = parseInputDateToTimestamp(saleDate);
 
-      const paymentMethodValue = paymentMethod
+      const paymentMethodValue = !isUnpaid && paymentMethod
         ? (paymentMethod as "cash" | "qr" | "bank_transfer" | "online" | "other")
         : undefined;
-      const amountReceivedValue = amountReceived
+      const amountReceivedValue = !isUnpaid && !isPartial && amountReceived
         ? parseFloat(amountReceived)
+        : undefined;
+      const amountPaidNowValue = isPartial && amountPaidNow
+        ? parseFloat(amountPaidNow)
         : undefined;
 
       // Group unit-based items into quantities, split by bundle status
@@ -804,6 +825,8 @@ export function RecordSaleForm({
           paymentProofStorageId,
           amountReceived: amountReceivedValue,
           overpaymentRecipient: overpaymentRecipientValue,
+          paymentTiming,
+          amountPaidNow: amountPaidNowValue,
         });
       } else {
         saleId = await recordSale({
@@ -821,6 +844,8 @@ export function RecordSaleForm({
           paymentProofStorageId,
           amountReceived: amountReceivedValue,
           overpaymentRecipient: overpaymentRecipientValue,
+          paymentTiming,
+          amountPaidNow: amountPaidNowValue,
         });
       }
 
@@ -1423,8 +1448,69 @@ export function RecordSaleForm({
           <CardContent className="space-y-4">
             {/* Collector + Method + Amount + Overpayment in one row */}
             <div className="flex flex-col gap-4">
-              {/* Row 1: Collector + Payment Method */}
+              {/* Row 1: Payment Status + Amount Paid Now + Collector + Method */}
               <div className="flex flex-wrap gap-4">
+                <div className="space-y-2 min-w-[48px]">
+                  <Label htmlFor="paymentTiming">Payment Status</Label>
+                  <Select
+                    value={paymentTiming}
+                    onValueChange={(v) => {
+                      if (!v) return;
+                      const next = v as "paid" | "partial" | "unpaid";
+                      setPaymentTiming(next);
+                      if (next === "unpaid") {
+                        setPaymentMethod("");
+                        clearPaymentProof();
+                        setAmountReceived("");
+                        setCustomerPaidMore(false);
+                        setAmountPaidNow("");
+                      } else if (next === "partial") {
+                        setAmountReceived("");
+                        setCustomerPaidMore(false);
+                      } else {
+                        setAmountPaidNow("");
+                      }
+                    }}
+                  >
+                    <SelectTrigger id="paymentTiming" className="min-w-[180px]">
+                      <SelectValue>
+                        {paymentTiming === "paid"
+                          ? "Fully paid"
+                          : paymentTiming === "partial"
+                            ? "Partial payment"
+                            : "Unpaid (pay later)"}
+                      </SelectValue>
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="paid">Fully paid</SelectItem>
+                      <SelectItem value="partial">Partial payment</SelectItem>
+                      <SelectItem value="unpaid">Unpaid (pay later)</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {isPartial && (
+                  <div className="space-y-2 min-w-[48px]">
+                    <Label htmlFor="amountPaidNow">Amount Paid Now (RM)</Label>
+                    <Input
+                      id="amountPaidNow"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      max={pricingTotal}
+                      placeholder="0.00"
+                      value={amountPaidNow}
+                      onChange={(e) => setAmountPaidNow(e.target.value)}
+                      className="max-w-48"
+                    />
+                    <p className="text-xs text-muted-foreground">
+                      Outstanding: RM
+                      {Math.max(
+                        0,
+                        Math.round((pricingTotal - (parseFloat(amountPaidNow) || 0)) * 100) / 100
+                      ).toFixed(2)}
+                    </p>
+                  </div>
+                )}
                 {showCollectorOption && (
                   <div className="space-y-2 min-w-[48px]">
                     <Label>Who Collects Payment?</Label>
@@ -1448,37 +1534,45 @@ export function RecordSaleForm({
                     </Select>
                   </div>
                 )}
-                <div className="space-y-2 min-w-[48px]">
-                  <Label htmlFor="paymentMethod">Payment Method</Label>
-                  <Select
-                    value={paymentMethod || "none"}
-                    onValueChange={(v) => {
-                      setPaymentMethod(v === "none" || !v ? "" : v);
-                      if (v === "cash" || v === "none" || !v) {
-                        clearPaymentProof();
-                        if (v !== "cash") { setAmountReceived(""); setCustomerPaidMore(false); }
-                      }
-                      setOverpaymentRecipient("hq");
-                    }}
-                  >
-                    <SelectTrigger id="paymentMethod">
-                      <SelectValue placeholder="Select payment method...">
-                        {paymentMethod
-                          ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
-                          : "Not specified"}
-                      </SelectValue>
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Not specified</SelectItem>
-                      {allowedPaymentMethods.map((m) => (
-                        <SelectItem key={m} value={m}>
-                          {PAYMENT_METHOD_LABELS[m]}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
+                {!isUnpaid && (
+                  <div className="space-y-2 min-w-[48px]">
+                    <Label htmlFor="paymentMethod">Payment Method</Label>
+                    <Select
+                      value={paymentMethod || "none"}
+                      onValueChange={(v) => {
+                        setPaymentMethod(v === "none" || !v ? "" : v);
+                        if (v === "cash" || v === "none" || !v) {
+                          clearPaymentProof();
+                          if (v !== "cash") { setAmountReceived(""); setCustomerPaidMore(false); }
+                        }
+                        setOverpaymentRecipient("hq");
+                      }}
+                    >
+                      <SelectTrigger id="paymentMethod">
+                        <SelectValue placeholder="Select payment method...">
+                          {paymentMethod
+                            ? PAYMENT_METHOD_LABELS[paymentMethod] ?? paymentMethod
+                            : "Not specified"}
+                        </SelectValue>
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="none">Not specified</SelectItem>
+                        {allowedPaymentMethods.map((m) => (
+                          <SelectItem key={m} value={m}>
+                            {PAYMENT_METHOD_LABELS[m]}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               </div>
+
+              {isUnpaid && (
+                <p className="text-sm text-muted-foreground">
+                  Customer will pay later. Record the payment from the sales history page once received.
+                </p>
+              )}
 
               {/* Row 2: Overpayment checkbox + amount + recipient */}
               {showAmountReceivedCol && (
@@ -1758,20 +1852,36 @@ export function RecordSaleForm({
                       ? "bank transfer"
                       : paymentMethod}
               </span>
-              . The total amount is{" "}
-              <span className="font-medium">
-                RM{pricing ? (pricing.offerTotal ?? pricing.defaultTotal).toFixed(2) : "0.00"}
-              </span>
-              {overpaymentAmt && (
+              .{" "}
+              {isPartial ? (
                 <>
-                  {" "}with an overpayment of{" "}
-                  <span className="font-medium">RM{overpaymentAmt}</span>
-                  {" "}(amount received:{" "}
-                  <span className="font-medium">RM{parseFloat(amountReceived).toFixed(2)}</span>
-                  )
+                  You collected{" "}
+                  <span className="font-medium">
+                    RM{(parseFloat(amountPaidNow) || 0).toFixed(2)}
+                  </span>{" "}
+                  out of a total of{" "}
+                  <span className="font-medium">RM{pricingTotal.toFixed(2)}</span>{" "}
+                  (outstanding RM
+                  {Math.max(0, pricingTotal - (parseFloat(amountPaidNow) || 0)).toFixed(2)}
+                  ).
                 </>
-              )}
-              . Please confirm this is correct.
+              ) : (
+                <>
+                  The total amount is{" "}
+                  <span className="font-medium">RM{pricingTotal.toFixed(2)}</span>
+                  {overpaymentAmt && (
+                    <>
+                      {" "}with an overpayment of{" "}
+                      <span className="font-medium">RM{overpaymentAmt}</span>
+                      {" "}(amount received:{" "}
+                      <span className="font-medium">RM{parseFloat(amountReceived).toFixed(2)}</span>
+                      )
+                    </>
+                  )}
+                  .
+                </>
+              )}{" "}
+              Please confirm this is correct.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

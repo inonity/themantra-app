@@ -66,10 +66,17 @@ export const getByAgentId = query({
       throw new Error("Not authorized");
     }
 
-    return await ctx.db
+    const profile = await ctx.db
       .query("agentProfiles")
       .withIndex("by_agentId", (q) => q.eq("agentId", args.agentId))
       .unique();
+    if (!profile) return null;
+
+    const paymentQrUrl = profile.paymentQrStorageId
+      ? await ctx.storage.getUrl(profile.paymentQrStorageId)
+      : null;
+
+    return { ...profile, paymentQrUrl };
   },
 });
 

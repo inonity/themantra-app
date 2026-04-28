@@ -18,11 +18,13 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon } from "lucide-react";
+import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, BanknoteIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filter";
 import { EditSaleDialog } from "./edit-sale-dialog";
+import { RecordPaymentDialog } from "./record-payment-dialog";
 
 const PAYMENT_LABELS: Record<string, string> = {
   paid: "Paid",
@@ -587,6 +589,7 @@ export function SalesTable({
   offers,
   showAgent = false,
   hideFilters = false,
+  initialPaymentStatuses,
 }: {
   sales: Doc<"sales">[];
   products: Doc<"products">[];
@@ -595,6 +598,7 @@ export function SalesTable({
   offers?: Doc<"offers">[];
   showAgent?: boolean;
   hideFilters?: boolean;
+  initialPaymentStatuses?: string[];
 }) {
   const productMap = new Map(products.map((p) => [p._id, p]));
   const batchMap = new Map(batches.map((b) => [b._id, b]));
@@ -606,7 +610,9 @@ export function SalesTable({
   const [selectedAgents, setSelectedAgents] = useState<Set<string>>(new Set());
   const [selectedProducts, setSelectedProducts] = useState<Set<string>>(new Set());
   const [selectedBatches, setSelectedBatches] = useState<Set<string>>(new Set());
-  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<Set<string>>(new Set());
+  const [selectedPaymentStatuses, setSelectedPaymentStatuses] = useState<Set<string>>(
+    () => new Set(initialPaymentStatuses ?? [])
+  );
   const [selectedFulfillmentStatuses, setSelectedFulfillmentStatuses] = useState<Set<string>>(new Set());
   const [selectedPaymentMethods, setSelectedPaymentMethods] = useState<Set<string>>(new Set());
   const [selectedCollectors, setSelectedCollectors] = useState<Set<string>>(new Set());
@@ -615,6 +621,7 @@ export function SalesTable({
   const [sortCol, setSortCol] = useState<"date" | "amount">("date");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [editingSale, setEditingSale] = useState<Doc<"sales"> | null>(null);
+  const [paymentSale, setPaymentSale] = useState<Doc<"sales"> | null>(null);
 
   function handleSort(col: "date" | "amount") {
     if (sortCol === col) {
@@ -854,7 +861,7 @@ export function SalesTable({
                 Amount
               </Button>
             </TableHead>
-            <TableHead className="w-[40px]" />
+            <TableHead className="w-[90px]" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -930,18 +937,49 @@ export function SalesTable({
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="w-[40px] pl-0">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="h-7 w-7 p-0"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setEditingSale(sale);
-                    }}
-                  >
-                    <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                  </Button>
+                <TableCell className="pl-0 text-right">
+                  <div className="flex items-center justify-end gap-1">
+                    {sale.paymentStatus !== "paid" && sale.saleChannel !== "internal" && (
+                      <Tooltip>
+                        <TooltipTrigger
+                          render={
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              aria-label="Record payment"
+                              className={
+                                sale.paymentStatus === "unpaid"
+                                  ? "h-7 w-7 p-0 relative border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive after:absolute after:-top-0.5 after:-right-0.5 after:h-2 after:w-2 after:rounded-full after:bg-destructive after:animate-pulse"
+                                  : "h-7 w-7 p-0 relative border-amber-500/50 text-amber-600 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-400 after:absolute after:-top-0.5 after:-right-0.5 after:h-2 after:w-2 after:rounded-full after:bg-amber-500"
+                              }
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setPaymentSale(sale);
+                              }}
+                            >
+                              <BanknoteIcon className="h-3.5 w-3.5" />
+                            </Button>
+                          }
+                        />
+                        <TooltipContent>
+                          {sale.paymentStatus === "unpaid"
+                            ? `Record payment — RM${sale.totalAmount.toFixed(2)} outstanding`
+                            : `Record payment — RM${(sale.totalAmount - sale.amountPaid).toFixed(2)} remaining`}
+                        </TooltipContent>
+                      </Tooltip>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 w-7 p-0"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setEditingSale(sale);
+                      }}
+                    >
+                      <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
                 </TableCell>
               </TableRow>
 
@@ -974,6 +1012,16 @@ export function SalesTable({
           open={!!editingSale}
           onOpenChange={(open) => {
             if (!open) setEditingSale(null);
+          }}
+        />
+      )}
+
+      {paymentSale && (
+        <RecordPaymentDialog
+          sale={paymentSale}
+          open={!!paymentSale}
+          onOpenChange={(open) => {
+            if (!open) setPaymentSale(null);
           }}
         />
       )}

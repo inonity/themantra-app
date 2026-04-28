@@ -12,6 +12,12 @@ const stockModelValidator = v.union(
   v.literal("dropship") // legacy — kept for existing records
 );
 
+const paymentTimingValidator = v.union(
+  v.literal("paid"),
+  v.literal("partial"),
+  v.literal("unpaid")
+);
+
 const fulfillmentSourceValidator = v.union(
   v.literal("agent_stock"),
   v.literal("hq_transfer"),
@@ -99,6 +105,9 @@ export const recordB2CSale = mutation({
     paymentProofStorageId: v.optional(v.id("_storage")),
     amountReceived: v.optional(v.number()),
     overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))),
+    // Payment timing: "paid" (default, full payment now), "partial" (some now, rest later), "unpaid" (customer pays later)
+    paymentTiming: v.optional(paymentTimingValidator),
+    amountPaidNow: v.optional(v.number()), // required when paymentTiming === "partial"
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -501,14 +510,41 @@ export const recordB2CSale = mutation({
         ? "pending_stock" as const
         : "fulfilled" as const;
 
-    // Payment fields
+    // Payment fields — resolve status, amountPaid, and overpayment based on timing
     const roundedTotal = Math.round(totalSalePrice * 100) / 100;
-    const amountReceived = args.amountReceived != null
-      ? Math.round(args.amountReceived * 100) / 100
-      : roundedTotal;
-    const overpaymentAmount = amountReceived > roundedTotal
-      ? Math.round((amountReceived - roundedTotal) * 100) / 100
-      : undefined;
+    const paymentTiming = args.paymentTiming ?? "paid";
+    let resolvedPaymentStatus: "paid" | "partial" | "unpaid";
+    let resolvedAmountPaid: number;
+    let resolvedAmountReceived: number | undefined;
+    let resolvedOverpaymentAmount: number | undefined;
+    let resolvedPaidAt: number | undefined;
+
+    if (paymentTiming === "unpaid") {
+      resolvedPaymentStatus = "unpaid";
+      resolvedAmountPaid = 0;
+      resolvedPaidAt = undefined;
+    } else if (paymentTiming === "partial") {
+      if (args.amountPaidNow == null) throw new Error("amountPaidNow is required for partial payments");
+      const paidNow = Math.round(args.amountPaidNow * 100) / 100;
+      if (paidNow <= 0 || paidNow >= roundedTotal) {
+        throw new Error("Partial payment must be greater than 0 and less than the total");
+      }
+      resolvedPaymentStatus = "partial";
+      resolvedAmountPaid = paidNow;
+      resolvedPaidAt = undefined;
+    } else {
+      // Fully paid — apply overpayment logic
+      const amountReceived = args.amountReceived != null
+        ? Math.round(args.amountReceived * 100) / 100
+        : roundedTotal;
+      resolvedOverpaymentAmount = amountReceived > roundedTotal
+        ? Math.round((amountReceived - roundedTotal) * 100) / 100
+        : undefined;
+      resolvedAmountReceived = amountReceived !== roundedTotal ? amountReceived : undefined;
+      resolvedPaymentStatus = "paid";
+      resolvedAmountPaid = roundedTotal;
+      resolvedPaidAt = movedAt;
+    }
 
     // Create the sale document
     const saleId = await ctx.db.insert("sales", {
@@ -523,20 +559,21 @@ export const recordB2CSale = mutation({
       notes: args.notes,
       totalAmount: roundedTotal,
       totalQuantity,
-      paymentStatus: "paid",
-      amountPaid: roundedTotal,
-      paymentMethod: args.paymentMethod,
-      paymentProofStorageId: args.paymentProofStorageId,
-      amountReceived: amountReceived !== roundedTotal ? amountReceived : undefined,
-      overpaymentAmount,
-      overpaymentRecipient: overpaymentAmount != null ? (args.overpaymentRecipient ?? "seller") : undefined,
-      paidAt: movedAt,
+      paymentStatus: resolvedPaymentStatus,
+      amountPaid: resolvedAmountPaid,
+      paymentMethod: paymentTiming === "unpaid" ? undefined : args.paymentMethod,
+      paymentProofStorageId: paymentTiming === "unpaid" ? undefined : args.paymentProofStorageId,
+      amountReceived: resolvedAmountReceived,
+      overpaymentAmount: resolvedOverpaymentAmount,
+      overpaymentRecipient: resolvedOverpaymentAmount != null ? (args.overpaymentRecipient ?? "seller") : undefined,
+      paidAt: resolvedPaidAt,
       saleDate: saleDateValue,
       recordedBy: userId,
       stockModel,
       hqPrice: totalHqPrice,
       agentCommission,
-      hqSettled: hqCollects ? true : false,
+      // HQ has the money only when HQ collected AND customer has actually paid
+      hqSettled: hqCollects && resolvedPaymentStatus === "paid",
       paymentCollector: hqCollects ? "hq" : "agent",
       fulfillmentStatus,
       fulfilledAt: fulfillmentStatus === "fulfilled" ? movedAt : undefined,
@@ -611,11 +648,14 @@ export const recordB2CSale = mutation({
       }
     }
 
-    // Settlement logic depends on who collects payment
+    // Settlement logic depends on who collects payment.
+    // Settlement is created regardless of payment timing — agent still owes HQ
+    // even if customer hasn't paid yet (per consignment/presell loss policy).
     const overpaymentToHq = args.overpaymentRecipient === "hq";
+    const overpaymentForSettlement = resolvedOverpaymentAmount ?? 0;
     if (hqCollects) {
       // HQ collected payment — HQ owes agent their commission + any overpayment (unless overpayment goes to HQ)
-      const overpaymentForAgent = overpaymentToHq ? 0 : (overpaymentAmount ?? 0);
+      const overpaymentForAgent = overpaymentToHq ? 0 : overpaymentForSettlement;
       const commissionWithOverpayment = Math.round(
         (agentCommission + overpaymentForAgent) * 100
       ) / 100;
@@ -625,7 +665,7 @@ export const recordB2CSale = mutation({
     } else {
       // Agent collected payment — agent owes HQ the hqPrice (+ overpayment if it goes to HQ)
       const hqAmount = Math.round(
-        (totalHqPrice + (overpaymentToHq ? (overpaymentAmount ?? 0) : 0)) * 100
+        (totalHqPrice + (overpaymentToHq ? overpaymentForSettlement : 0)) * 100
       ) / 100;
       if (hqAmount > 0) {
         await addSaleToSettlement(ctx, userId, saleId, hqAmount, "agent_to_hq");
@@ -864,6 +904,8 @@ export const recordPresellSale = mutation({
     paymentProofStorageId: v.optional(v.id("_storage")),
     amountReceived: v.optional(v.number()),
     overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))),
+    paymentTiming: v.optional(paymentTimingValidator),
+    amountPaidNow: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await requireAuth(ctx);
@@ -1151,14 +1193,40 @@ export const recordPresellSale = mutation({
         ? "pending_stock" as const
         : "fulfilled" as const;
 
-    // Payment fields
+    // Payment fields — resolve status, amountPaid, and overpayment based on timing
     const roundedTotal = Math.round(totalSalePrice * 100) / 100;
-    const dsAmountReceived = args.amountReceived != null
-      ? Math.round(args.amountReceived * 100) / 100
-      : roundedTotal;
-    const dsOverpaymentAmount = dsAmountReceived > roundedTotal
-      ? Math.round((dsAmountReceived - roundedTotal) * 100) / 100
-      : undefined;
+    const paymentTiming = args.paymentTiming ?? "paid";
+    let resolvedPaymentStatus: "paid" | "partial" | "unpaid";
+    let resolvedAmountPaid: number;
+    let resolvedAmountReceived: number | undefined;
+    let dsOverpaymentAmount: number | undefined;
+    let resolvedPaidAt: number | undefined;
+
+    if (paymentTiming === "unpaid") {
+      resolvedPaymentStatus = "unpaid";
+      resolvedAmountPaid = 0;
+      resolvedPaidAt = undefined;
+    } else if (paymentTiming === "partial") {
+      if (args.amountPaidNow == null) throw new Error("amountPaidNow is required for partial payments");
+      const paidNow = Math.round(args.amountPaidNow * 100) / 100;
+      if (paidNow <= 0 || paidNow >= roundedTotal) {
+        throw new Error("Partial payment must be greater than 0 and less than the total");
+      }
+      resolvedPaymentStatus = "partial";
+      resolvedAmountPaid = paidNow;
+      resolvedPaidAt = undefined;
+    } else {
+      const dsAmountReceived = args.amountReceived != null
+        ? Math.round(args.amountReceived * 100) / 100
+        : roundedTotal;
+      dsOverpaymentAmount = dsAmountReceived > roundedTotal
+        ? Math.round((dsAmountReceived - roundedTotal) * 100) / 100
+        : undefined;
+      resolvedAmountReceived = dsAmountReceived !== roundedTotal ? dsAmountReceived : undefined;
+      resolvedPaymentStatus = "paid";
+      resolvedAmountPaid = roundedTotal;
+      resolvedPaidAt = movedAt;
+    }
 
     // Create the sale document
     const saleId = await ctx.db.insert("sales", {
@@ -1173,21 +1241,21 @@ export const recordPresellSale = mutation({
       notes: args.notes,
       totalAmount: roundedTotal,
       totalQuantity,
-      paymentStatus: "paid",
-      amountPaid: roundedTotal,
-      paymentMethod: args.paymentMethod,
-      paymentProofStorageId: args.paymentProofStorageId,
-      amountReceived: dsAmountReceived !== roundedTotal ? dsAmountReceived : undefined,
+      paymentStatus: resolvedPaymentStatus,
+      amountPaid: resolvedAmountPaid,
+      paymentMethod: paymentTiming === "unpaid" ? undefined : args.paymentMethod,
+      paymentProofStorageId: paymentTiming === "unpaid" ? undefined : args.paymentProofStorageId,
+      amountReceived: resolvedAmountReceived,
       overpaymentAmount: dsOverpaymentAmount,
       overpaymentRecipient: dsOverpaymentAmount != null ? (args.overpaymentRecipient ?? "seller") : undefined,
-      paidAt: movedAt,
+      paidAt: resolvedPaidAt,
       saleDate: saleDateValue,
       recordedBy: userId,
       stockModel,
       hqPrice: totalHqPrice,
       agentCommission,
-      // HQ already has the money when they collect directly
-      hqSettled: hqCollects ? true : false,
+      // HQ has the money only when HQ collected AND customer has actually paid
+      hqSettled: hqCollects && resolvedPaymentStatus === "paid",
       dropshipCollector: args.dropshipCollector,
       paymentCollector: args.dropshipCollector,
       fulfillmentStatus,
@@ -1304,29 +1372,92 @@ export const markPaid = mutation({
     amountPaid: v.number(),
     paymentMethod: v.union(
       v.literal("cash"),
+      v.literal("qr"),
       v.literal("bank_transfer"),
       v.literal("online"),
       v.literal("other")
     ),
+    paymentProofStorageId: v.optional(v.id("_storage")),
+    // Overpayment: customer paid more than the outstanding balance
+    overpaymentAmount: v.optional(v.number()),
+    overpaymentRecipient: v.optional(v.union(v.literal("seller"), v.literal("hq"))),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, "admin");
+    const userId = await requireAuth(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found");
 
-    const newAmountPaid = sale.amountPaid + args.amountPaid;
+    // Admin or the seller of the sale can record payment
+    if (user.role !== "admin" && sale.sellerId !== userId) {
+      throw new Error("Not authorized to record payment for this sale");
+    }
+
+    if (args.amountPaid <= 0) throw new Error("Payment amount must be positive");
+    const remaining = Math.round((sale.totalAmount - sale.amountPaid) * 100) / 100;
+    if (remaining <= 0) throw new Error("Sale is already fully paid");
+    const paid = Math.round(args.amountPaid * 100) / 100;
+    if (paid > remaining) throw new Error(`Payment exceeds outstanding balance of RM${remaining.toFixed(2)}`);
+
+    const newAmountPaid = Math.round((sale.amountPaid + paid) * 100) / 100;
     const paymentStatus =
       newAmountPaid >= sale.totalAmount ? "paid" as const :
       newAmountPaid > 0 ? "partial" as const :
       "unpaid" as const;
 
+    // Validate overpayment — only allowed when this payment fully clears the balance
+    const overpayment = args.overpaymentAmount != null
+      ? Math.round(args.overpaymentAmount * 100) / 100
+      : 0;
+    if (overpayment < 0) throw new Error("Overpayment cannot be negative");
+    if (overpayment > 0 && paymentStatus !== "paid") {
+      throw new Error("Overpayment can only be recorded when the sale is fully paid");
+    }
+
+    // Combine overpayment with any prior overpayment on the sale (rare but safe)
+    const totalOverpayment = Math.round(((sale.overpaymentAmount ?? 0) + overpayment) * 100) / 100;
+    const overpaymentRecipient = totalOverpayment > 0
+      ? (args.overpaymentRecipient ?? sale.overpaymentRecipient ?? "seller")
+      : sale.overpaymentRecipient;
+
+    // When the customer has fully paid AND HQ was the collector, HQ now has the money.
+    const saleHqCollects = (sale.paymentCollector ?? "agent") === "hq";
+    const hqSettled = paymentStatus === "paid" && saleHqCollects ? true : sale.hqSettled;
+
     await ctx.db.patch(args.saleId, {
-      amountPaid: Math.round(newAmountPaid * 100) / 100,
+      amountPaid: newAmountPaid,
       paymentStatus,
       paymentMethod: args.paymentMethod,
-      paidAt: paymentStatus === "paid" ? Date.now() : undefined,
+      paymentProofStorageId: args.paymentProofStorageId ?? sale.paymentProofStorageId,
+      paidAt: paymentStatus === "paid" ? Date.now() : sale.paidAt,
+      overpaymentAmount: totalOverpayment > 0 ? totalOverpayment : sale.overpaymentAmount,
+      overpaymentRecipient,
+      amountReceived: totalOverpayment > 0 ? sale.totalAmount + totalOverpayment : sale.amountReceived,
+      hqSettled,
     });
+
+    // Adjust the agent's settlement if overpayment was just added.
+    // Mirrors the recordB2CSale logic — same direction rules, just the delta amount.
+    if (overpayment > 0 && sale.sellerId) {
+      const paymentCollector = sale.paymentCollector ?? "agent";
+      const hqCollects = paymentCollector === "hq";
+      const overpaymentToHq = overpaymentRecipient === "hq";
+      if (hqCollects) {
+        // HQ collected — overpayment goes to seller unless explicitly to HQ
+        const delta = overpaymentToHq ? 0 : overpayment;
+        if (delta > 0) {
+          await addSaleToSettlement(ctx, sale.sellerId, args.saleId, delta, "hq_to_agent");
+        }
+      } else {
+        // Agent collected — overpayment goes to agent unless explicitly to HQ
+        const delta = overpaymentToHq ? overpayment : 0;
+        if (delta > 0) {
+          await addSaleToSettlement(ctx, sale.sellerId, args.saleId, delta, "agent_to_hq");
+        }
+      }
+    }
   },
 });
 

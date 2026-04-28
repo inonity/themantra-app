@@ -52,9 +52,13 @@ export async function addSaleToSettlement(
   ) ?? null;
 
   if (existing) {
-    // Add sale to existing pending settlement
+    // Add sale to existing pending settlement (idempotent on saleIds — safe to call again
+    // for overpayment adjustments after the original sale was already settled-in).
+    const saleIds = existing.saleIds.includes(saleId)
+      ? existing.saleIds
+      : [...existing.saleIds, saleId];
     await ctx.db.patch(existing._id, {
-      saleIds: [...existing.saleIds, saleId],
+      saleIds,
       totalAmount: Math.round((existing.totalAmount + amount) * 100) / 100,
     });
     // Link settlement to sale

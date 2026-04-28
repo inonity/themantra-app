@@ -1,16 +1,24 @@
 "use client";
 
 import { useQuery } from "convex/react";
+import { useSearchParams } from "next/navigation";
 import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { SalesTable } from "@/components/sales/sales-table";
-import { useMemo } from "react";
+import { Suspense, useMemo } from "react";
 
-export default function AgentSalesPage() {
+function AgentSalesPageInner() {
   const sales = useQuery(api.sales.listByAgent);
   const products = useQuery(api.products.list);
   const batches = useQuery(api.batches.listAll);
+  const searchParams = useSearchParams();
+
+  const initialPaymentStatuses = useMemo(() => {
+    const raw = searchParams.get("status");
+    if (!raw) return undefined;
+    return raw.split(",").filter((s) => ["paid", "partial", "unpaid"].includes(s));
+  }, [searchParams]);
 
   // Extract unique offer IDs from sales
   const offerIds = useMemo(() => {
@@ -53,9 +61,18 @@ export default function AgentSalesPage() {
             products={products!}
             batches={batches!}
             offers={offers ?? []}
+            initialPaymentStatuses={initialPaymentStatuses}
           />
         )}
       </div>
     </RoleGuard>
+  );
+}
+
+export default function AgentSalesPage() {
+  return (
+    <Suspense fallback={<div className="text-muted-foreground">Loading...</div>}>
+      <AgentSalesPageInner />
+    </Suspense>
   );
 }
