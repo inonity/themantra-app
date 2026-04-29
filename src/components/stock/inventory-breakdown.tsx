@@ -475,7 +475,19 @@ export function InventoryBreakdown({
                           </TableRow>
 
                           {isHolderExpanded &&
-                            holder.entries.map((inv) => {
+                            [...holder.entries]
+                              .sort((a, b) => {
+                                // Oldest manufactured first (FIFO)
+                                const ba = batchMap.get(a.batchId);
+                                const bb = batchMap.get(b.batchId);
+                                const da = ba?.manufacturedDate ?? "";
+                                const db = bb?.manufacturedDate ?? "";
+                                if (da !== db) return da.localeCompare(db);
+                                return (ba?.batchCode ?? "").localeCompare(
+                                  bb?.batchCode ?? ""
+                                );
+                              })
+                              .map((inv) => {
                               const batch = batchMap.get(inv.batchId);
                               return (
                                 <TableRow
