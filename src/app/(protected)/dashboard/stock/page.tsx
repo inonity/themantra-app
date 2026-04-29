@@ -336,10 +336,14 @@ export default function StockPage() {
         </div>
 
         <Tabs defaultValue="stock">
-          <TabsList>
-            <TabsTrigger value="stock">Current Stock</TabsTrigger>
+          <TabsList className="max-w-full">
+            <TabsTrigger value="stock">
+              <span className="sm:hidden">Stock</span>
+              <span className="hidden sm:inline">Current Stock</span>
+            </TabsTrigger>
             <TabsTrigger value="requests">
-              Stock Requests
+              <span className="sm:hidden">Requests</span>
+              <span className="hidden sm:inline">Stock Requests</span>
               {pending.length > 0 && (
                 <Badge variant="default" className="ml-2 bg-orange-500">
                   {pending.length}
@@ -347,7 +351,10 @@ export default function StockPage() {
               )}
             </TabsTrigger>
             <TabsTrigger value="movements">Movements</TabsTrigger>
-            <TabsTrigger value="losses">Stock Losses</TabsTrigger>
+            <TabsTrigger value="losses">
+              <span className="sm:hidden">Losses</span>
+              <span className="hidden sm:inline">Stock Losses</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="stock" className="mt-4">

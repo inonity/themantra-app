@@ -41,6 +41,168 @@ export const listAll = query({
   },
 });
 
+type ActivityType =
+  | "created"
+  | "released"
+  | "adjusted_added"
+  | "adjusted_deducted"
+  | "status_changed";
+
+type RecentActivityItem = {
+  id: string;
+  type: ActivityType;
+  timestamp: number;
+  batchId: Id<"batches">;
+  batchCode: string;
+  productId: Id<"products">;
+  productName: string;
+  variantId?: Id<"productVariants">;
+  variantName?: string;
+  quantity?: number;
+  previousStatus?: BatchStatus;
+  newStatus?: BatchStatus;
+  notes?: string;
+  category?: string;
+  recordedById?: Id<"users">;
+  recordedByName?: string;
+};
+
+export const listRecentActivity = query({
+  args: {},
+  handler: async (ctx): Promise<RecentActivityItem[]> => {
+    await requireRole(ctx, "admin");
+
+    const [batches, events, allMovements] = await Promise.all([
+      ctx.db.query("batches").take(500),
+      ctx.db
+        .query("batchEvents")
+        .withIndex("by_recordedAt")
+        .order("desc")
+        .take(500),
+      ctx.db.query("stockMovements").order("desc").take(1000),
+    ]);
+
+    const adjustments = allMovements.filter(
+      (m) =>
+        m.fromPartyType === "business" &&
+        (m.toPartyType === "business" || m.toPartyType === "writeoff") &&
+        m.saleId === undefined
+    );
+
+    const productIds = new Set<Id<"products">>();
+    const variantIds = new Set<Id<"productVariants">>();
+    const batchIds = new Set<Id<"batches">>();
+    const userIds = new Set<Id<"users">>();
+
+    for (const b of batches) {
+      productIds.add(b.productId);
+      if (b.variantId) variantIds.add(b.variantId);
+    }
+    for (const e of events) {
+      productIds.add(e.productId);
+      if (e.variantId) variantIds.add(e.variantId);
+      batchIds.add(e.batchId);
+      userIds.add(e.recordedBy);
+    }
+    for (const m of adjustments) {
+      productIds.add(m.productId);
+      if (m.variantId) variantIds.add(m.variantId);
+      batchIds.add(m.batchId);
+      userIds.add(m.recordedBy);
+    }
+
+    const [products, variants, allBatches, users] = await Promise.all([
+      Promise.all(Array.from(productIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(variantIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(batchIds).map((id) => ctx.db.get(id))),
+      Promise.all(Array.from(userIds).map((id) => ctx.db.get(id))),
+    ]);
+
+    const productMap = new Map(
+      products.filter((p): p is NonNullable<typeof p> => p !== null).map((p) => [p._id, p])
+    );
+    const variantMap = new Map(
+      variants.filter((v): v is NonNullable<typeof v> => v !== null).map((v) => [v._id, v])
+    );
+    const batchMap = new Map(
+      [...allBatches.filter((b): b is NonNullable<typeof b> => b !== null), ...batches].map((b) => [b._id, b])
+    );
+    const userMap = new Map(
+      users.filter((u): u is NonNullable<typeof u> => u !== null).map((u) => [u._id, u])
+    );
+
+    const userDisplayName = (uid: Id<"users"> | undefined) => {
+      if (!uid) return undefined;
+      const u = userMap.get(uid);
+      if (!u) return undefined;
+      return u.nickname || u.name || u.email || "Unnamed";
+    };
+
+    const items: RecentActivityItem[] = [];
+
+    for (const b of batches) {
+      items.push({
+        id: `batch-${b._id}`,
+        type: "created",
+        timestamp: b._creationTime,
+        batchId: b._id,
+        batchCode: b.batchCode,
+        productId: b.productId,
+        productName: productMap.get(b.productId)?.name ?? "Unknown",
+        variantId: b.variantId,
+        variantName: b.variantId ? variantMap.get(b.variantId)?.name : undefined,
+        quantity: b.totalQuantity,
+        notes: b.notes,
+      });
+    }
+
+    for (const e of events) {
+      const batch = batchMap.get(e.batchId);
+      items.push({
+        id: `event-${e._id}`,
+        type: e.type,
+        timestamp: e.recordedAt,
+        batchId: e.batchId,
+        batchCode: batch?.batchCode ?? "—",
+        productId: e.productId,
+        productName: productMap.get(e.productId)?.name ?? "Unknown",
+        variantId: e.variantId,
+        variantName: e.variantId ? variantMap.get(e.variantId)?.name : undefined,
+        quantity: e.quantity,
+        previousStatus: e.previousStatus,
+        newStatus: e.newStatus,
+        notes: e.notes,
+        recordedById: e.recordedBy,
+        recordedByName: userDisplayName(e.recordedBy),
+      });
+    }
+
+    for (const m of adjustments) {
+      const batch = batchMap.get(m.batchId);
+      const isAddition = m.toPartyType === "business";
+      items.push({
+        id: `mov-${m._id}`,
+        type: isAddition ? "adjusted_added" : "adjusted_deducted",
+        timestamp: m.movedAt,
+        batchId: m.batchId,
+        batchCode: batch?.batchCode ?? "—",
+        productId: m.productId,
+        productName: productMap.get(m.productId)?.name ?? "Unknown",
+        variantId: m.variantId,
+        variantName: m.variantId ? variantMap.get(m.variantId)?.name : undefined,
+        quantity: m.quantity,
+        notes: m.notes,
+        category: m.writeOffCategory,
+        recordedById: m.recordedBy,
+        recordedByName: userDisplayName(m.recordedBy),
+      });
+    }
+
+    items.sort((a, b) => b.timestamp - a.timestamp);
+    return items.slice(0, 500);
+  },
+});
+
 export const listByProduct = query({
   args: { productId: v.id("products") },
   handler: async (ctx, args) => {
@@ -177,7 +339,7 @@ export const update = mutation({
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, "admin");
+    const admin = await requireRole(ctx, "admin");
 
     const batch = await ctx.db.get(args.id);
     if (!batch) {
@@ -254,6 +416,16 @@ export const update = mutation({
         }
       }
       await ctx.db.patch(id, { ...fields, releasedQuantity: args.totalQuantity, updatedAt: Date.now() });
+      await ctx.db.insert("batchEvents", {
+        batchId: id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        type: "status_changed",
+        previousStatus,
+        newStatus: args.status,
+        recordedBy: admin._id,
+        recordedAt: Date.now(),
+      });
       return;
     }
 
@@ -278,6 +450,19 @@ export const update = mutation({
         });
       }
     }
+
+    if (previousStatus !== args.status) {
+      await ctx.db.insert("batchEvents", {
+        batchId: id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        type: "status_changed",
+        previousStatus,
+        newStatus: args.status,
+        recordedBy: admin._id,
+        recordedAt: Date.now(),
+      });
+    }
   },
 });
 
@@ -287,7 +472,7 @@ export const updateStatus = mutation({
     status: batchStatusValidator,
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, "admin");
+    const admin = await requireRole(ctx, "admin");
 
     const batch = await ctx.db.get(args.id);
     if (!batch) {
@@ -301,10 +486,24 @@ export const updateStatus = mutation({
     const error = validateTransition(previousStatus, args.status);
     if (error) throw new Error(error);
 
+    const recordStatusEvent = async (newStatus: BatchStatus) => {
+      await ctx.db.insert("batchEvents", {
+        batchId: args.id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        type: "status_changed",
+        previousStatus,
+        newStatus,
+        recordedBy: admin._id,
+        recordedAt: Date.now(),
+      });
+    };
+
     // Handle cancellation: clean up business inventory
     if (args.status === "cancelled") {
       await handleCancellation(ctx, args.id);
       await ctx.db.patch(args.id, { status: args.status, updatedAt: Date.now() });
+      await recordStatusEvent("cancelled");
       return;
     }
 
@@ -339,6 +538,7 @@ export const updateStatus = mutation({
         releasedQuantity: batch.totalQuantity,
         updatedAt: Date.now(),
       });
+      await recordStatusEvent("available");
       return;
     }
 
@@ -362,6 +562,8 @@ export const updateStatus = mutation({
         });
       }
     }
+
+    await recordStatusEvent(args.status);
   },
 });
 
@@ -373,7 +575,7 @@ export const releaseUnits = mutation({
     quantity: v.number(),
   },
   handler: async (ctx, args) => {
-    await requireRole(ctx, "admin");
+    const admin = await requireRole(ctx, "admin");
 
     if (args.quantity <= 0) throw new Error("Quantity must be positive.");
 
@@ -419,11 +621,35 @@ export const releaseUnits = mutation({
       });
     }
 
+    const previousStatus = batch.status;
     await ctx.db.patch(args.id, {
       releasedQuantity: newReleased,
       status: newStatus,
       updatedAt: Date.now(),
     });
+
+    const now = Date.now();
+    await ctx.db.insert("batchEvents", {
+      batchId: args.id,
+      productId: batch.productId,
+      variantId: batch.variantId,
+      type: "released",
+      quantity: args.quantity,
+      recordedBy: admin._id,
+      recordedAt: now,
+    });
+    if (previousStatus !== newStatus) {
+      await ctx.db.insert("batchEvents", {
+        batchId: args.id,
+        productId: batch.productId,
+        variantId: batch.variantId,
+        type: "status_changed",
+        previousStatus,
+        newStatus,
+        recordedBy: admin._id,
+        recordedAt: now,
+      });
+    }
   },
 });
 

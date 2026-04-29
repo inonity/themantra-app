@@ -250,6 +250,40 @@ export default defineSchema({
     .index("by_buyerId_and_saleDate", ["buyerId", "saleDate"])
     .index("by_fulfillmentStatus_and_saleDate", ["fulfillmentStatus", "saleDate"]),
 
+  batchEvents: defineTable({
+    batchId: v.id("batches"),
+    productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
+    type: v.union(
+      v.literal("released"),
+      v.literal("status_changed")
+    ),
+    quantity: v.optional(v.number()), // for "released"
+    previousStatus: v.optional(
+      v.union(
+        v.literal("upcoming"),
+        v.literal("partial"),
+        v.literal("available"),
+        v.literal("depleted"),
+        v.literal("cancelled")
+      )
+    ),
+    newStatus: v.optional(
+      v.union(
+        v.literal("upcoming"),
+        v.literal("partial"),
+        v.literal("available"),
+        v.literal("depleted"),
+        v.literal("cancelled")
+      )
+    ),
+    notes: v.optional(v.string()),
+    recordedBy: v.id("users"),
+    recordedAt: v.number(),
+  })
+    .index("by_batchId_and_recordedAt", ["batchId", "recordedAt"])
+    .index("by_recordedAt", ["recordedAt"]),
+
   stockMovements: defineTable({
     batchId: v.id("batches"),
     productId: v.id("products"),

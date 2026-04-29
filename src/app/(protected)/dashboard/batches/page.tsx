@@ -35,7 +35,9 @@ import Link from "next/link";
 import { BatchFormDialog } from "@/components/batches/batch-form-dialog";
 import { StockAdjustmentDialog } from "@/components/batches/stock-adjustment-dialog";
 import { ReleaseUnitsDialog } from "@/components/batches/release-units-dialog";
+import { RecentActivityTable } from "@/components/batches/recent-activity-table";
 import { FacetedFilter, DateRangeFilter, RangeFilter } from "@/components/stock/faceted-filter";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useState, useMemo } from "react";
 import { toast } from "sonner";
 
@@ -330,12 +332,25 @@ export default function BatchesPage() {
           )}
         </div>
 
-        {isLoading ? (
-          <div className="text-muted-foreground">Loading...</div>
-        ) : (
-          <div className="space-y-4">
-            {/* Toolbar */}
-            <div className="flex flex-1 flex-wrap items-center gap-2">
+        <Tabs defaultValue="all">
+          <TabsList>
+            <TabsTrigger value="all">
+              <span className="sm:hidden">All</span>
+              <span className="hidden sm:inline">All Batches</span>
+            </TabsTrigger>
+            <TabsTrigger value="recent">
+              <span className="sm:hidden">Recent</span>
+              <span className="hidden sm:inline">Recent Activity</span>
+            </TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="all" className="mt-4">
+            {isLoading ? (
+              <div className="text-muted-foreground">Loading...</div>
+            ) : (
+              <div className="space-y-4">
+                {/* Toolbar */}
+                <div className="flex flex-1 flex-wrap items-center gap-2">
               <Input
                 placeholder="Filter by product, batch code, variant..."
                 value={search}
@@ -511,8 +526,14 @@ export default function BatchesPage() {
                 </TableBody>
               </Table>
             </div>
-          </div>
-        )}
+              </div>
+            )}
+          </TabsContent>
+
+          <TabsContent value="recent" className="mt-4">
+            <RecentActivityTable />
+          </TabsContent>
+        </Tabs>
 
         {/* Edit dialog */}
         <BatchFormDialog
