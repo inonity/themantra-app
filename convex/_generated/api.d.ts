@@ -32,6 +32,7 @@ import type * as productVariants from "../productVariants.js";
 import type * as products from "../products.js";
 import type * as quickSwitch from "../quickSwitch.js";
 import type * as rates from "../rates.js";
+import type * as saleCorrections from "../saleCorrections.js";
 import type * as sales from "../sales.js";
 import type * as seed from "../seed.js";
 import type * as stockMovements from "../stockMovements.js";
@@ -69,6 +70,7 @@ declare const fullApi: ApiFromModules<{
   products: typeof products;
   quickSwitch: typeof quickSwitch;
   rates: typeof rates;
+  saleCorrections: typeof saleCorrections;
   sales: typeof sales;
   seed: typeof seed;
   stockMovements: typeof stockMovements;

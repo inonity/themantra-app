@@ -9,6 +9,7 @@ import { ReportStockLossDialog } from "@/components/stock/report-loss-dialog";
 import { ReturnFormDialog } from "@/components/stock/return-form-dialog";
 import { MovementsTable } from "@/components/stock/movements-table";
 import { StockLossesTable } from "@/components/stock/stock-losses-table";
+import { CorrectionsTable } from "@/components/stock/corrections-table";
 import { TransferFormDialog } from "@/components/stock/transfer-form-dialog";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -355,6 +356,10 @@ export default function StockPage() {
               <span className="sm:hidden">Losses</span>
               <span className="hidden sm:inline">Stock Losses</span>
             </TabsTrigger>
+            <TabsTrigger value="corrections">
+              <span className="sm:hidden">Fixes</span>
+              <span className="hidden sm:inline">Corrections</span>
+            </TabsTrigger>
           </TabsList>
 
           <TabsContent value="stock" className="mt-4">
@@ -403,6 +408,10 @@ export default function StockPage() {
 
           <TabsContent value="losses" className="mt-4">
             <StockLossesTable />
+          </TabsContent>
+
+          <TabsContent value="corrections" className="mt-4">
+            <CorrectionsTable />
           </TabsContent>
         </Tabs>
       </div>

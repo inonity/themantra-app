@@ -25,6 +25,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filter";
 import { EditSaleDialog } from "./edit-sale-dialog";
 import { RecordPaymentDialog } from "./record-payment-dialog";
+import { ChangeBatchDialog } from "./change-batch-dialog";
+import { useCurrentUser } from "@/hooks/useStoreUserEffect";
 
 const PAYMENT_LABELS: Record<string, string> = {
   paid: "Paid",
@@ -243,6 +245,27 @@ function SaleLineItems({
   const variantSizeMap = new Map(
     (allVariants ?? []).filter((v) => v.sizeMl != null).map((v) => [v._id, v.sizeMl!])
   );
+  const corrections = useQuery(api.saleCorrections.listBySale, { saleId });
+  const currentUser = useCurrentUser();
+  const canCorrect =
+    !!currentUser && (currentUser.role === "admin" || sale.sellerId === currentUser._id);
+  const [changeBatchTarget, setChangeBatchTarget] = useState<{
+    lineItemIndex: number;
+    currentBatchCode: string;
+    productLabel: string;
+    quantity: number;
+  } | null>(null);
+  type CorrectionRow = NonNullable<typeof corrections>[number];
+  const correctionsByLineIndex = new Map<number, CorrectionRow>();
+  if (corrections) {
+    // Most recent correction wins when there are multiple per line.
+    const sortedDesc = [...corrections].sort((a, b) => b.correctedAt - a.correctedAt);
+    for (const c of sortedDesc) {
+      if (!correctionsByLineIndex.has(c.lineItemIndex)) {
+        correctionsByLineIndex.set(c.lineItemIndex, c);
+      }
+    }
+  }
   const totalCols = showAgent ? 9 : 8;
 
   // Use snapshotted offer if available, fall back to live offer for old sales
@@ -408,7 +431,7 @@ function SaleLineItems({
   const { bundles, nonBundledIndices } = computeOfferGrouping(fulfilledItems, effectiveOffer, products, hasSnapshots);
 
   const isInternalSale = sale.saleChannel === "internal";
-  const renderFulfilledItem = (m: typeof lineItems[number], _idx: number, indented: boolean) => {
+  const renderFulfilledItem = (m: typeof lineItems[number], idx: number, indented: boolean) => {
     const snapshot = snapshotMap.get(m.variantId ?? m.productId);
     const product = products.get(m.productId);
     const itemName = snapshot?.productName ?? product?.name ?? "Unknown";
@@ -420,6 +443,9 @@ function SaleLineItems({
       : (snapshot?.productPrice ?? product?.price ?? 0);
     const qty = m.quantity;
     const batch = batches.get(m.batchId);
+    const correction = correctionsByLineIndex.get(idx);
+    const canCorrectThisLine =
+      canCorrect && !isInternalSale && saleLineItems && idx < saleLineItems.length;
     return (
       <TableRow
         key={`${m._id}-${indented ? "bundled" : "rest"}`}
@@ -440,6 +466,44 @@ function SaleLineItems({
           <span className="text-muted-foreground">
             {" "}— Batch {batch?.batchCode ?? "?"}
           </span>
+          {correction && (
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Badge
+                    variant="outline"
+                    className="ml-2 text-amber-700 border-amber-300 cursor-help"
+                  >
+                    Corrected
+                  </Badge>
+                }
+              />
+              <TooltipContent>
+                Was Batch {correction.oldBatchCode}, changed to Batch {correction.newBatchCode} by{" "}
+                {correction.correctedByName} on{" "}
+                {new Date(correction.correctedAt).toISOString().slice(0, 10)}
+                {correction.reason ? ` — ${correction.reason}` : ""}
+              </TooltipContent>
+            </Tooltip>
+          )}
+          {canCorrectThisLine && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="ml-2 h-6 px-2 text-xs"
+              onClick={(e) => {
+                e.stopPropagation();
+                setChangeBatchTarget({
+                  lineItemIndex: idx,
+                  currentBatchCode: batch?.batchCode ?? "?",
+                  productLabel: variantName ? `${itemName} — ${variantName}` : itemName,
+                  quantity: qty,
+                });
+              }}
+            >
+              Change batch
+            </Button>
+          )}
         </TableCell>
         <TableCell className="text-sm">
           x{qty}
@@ -477,6 +541,19 @@ function SaleLineItems({
           </TableCell>
           <TableCell />
         </TableRow>
+      )}
+      {changeBatchTarget && (
+        <ChangeBatchDialog
+          saleId={saleId}
+          lineItemIndex={changeBatchTarget.lineItemIndex}
+          currentBatchCode={changeBatchTarget.currentBatchCode}
+          productLabel={changeBatchTarget.productLabel}
+          quantity={changeBatchTarget.quantity}
+          open={!!changeBatchTarget}
+          onOpenChange={(open) => {
+            if (!open) setChangeBatchTarget(null);
+          }}
+        />
       )}
     </>
   );

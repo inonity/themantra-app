@@ -600,6 +600,33 @@ export default defineSchema({
     actingAsUserId: v.id("users"), // the user being impersonated
   }).index("by_realUserId", ["realUserId"]),
 
+  saleCorrections: defineTable({
+    saleId: v.id("sales"),
+    lineItemIndex: v.number(),
+    oldBatchId: v.id("batches"),
+    newBatchId: v.id("batches"),
+    quantity: v.number(),
+    productId: v.id("products"),
+    variantId: v.optional(v.id("productVariants")),
+    holderType: v.union(v.literal("agent"), v.literal("business")),
+    holderId: v.optional(v.id("users")),
+    stockModel: v.optional(
+      v.union(
+        v.literal("hold_paid"),
+        v.literal("consignment"),
+        v.literal("presell"),
+        v.literal("dropship")
+      )
+    ),
+    reason: v.optional(v.string()),
+    correctedBy: v.id("users"),
+    correctedAt: v.number(),
+  })
+    .index("by_saleId", ["saleId"])
+    .index("by_correctedAt", ["correctedAt"])
+    .index("by_oldBatchId", ["oldBatchId"])
+    .index("by_newBatchId", ["newBatchId"]),
+
   stockRequests: defineTable({
     agentId: v.id("users"),
     productId: v.id("products"),
