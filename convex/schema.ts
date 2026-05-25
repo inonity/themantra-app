@@ -241,6 +241,9 @@ export default defineSchema({
     // Metadata
     saleDate: v.number(),
     recordedBy: v.id("users"),
+    cancelledAt: v.optional(v.number()),
+    cancelledBy: v.optional(v.id("users")),
+    cancellationReason: v.optional(v.string()),
   })
     .index("by_sellerId_and_saleDate", ["sellerId", "saleDate"])
     .index("by_paymentStatus_and_saleDate", ["paymentStatus", "saleDate"])
@@ -288,7 +291,12 @@ export default defineSchema({
     batchId: v.id("batches"),
     productId: v.id("products"),
     variantId: v.optional(v.id("productVariants")),
-    fromPartyType: v.union(v.literal("business"), v.literal("agent")),
+    // "customer" appears only on reversal movements created when a sale is cancelled
+    fromPartyType: v.union(
+      v.literal("business"),
+      v.literal("agent"),
+      v.literal("customer")
+    ),
     fromPartyId: v.optional(v.id("users")),
     toPartyType: v.union(
       v.literal("business"),

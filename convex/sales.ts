@@ -1527,6 +1527,171 @@ export const updateSaleDetails = mutation({
   },
 });
 
+export const cancelSale = mutation({
+  args: {
+    saleId: v.id("sales"),
+    reason: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await requireAuth(ctx);
+    const user = await ctx.db.get(userId);
+    if (!user) throw new Error("User not found");
+
+    const sale = await ctx.db.get(args.saleId);
+    if (!sale) throw new Error("Sale not found");
+
+    if (user.role !== "admin" && sale.sellerId !== userId) {
+      throw new Error("Not authorized to cancel this sale");
+    }
+
+    if (sale.cancelledAt) throw new Error("Sale has already been cancelled");
+    if (sale.type !== "b2c") throw new Error("Only B2C sales can be cancelled");
+    if (sale.paymentStatus !== "unpaid")
+      throw new Error("Only fully unpaid sales can be cancelled");
+    if (sale.saleChannel === "internal")
+      throw new Error("Internal sales cannot be cancelled");
+
+    // Consignment/presell sales are attached to a pending settlement at
+    // creation time (agent owes HQ regardless of customer payment). If the
+    // settlement has already been submitted or paid, the money is in flight
+    // and a self-service cancel would corrupt it — refuse.
+    if (sale.settlementId) {
+      const settlement = await ctx.db.get(sale.settlementId);
+      if (settlement && settlement.paymentStatus !== "pending") {
+        throw new Error(
+          "Sale is in a submitted or paid settlement — contact admin to handle this"
+        );
+      }
+    }
+
+    const now = Date.now();
+
+    const movements = await ctx.db
+      .query("stockMovements")
+      .withIndex("by_saleId", (q) => q.eq("saleId", args.saleId))
+      .collect();
+
+    for (const movement of movements) {
+      // Only sale-direction movements (out to customer) need reversal.
+      // Companion movements (e.g. business→agent transfers) are left intact.
+      if (movement.toPartyType !== "customer") continue;
+
+      const { fromPartyType, fromPartyId, quantity, batchId, stockModel } = movement;
+
+      if (fromPartyType === "agent" && fromPartyId) {
+        const agentInv = await ctx.db
+          .query("inventory")
+          .withIndex("by_batchId_and_heldByType_and_heldById_and_stockModel", (q) =>
+            q
+              .eq("batchId", batchId)
+              .eq("heldByType", "agent")
+              .eq("heldById", fromPartyId)
+              .eq("stockModel", stockModel)
+          )
+          .unique();
+
+        if (agentInv) {
+          await ctx.db.patch(agentInv._id, {
+            quantity: agentInv.quantity + quantity,
+            updatedAt: now,
+          });
+        } else {
+          const batch = await ctx.db.get(batchId);
+          if (batch) {
+            await ctx.db.insert("inventory", {
+              batchId,
+              productId: batch.productId,
+              variantId: batch.variantId,
+              heldByType: "agent",
+              heldById: fromPartyId,
+              quantity,
+              stockModel,
+              updatedAt: now,
+            });
+          }
+        }
+      } else if (fromPartyType === "business") {
+        const businessInv = await ctx.db
+          .query("inventory")
+          .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>
+            q.eq("batchId", batchId).eq("heldByType", "business")
+          )
+          .first();
+
+        if (businessInv) {
+          await ctx.db.patch(businessInv._id, {
+            quantity: businessInv.quantity + quantity,
+            updatedAt: now,
+          });
+        } else {
+          const batch = await ctx.db.get(batchId);
+          if (batch) {
+            await ctx.db.insert("inventory", {
+              batchId,
+              productId: batch.productId,
+              variantId: batch.variantId,
+              heldByType: "business",
+              quantity,
+              updatedAt: now,
+            });
+          }
+        }
+      }
+
+      // Audit: keep the original movement, write a reversing one
+      // (customer → original holder) tagged with the same saleId.
+      await ctx.db.insert("stockMovements", {
+        batchId,
+        productId: movement.productId,
+        variantId: movement.variantId,
+        fromPartyType: "customer",
+        toPartyType: fromPartyType,
+        toPartyId: fromPartyId,
+        quantity,
+        movedAt: now,
+        notes: `Reversal: sale cancelled${args.reason?.trim() ? ` — ${args.reason.trim()}` : ""}`,
+        recordedBy: userId,
+        saleId: args.saleId,
+        stockModel,
+      });
+    }
+
+    // Detach from pending settlement, if any. We've already guarded against
+    // submitted/paid settlements above. The contribution this sale made was
+    // either its agentCommission (hq_to_agent) or its hqPrice (agent_to_hq);
+    // since the sale is unpaid, no overpayment delta has been applied.
+    if (sale.settlementId) {
+      const settlement = await ctx.db.get(sale.settlementId);
+      if (settlement && settlement.paymentStatus === "pending") {
+        const remainingSaleIds = settlement.saleIds.filter(
+          (id) => id !== args.saleId
+        );
+        if (remainingSaleIds.length === 0) {
+          await ctx.db.delete(settlement._id);
+        } else {
+          const direction = settlement.direction ?? "agent_to_hq";
+          const contribution =
+            direction === "hq_to_agent"
+              ? sale.agentCommission ?? 0
+              : sale.hqPrice ?? 0;
+          await ctx.db.patch(settlement._id, {
+            saleIds: remainingSaleIds,
+            totalAmount:
+              Math.round((settlement.totalAmount - contribution) * 100) / 100,
+          });
+        }
+      }
+    }
+
+    await ctx.db.patch(args.saleId, {
+      cancelledAt: now,
+      cancelledBy: userId,
+      cancellationReason: args.reason?.trim() ? args.reason.trim() : undefined,
+      settlementId: undefined,
+    });
+  },
+});
+
 // Admin: list all sales
 export const list = query({
   args: {},

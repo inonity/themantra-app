@@ -6,9 +6,11 @@ import { api } from "../../../../../convex/_generated/api";
 import { Id } from "../../../../../convex/_generated/dataModel";
 import { RoleGuard } from "@/components/role-guard";
 import { SalesTable } from "@/components/sales/sales-table";
-import { Suspense, useMemo } from "react";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Suspense, useMemo, useState } from "react";
 
 function AgentSalesPageInner() {
+  const [statusTab, setStatusTab] = useState<"active" | "cancelled">("active");
   const sales = useQuery(api.sales.listByAgent);
   const products = useQuery(api.products.list);
   const batches = useQuery(api.batches.listAll);
@@ -53,6 +55,13 @@ function AgentSalesPageInner() {
           </p>
         </div>
 
+        <Tabs value={statusTab} onValueChange={(value) => setStatusTab(value as "active" | "cancelled")}>
+          <TabsList>
+            <TabsTrigger value="active">Active</TabsTrigger>
+            <TabsTrigger value="cancelled">Cancelled</TabsTrigger>
+          </TabsList>
+        </Tabs>
+
         {isLoading ? (
           <div className="text-muted-foreground">Loading...</div>
         ) : (
@@ -62,6 +71,7 @@ function AgentSalesPageInner() {
             batches={batches!}
             offers={offers ?? []}
             initialPaymentStatuses={initialPaymentStatuses}
+            cancelledFilter={statusTab === "cancelled" ? "only" : "exclude"}
           />
         )}
       </div>

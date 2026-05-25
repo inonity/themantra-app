@@ -18,7 +18,14 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
-import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, BanknoteIcon } from "lucide-react";
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { ChevronDownIcon, ChevronRightIcon, ReceiptIcon, ImageIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, PencilIcon, BanknoteIcon, TrashIcon, MoreVerticalIcon } from "lucide-react";
 import { Fragment, useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
@@ -26,6 +33,7 @@ import { FacetedFilter, DateRangeFilter } from "@/components/stock/faceted-filte
 import { EditSaleDialog } from "./edit-sale-dialog";
 import { RecordPaymentDialog } from "./record-payment-dialog";
 import { ChangeBatchDialog } from "./change-batch-dialog";
+import { CancelSaleDialog } from "./cancel-sale-dialog";
 import { useCurrentUser } from "@/hooks/useStoreUserEffect";
 
 const PAYMENT_LABELS: Record<string, string> = {
@@ -667,6 +675,7 @@ export function SalesTable({
   showAgent = false,
   hideFilters = false,
   initialPaymentStatuses,
+  cancelledFilter = "exclude",
 }: {
   sales: Doc<"sales">[];
   products: Doc<"products">[];
@@ -676,6 +685,10 @@ export function SalesTable({
   showAgent?: boolean;
   hideFilters?: boolean;
   initialPaymentStatuses?: string[];
+  // "exclude" (default): hide cancelled sales (matches every legacy usage).
+  // "only": show cancelled sales only.
+  // "all": show everything.
+  cancelledFilter?: "exclude" | "only" | "all";
 }) {
   const productMap = new Map(products.map((p) => [p._id, p]));
   const batchMap = new Map(batches.map((b) => [b._id, b]));
@@ -699,6 +712,7 @@ export function SalesTable({
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [editingSale, setEditingSale] = useState<Doc<"sales"> | null>(null);
   const [paymentSale, setPaymentSale] = useState<Doc<"sales"> | null>(null);
+  const [cancelingSale, setCancelingSale] = useState<Doc<"sales"> | null>(null);
 
   function handleSort(col: "date" | "amount") {
     if (sortCol === col) {
@@ -764,6 +778,9 @@ export function SalesTable({
   }));
 
   const filteredSales = sales.filter((sale) => {
+    if (cancelledFilter === "exclude" && sale.cancelledAt) return false;
+    if (cancelledFilter === "only" && !sale.cancelledAt) return false;
+
     if (search) {
       const term = search.toLowerCase();
       const customerName = sale.customerDetail?.name?.toLowerCase() ?? "";
@@ -938,7 +955,7 @@ export function SalesTable({
                 Amount
               </Button>
             </TableHead>
-            <TableHead className="w-[90px]" />
+            <TableHead className="w-fit" />
           </TableRow>
         </TableHeader>
         <TableBody>
@@ -1002,7 +1019,7 @@ export function SalesTable({
                     <FulfillmentBadge status={sale.fulfillmentStatus} />
                   </div>
                 </TableCell>
-                <TableCell className="text-right">
+                <TableCell className="text-right pr-3">
                   <div className="flex items-center justify-end gap-1.5">
                     {hasOffer && (
                         <Badge variant="outline" className="text-xs">
@@ -1014,49 +1031,72 @@ export function SalesTable({
                     </span>
                   </div>
                 </TableCell>
-                <TableCell className="pl-0 text-right">
-                  <div className="flex items-center justify-end gap-1">
-                    {sale.paymentStatus !== "paid" && sale.saleChannel !== "internal" && (
-                      <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              aria-label="Record payment"
-                              className={
-                                sale.paymentStatus === "unpaid"
-                                  ? "h-7 w-7 p-0 relative border-destructive/50 text-destructive hover:bg-destructive/10 hover:text-destructive after:absolute after:-top-0.5 after:-right-0.5 after:h-2 after:w-2 after:rounded-full after:bg-destructive after:animate-pulse"
-                                  : "h-7 w-7 p-0 relative border-amber-500/50 text-amber-600 hover:bg-amber-500/10 hover:text-amber-600 dark:text-amber-400 dark:hover:text-amber-400 after:absolute after:-top-0.5 after:-right-0.5 after:h-2 after:w-2 after:rounded-full after:bg-amber-500"
-                              }
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setPaymentSale(sale);
-                              }}
-                            >
-                              <BanknoteIcon className="h-3.5 w-3.5" />
-                            </Button>
-                          }
-                        />
-                        <TooltipContent>
-                          {sale.paymentStatus === "unpaid"
-                            ? `Record payment — RM${sale.totalAmount.toFixed(2)} outstanding`
-                            : `Record payment — RM${(sale.totalAmount - sale.amountPaid).toFixed(2)} remaining`}
-                        </TooltipContent>
-                      </Tooltip>
-                    )}
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 w-7 p-0"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setEditingSale(sale);
-                      }}
-                    >
-                      <PencilIcon className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  </div>
+                <TableCell className="p-0 w-fit">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className={`h-7 w-7 p-0 relative ${
+                            sale.paymentStatus !== "paid" && sale.saleChannel !== "internal" && !sale.cancelledAt
+                              ? "after:absolute after:-top-0.5 after:-right-0.5 after:h-2 after:w-2 after:rounded-full after:bg-destructive after:animate-pulse"
+                              : ""
+                          }`}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVerticalIcon className="h-4 w-4" />
+                        </Button>
+                      }
+                    />
+                    <DropdownMenuContent align="end" className="min-w-[220px]">
+                      {sale.paymentStatus !== "paid" && sale.saleChannel !== "internal" && !sale.cancelledAt && (
+                        <>
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation?.();
+                              setPaymentSale(sale);
+                            }}
+                          >
+                            <BanknoteIcon className="h-4 w-4 shrink-0" />
+                            <span className="whitespace-nowrap">
+                              Record payment{" "}
+                              <span className="text-muted-foreground">
+                                — RM{sale.paymentStatus === "unpaid"
+                                  ? sale.totalAmount.toFixed(2)
+                                  : (sale.totalAmount - sale.amountPaid).toFixed(2)}
+                              </span>
+                            </span>
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                        </>
+                      )}
+                      <DropdownMenuItem
+                        onClick={(e) => {
+                          e.stopPropagation?.();
+                          setEditingSale(sale);
+                        }}
+                      >
+                        <PencilIcon className="h-4 w-4" />
+                        Edit
+                      </DropdownMenuItem>
+                      {sale.paymentStatus === "unpaid" && sale.saleChannel !== "internal" && !sale.cancelledAt && (
+                        <>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            variant="destructive"
+                            onClick={(e) => {
+                              e.stopPropagation?.();
+                              setCancelingSale(sale);
+                            }}
+                          >
+                            <TrashIcon className="h-4 w-4" />
+                            Cancel sale
+                          </DropdownMenuItem>
+                        </>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </TableCell>
               </TableRow>
 
@@ -1099,6 +1139,16 @@ export function SalesTable({
           open={!!paymentSale}
           onOpenChange={(open) => {
             if (!open) setPaymentSale(null);
+          }}
+        />
+      )}
+
+      {cancelingSale && (
+        <CancelSaleDialog
+          sale={cancelingSale}
+          open={!!cancelingSale}
+          onOpenChange={(open) => {
+            if (!open) setCancelingSale(null);
           }}
         />
       )}

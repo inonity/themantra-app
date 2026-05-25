@@ -59,6 +59,7 @@ function SalesOverviewPageInner() {
                     </span>
                   )}
                 </TabsTrigger>
+                <TabsTrigger value={2}>Cancelled</TabsTrigger>
               </TabsList>
               <TabsContent value={0}>
                 <SalesTable
@@ -88,6 +89,17 @@ function SalesOverviewPageInner() {
                     showAgent
                   />
                 )}
+              </TabsContent>
+              <TabsContent value={2}>
+                <SalesTable
+                  sales={sales}
+                  products={products}
+                  batches={batches}
+                  agents={agents}
+                  offers={offers}
+                  showAgent
+                  cancelledFilter="only"
+                />
               </TabsContent>
             </Tabs>
           </>
