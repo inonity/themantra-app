@@ -139,7 +139,10 @@ function AdminDashboard() {
   const agents = useQuery(api.users.listAgents);
   const offers = useQuery(api.offers.list);
 
-  const recentSales = useMemo(() => (allSales ?? []).slice(0, 4), [allSales]);
+  const recentSales = useMemo(
+    () => (allSales ?? []).filter((s) => !s.cancelledAt).slice(0, 4),
+    [allSales]
+  );
   const oldestPending = useMemo(
     () => [...(pendingFulfillment ?? [])].reverse().slice(0, 4),
     [pendingFulfillment]
@@ -477,14 +480,18 @@ function AgentSalesDashboard() {
     offerIds.length > 0 ? { ids: offerIds } : "skip"
   );
 
-  const recentSales = useMemo(() => (sales ?? []).slice(0, 4), [sales]);
+  const recentSales = useMemo(
+    () => (sales ?? []).filter((s) => !s.cancelledAt).slice(0, 4),
+    [sales]
+  );
   const oldestPending = useMemo(() => {
     if (!sales) return [];
     return sales
       .filter(
         (s) =>
-          s.fulfillmentStatus === "pending_stock" ||
-          s.fulfillmentStatus === "partial"
+          !s.cancelledAt &&
+          (s.fulfillmentStatus === "pending_stock" ||
+            s.fulfillmentStatus === "partial")
       )
       .reverse()
       .slice(0, 4);
@@ -495,6 +502,7 @@ function AgentSalesDashboard() {
     if (!sales) return [];
     return sales.filter(
       (s) =>
+        !s.cancelledAt &&
         (s.paymentStatus === "unpaid" || s.paymentStatus === "partial") &&
         s.saleChannel !== "internal"
     );

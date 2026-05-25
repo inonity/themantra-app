@@ -39,18 +39,18 @@ async function fetchSalesInRange(
   to: number,
   sellerId: Id<"users"> | null
 ): Promise<Doc<"sales">[]> {
-  if (sellerId) {
-    return await ctx.db
-      .query("sales")
-      .withIndex("by_sellerId_and_saleDate", (q) =>
-        q.eq("sellerId", sellerId).gte("saleDate", from).lte("saleDate", to)
-      )
-      .take(SALES_SCAN_CAP);
-  }
-  return await ctx.db
-    .query("sales")
-    .withIndex("by_saleDate", (q) => q.gte("saleDate", from).lte("saleDate", to))
-    .take(SALES_SCAN_CAP);
+  const rows = sellerId
+    ? await ctx.db
+        .query("sales")
+        .withIndex("by_sellerId_and_saleDate", (q) =>
+          q.eq("sellerId", sellerId).gte("saleDate", from).lte("saleDate", to)
+        )
+        .take(SALES_SCAN_CAP)
+    : await ctx.db
+        .query("sales")
+        .withIndex("by_saleDate", (q) => q.gte("saleDate", from).lte("saleDate", to))
+        .take(SALES_SCAN_CAP);
+  return rows.filter((s) => !s.cancelledAt);
 }
 
 function customerKey(sale: Doc<"sales">): string | null {
@@ -233,6 +233,7 @@ export const getStats = query({
       .take(REPEAT_SCAN_CAP);
     const keyCounts: Record<string, number> = {};
     for (const s of historicalSales) {
+      if (s.cancelledAt) continue;
       if (sellerId && s.sellerId !== sellerId) continue;
       const k = customerKey(s);
       if (!k) continue;

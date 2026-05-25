@@ -248,6 +248,7 @@ export const generate = mutation({
 
     const unsettledSales = allSales.filter(
       (s) =>
+        !s.cancelledAt &&
         s.type === "b2c" &&
         s.hqSettled !== true &&
         s.hqPrice !== undefined &&
@@ -395,7 +396,12 @@ export const getUnsettledTotal = query({
       .take(500);
 
     const unsettledSales = allSales.filter(
-      (s) => s.type === "b2c" && s.hqSettled !== true && s.hqPrice !== undefined && s.hqPrice > 0
+      (s) =>
+        !s.cancelledAt &&
+        s.type === "b2c" &&
+        s.hqSettled !== true &&
+        s.hqPrice !== undefined &&
+        s.hqPrice > 0
     );
 
     const total =

@@ -26,6 +26,7 @@ export const correctLineBatch = mutation({
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new ConvexError("Sale not found");
+    if (sale.cancelledAt) throw new ConvexError("Sale has been cancelled");
 
     if (caller.role !== "admin" && sale.sellerId !== callerId) {
       throw new ConvexError("Not authorized to correct this sale");

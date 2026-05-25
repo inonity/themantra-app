@@ -1389,6 +1389,7 @@ export const markPaid = mutation({
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found");
+    if (sale.cancelledAt) throw new Error("Sale has been cancelled");
 
     // Admin or the seller of the sale can record payment
     if (user.role !== "admin" && sale.sellerId !== userId) {
@@ -1683,6 +1684,19 @@ export const cancelSale = mutation({
       }
     }
 
+    // Revert the linked interest (if any) back to active so the
+    // interest→sale conversion metric stops counting this cancelled sale.
+    if (sale.interestId) {
+      const interest = await ctx.db.get(sale.interestId);
+      if (interest && interest.status === "converted" && interest.convertedSaleId === args.saleId) {
+        await ctx.db.patch(sale.interestId, {
+          status: "active",
+          convertedSaleId: undefined,
+          updatedAt: now,
+        });
+      }
+    }
+
     await ctx.db.patch(args.saleId, {
       cancelledAt: now,
       cancelledBy: userId,
@@ -1733,7 +1747,9 @@ export const listUnpaid = query({
       .withIndex("by_paymentStatus_and_saleDate", (q) => q.eq("paymentStatus", "partial"))
       .order("desc")
       .take(100);
-    return [...unpaid, ...partial].sort((a, b) => b.saleDate - a.saleDate);
+    return [...unpaid, ...partial]
+      .filter((s) => !s.cancelledAt)
+      .sort((a, b) => b.saleDate - a.saleDate);
   },
 });
 
@@ -1772,6 +1788,7 @@ export const fulfillSale = mutation({
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found");
+    if (sale.cancelledAt) throw new Error("Sale has been cancelled");
     if (sale.fulfillmentStatus !== "pending_stock") {
       throw new Error("Sale is not pending stock");
     }
@@ -1903,6 +1920,7 @@ export const fulfillLineItems = mutation({
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found");
+    if (sale.cancelledAt) throw new Error("Sale has been cancelled");
     if (sale.fulfillmentStatus === "fulfilled") {
       throw new Error("Sale is already fully fulfilled");
     }
@@ -2136,6 +2154,7 @@ export const selfFulfillFromHQ = mutation({
 
     const sale = await ctx.db.get(args.saleId);
     if (!sale) throw new Error("Sale not found");
+    if (sale.cancelledAt) throw new Error("Sale has been cancelled");
     if (sale.fulfillmentStatus === "fulfilled") {
       throw new Error("Sale is already fully fulfilled");
     }
@@ -2294,7 +2313,9 @@ export const listPendingFulfillment = query({
       )
       .order("desc")
       .take(100);
-    return [...pendingStock, ...partial].sort((a, b) => b.saleDate - a.saleDate);
+    return [...pendingStock, ...partial]
+      .filter((s) => !s.cancelledAt)
+      .sort((a, b) => b.saleDate - a.saleDate);
   },
 });
 
@@ -2309,7 +2330,9 @@ export const listMyPendingFulfillment = query({
       .order("desc")
       .take(200);
     return sales.filter(
-      (s) => s.fulfillmentStatus === "pending_stock" || s.fulfillmentStatus === "partial"
+      (s) =>
+        !s.cancelledAt &&
+        (s.fulfillmentStatus === "pending_stock" || s.fulfillmentStatus === "partial")
     );
   },
 });
@@ -2335,9 +2358,9 @@ export const getPendingFulfillmentDashboard = query({
       .order("desc")
       .take(100);
 
-    const allPendingSales = [...pendingStock, ...partial].sort(
-      (a, b) => b.saleDate - a.saleDate
-    );
+    const allPendingSales = [...pendingStock, ...partial]
+      .filter((s) => !s.cancelledAt)
+      .sort((a, b) => b.saleDate - a.saleDate);
 
     // Collect all unique product IDs and seller IDs for enrichment
     const productIds = new Set<string>();
