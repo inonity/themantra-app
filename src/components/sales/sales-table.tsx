@@ -1080,7 +1080,7 @@ export function SalesTable({
                         <PencilIcon className="h-4 w-4" />
                         Edit
                       </DropdownMenuItem>
-                      {sale.paymentStatus === "unpaid" && sale.saleChannel !== "internal" && !sale.cancelledAt && (
+                      {sale.saleChannel !== "internal" && !sale.cancelledAt && (
                         <>
                           <DropdownMenuSeparator />
                           <DropdownMenuItem

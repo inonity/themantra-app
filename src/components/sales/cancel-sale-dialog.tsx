@@ -59,6 +59,14 @@ export function CancelSaleDialog({
         </AlertDialogHeader>
 
         <div className="space-y-4 py-4">
+          {sale.amountPaid > 0 && (
+            <div className="rounded-md bg-amber-500/10 p-3 text-sm text-amber-700 dark:text-amber-400">
+              This sale has RM{sale.amountPaid.toFixed(2)} recorded as paid.
+              Cancelling voids that payment record — make sure any money received
+              has been refunded or accounted for.
+            </div>
+          )}
+
           <div className="space-y-2">
             <Label htmlFor="cancel-reason">Reason (optional)</Label>
             <Input

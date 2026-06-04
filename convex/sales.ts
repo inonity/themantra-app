@@ -1547,10 +1547,14 @@ export const cancelSale = mutation({
 
     if (sale.cancelledAt) throw new Error("Sale has already been cancelled");
     if (sale.type !== "b2c") throw new Error("Only B2C sales can be cancelled");
-    if (sale.paymentStatus !== "unpaid")
-      throw new Error("Only fully unpaid sales can be cancelled");
     if (sale.saleChannel === "internal")
       throw new Error("Internal sales cannot be cancelled");
+
+    // Paid/partial sales can be cancelled (e.g. seller recorded a mistaken
+    // sale). Payment is tracked inline on the sale, so marking it cancelled
+    // voids the recorded money everywhere it's aggregated. The only thing we
+    // refuse is money that's already in flight to HQ — see the settlement
+    // guard below.
 
     // Consignment/presell sales are attached to a pending settlement at
     // creation time (agent owes HQ regardless of customer payment). If the
@@ -1658,9 +1662,14 @@ export const cancelSale = mutation({
     }
 
     // Detach from pending settlement, if any. We've already guarded against
-    // submitted/paid settlements above. The contribution this sale made was
-    // either its agentCommission (hq_to_agent) or its hqPrice (agent_to_hq);
-    // since the sale is unpaid, no overpayment delta has been applied.
+    // submitted/paid settlements above, so this only touches still-pending
+    // money. A sale's contribution to its settlement is its base amount
+    // (agentCommission for hq_to_agent, hqPrice for agent_to_hq) plus any
+    // overpayment that was routed through the same settlement — overpayment
+    // counts toward hq_to_agent only when it went to the agent, and toward
+    // agent_to_hq only when it went to HQ. This mirrors the amounts added in
+    // recordB2CSale / recordPayment, so a paid sale with an overpayment is
+    // backed out cleanly.
     if (sale.settlementId) {
       const settlement = await ctx.db.get(sale.settlementId);
       if (settlement && settlement.paymentStatus === "pending") {
@@ -1671,10 +1680,12 @@ export const cancelSale = mutation({
           await ctx.db.delete(settlement._id);
         } else {
           const direction = settlement.direction ?? "agent_to_hq";
+          const overpayment = sale.overpaymentAmount ?? 0;
+          const overpaymentToHq = sale.overpaymentRecipient === "hq";
           const contribution =
             direction === "hq_to_agent"
-              ? sale.agentCommission ?? 0
-              : sale.hqPrice ?? 0;
+              ? (sale.agentCommission ?? 0) + (overpaymentToHq ? 0 : overpayment)
+              : (sale.hqPrice ?? 0) + (overpaymentToHq ? overpayment : 0);
           await ctx.db.patch(settlement._id, {
             saleIds: remainingSaleIds,
             totalAmount:
