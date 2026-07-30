@@ -764,6 +764,10 @@ export function RecordSaleForm({
       type GroupedPending = { productId: Id<"products">; variantId?: Id<"productVariants">; quantity: number; fulfillmentSource: FulfillmentSource; inBundle?: boolean };
       const fulfilledGroups = new Map<string, GroupedFulfilled>();
       const pendingGroups = new Map<string, GroupedPending>();
+      // Per pending group: which HQ batches back it, and how many units each.
+      // Keyed identically to pendingGroups so the auto-fulfill payload below can
+      // map a group straight to its stored line item index.
+      const pendingHqBatches = new Map<string, Map<Id<"batches">, number>>();
 
       for (let i = 0; i < unifiedItems.length; i++) {
         const li = unifiedItems[i];
@@ -796,6 +800,14 @@ export function RecordSaleForm({
               fulfillmentSource: li.source,
               inBundle: inBundle || undefined,
             });
+          }
+          if (li.hqBatchId) {
+            let batches = pendingHqBatches.get(key);
+            if (!batches) {
+              batches = new Map();
+              pendingHqBatches.set(key, batches);
+            }
+            batches.set(li.hqBatchId, (batches.get(li.hqBatchId) ?? 0) + 1);
           }
         }
       }
@@ -849,42 +861,27 @@ export function RecordSaleForm({
         });
       }
 
-      // Auto-fulfill items that the agent selected from HQ inventory
-      const hqAutoFulfillItems = unifiedItems.filter(
-        (li) => li.source !== "agent_stock" && li.hqBatchId
-      );
-      if (hqAutoFulfillItems.length > 0) {
-        // Group HQ auto-fulfill items by batchId
-        const hqGroups = new Map<string, { batchId: Id<"batches">; quantity: number }>();
-        for (const li of hqAutoFulfillItems) {
-          const key = li.hqBatchId!;
-          const existing = hqGroups.get(key);
-          if (existing) {
-            existing.quantity++;
-          } else {
-            hqGroups.set(key, { batchId: li.hqBatchId!, quantity: 1 });
-          }
+      // Auto-fulfill items that the agent selected from HQ inventory.
+      // Stored line items are [...fulfilledItems, ...pendingItems] in that order,
+      // so a pending group's index in pendingGroups is its line item index offset
+      // by the fulfilled count. Quantities come from the per-group batch split so
+      // a group that was cut in two by offer bundling only claims its own units.
+      const fulfilledCount = fulfilledItems.length;
+      const pendingKeys = [...pendingGroups.keys()];
+      const autoFulfillPayload: { lineItemIndex: number; batchId: Id<"batches">; quantity: number }[] = [];
+      for (let pendingIdx = 0; pendingIdx < pendingKeys.length; pendingIdx++) {
+        const batches = pendingHqBatches.get(pendingKeys[pendingIdx]);
+        if (!batches) continue;
+        for (const [batchId, quantity] of batches) {
+          autoFulfillPayload.push({
+            lineItemIndex: fulfilledCount + pendingIdx,
+            batchId,
+            quantity,
+          });
         }
-        // Find the line item indices in the stored sale for these pending items
-        const fulfilledCount = fulfilledItems.length;
-        const autoFulfillPayload: { lineItemIndex: number; batchId: Id<"batches">; quantity: number }[] = [];
-        let pendingIdx = 0;
-        for (const pending of pendingItems) {
-          // Check if any HQ auto-fulfill items match this pending group
-          for (const [, hqGroup] of hqGroups) {
-            if (hqAutoFulfillItems.some((li) => li.hqBatchId === hqGroup.batchId && li.productId === pending.productId && li.source === pending.fulfillmentSource)) {
-              autoFulfillPayload.push({
-                lineItemIndex: fulfilledCount + pendingIdx,
-                batchId: hqGroup.batchId,
-                quantity: hqGroup.quantity,
-              });
-            }
-          }
-          pendingIdx++;
-        }
-        if (autoFulfillPayload.length > 0) {
-          await selfFulfillFromHQ({ saleId, items: autoFulfillPayload });
-        }
+      }
+      if (autoFulfillPayload.length > 0) {
+        await selfFulfillFromHQ({ saleId, items: autoFulfillPayload });
       }
 
       if (interestId) {
