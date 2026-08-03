@@ -35,7 +35,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, Undo2Icon, AlertTriangleIcon, ChevronDownIcon } from "lucide-react";
+import { ArrowRightLeftIcon, CheckIcon, XIcon, ArrowUpDownIcon, ArrowUpIcon, ArrowDownIcon, Undo2Icon, AlertTriangleIcon, ChevronDownIcon, GiftIcon } from "lucide-react";
 import { useState, useMemo } from "react";
 
 type EnrichedRequest = {
@@ -268,7 +268,7 @@ export default function StockPage() {
   const allRequests = useQuery(api.stockRequests.listAll) ?? [];
 
   const [activeDialog, setActiveDialog] = useState<
-    null | "loss" | "return" | "transfer"
+    null | "loss" | "gift" | "return" | "transfer"
   >(null);
 
   const isLoading =
@@ -314,6 +314,10 @@ export default function StockPage() {
                     <AlertTriangleIcon className="h-4 w-4" />
                     Report Loss
                   </DropdownMenuItem>
+                  <DropdownMenuItem onClick={() => setActiveDialog("gift")}>
+                    <GiftIcon className="h-4 w-4" />
+                    Record Gift
+                  </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
 
@@ -321,6 +325,12 @@ export default function StockPage() {
                 products={products}
                 open={activeDialog === "loss"}
                 onOpenChange={(v) => setActiveDialog(v ? "loss" : null)}
+              />
+              <ReportStockLossDialog
+                products={products}
+                intent="gift"
+                open={activeDialog === "gift"}
+                onOpenChange={(v) => setActiveDialog(v ? "gift" : null)}
               />
               <ReturnFormDialog
                 products={products}
@@ -354,7 +364,7 @@ export default function StockPage() {
             <TabsTrigger value="movements">Movements</TabsTrigger>
             <TabsTrigger value="losses">
               <span className="sm:hidden">Losses</span>
-              <span className="hidden sm:inline">Stock Losses</span>
+              <span className="hidden sm:inline">Losses &amp; Gifts</span>
             </TabsTrigger>
             <TabsTrigger value="corrections">
               <span className="sm:hidden">Fixes</span>

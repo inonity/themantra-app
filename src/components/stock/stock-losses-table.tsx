@@ -127,8 +127,14 @@ export function StockLossesTable() {
         chargedAmount += l.salePrice;
       } else {
         writeOffCount += 1;
-        // Nobody was billed — this is what the business itself ate.
-        absorbedValue += l.writeOffValue ?? 0;
+        // Nobody was billed. An agent's hold & paid stock is already bought and
+        // paid for, so that loss is theirs — everything else lands on the business.
+        // Sales staff never buy from HQ, so their stock is HQ's either way.
+        const agentsOwnStock =
+          l.stockModel === "hold_paid" && l.attributedUserRole === "agent";
+        if (!agentsOwnStock) {
+          absorbedValue += l.writeOffValue ?? 0;
+        }
       }
     }
     return { chargedAmount, totalQty, writeOffCount, absorbedValue, giftQty, giftValue };
@@ -184,8 +190,8 @@ export function StockLossesTable() {
               {formatRM(totals.chargedAmount)}
             </span>
           </span>
-          <span>
-            Absorbed:{" "}
+          <span title="Value of stock the business ate — excludes agents' own hold & paid stock">
+            Absorbed by HQ:{" "}
             <span className="font-medium text-foreground">
               {formatRM(totals.absorbedValue)}
             </span>
@@ -225,8 +231,8 @@ export function StockLossesTable() {
               <TableRow>
                 <TableCell colSpan={8} className="text-center text-muted-foreground">
                   {hasActiveFilters
-                    ? "No losses match the current filters."
-                    : "No stock losses recorded."}
+                    ? "No records match the current filters."
+                    : "No losses or gifts recorded."}
                 </TableCell>
               </TableRow>
             ) : (
@@ -308,7 +314,7 @@ export function StockLossesTable() {
                             {formatRM(l.writeOffValue)}
                           </span>
                           <span className="text-[10px] text-muted-foreground">
-                            absorbed
+                            not charged
                           </span>
                         </div>
                       ) : (

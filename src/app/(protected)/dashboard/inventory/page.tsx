@@ -135,7 +135,7 @@ export default function AgentInventoryPage() {
             <ReportStockLossDialog products={products} lockedAgentId={currentUser._id}>
               <Button variant="outline">
                 <AlertTriangleIcon className="h-4 w-4 mr-2" />
-                Report Loss / Self-Use
+                Report Loss / Gift
               </Button>
             </ReportStockLossDialog>
           )}

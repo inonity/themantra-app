@@ -65,13 +65,14 @@ type HQReason =
 
 const HQ_SUBJECT_ID = "__hq__";
 
+// Labels are bare because the dropdown groups them under "Loss" / "Gift" headings.
 const reasonLabels: Record<Reason, string> = {
   damage: "Damage / Broken",
   self_use: "Self-Use / Personal",
   lost: "Lost / Missing",
-  gift_pr: "Gift — Influencer / PR",
-  gift_giveaway: "Gift — Giveaway / Contest",
-  gift_goodwill: "Gift — Customer Goodwill",
+  gift_pr: "Influencer / PR",
+  gift_giveaway: "Giveaway / Contest",
+  gift_goodwill: "Customer Goodwill",
 };
 
 const hqReasonLabels: Record<HQReason, string> = {
@@ -79,16 +80,31 @@ const hqReasonLabels: Record<HQReason, string> = {
   expired: "Expired",
   lost: "Lost / Missing",
   sample: "Sample / Testing",
-  gift_pr: "Gift — Influencer / PR",
-  gift_giveaway: "Gift — Giveaway / Contest",
-  gift_goodwill: "Gift — Customer Goodwill",
   other: "Other",
+  gift_pr: "Influencer / PR",
+  gift_giveaway: "Giveaway / Contest",
+  gift_goodwill: "Customer Goodwill",
 };
 
 const GIFT_REASONS = ["gift_pr", "gift_giveaway", "gift_goodwill"] as const;
 
+// HQ-side loss reasons, in display order. Gifts are listed separately.
+const HQ_LOSS_REASONS: HQReason[] = [
+  "damaged",
+  "expired",
+  "lost",
+  "sample",
+  "other",
+];
+
 function isGiftReason(reason: string) {
   return (GIFT_REASONS as readonly string[]).includes(reason);
+}
+
+// The dropdown items sit under a "Gift" heading, but the closed trigger shows no
+// heading — so re-attach the context there.
+function triggerLabel(reason: string, label: string) {
+  return isGiftReason(reason) ? `Gift · ${label}` : label;
 }
 
 type LossRow = {
@@ -121,6 +137,7 @@ function parseKey(key: string): { batchId: string; stockModel: LossStockModel } 
 export function ReportStockLossDialog({
   products,
   lockedAgentId,
+  intent = "loss",
   children,
   open: openProp,
   onOpenChange: onOpenChangeProp,
@@ -128,6 +145,9 @@ export function ReportStockLossDialog({
   products: Doc<"products">[];
   // If set, agent selector is hidden and locked to this user (self-file mode).
   lockedAgentId?: Id<"users">;
+  // Which reason to preselect. Only the starting point — the reason dropdown still
+  // offers both losses and gifts, so an entry point never traps the user.
+  intent?: "loss" | "gift";
   children?: React.ReactElement;
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
@@ -158,8 +178,11 @@ export function ReportStockLossDialog({
     onOpenChangeProp?.(v);
   };
   const [agentId, setAgentId] = useState<string>(lockedAgentId ?? "");
-  const [reason, setReason] = useState<Reason>("damage");
-  const [hqReason, setHqReason] = useState<HQReason>("damaged");
+  const defaultReason: Reason = intent === "gift" ? "gift_pr" : "damage";
+  const defaultHqReason: HQReason = intent === "gift" ? "gift_pr" : "damaged";
+
+  const [reason, setReason] = useState<Reason>(defaultReason);
+  const [hqReason, setHqReason] = useState<HQReason>(defaultHqReason);
   const [absorbedByHQ, setAbsorbedByHQ] = useState(false);
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<LossRow[]>([emptyRow()]);
@@ -180,9 +203,9 @@ export function ReportStockLossDialog({
   const subjectIsSales = subjectRole === "sales";
 
   // Sales staff never purchase from HQ — self-use is hidden for them.
-  const availableReasons: Reason[] = subjectIsSales
-    ? ["damage", "lost", ...GIFT_REASONS]
-    : ["damage", "self_use", "lost", ...GIFT_REASONS];
+  const availableLossReasons: Reason[] = subjectIsSales
+    ? ["damage", "lost"]
+    : ["damage", "self_use", "lost"];
 
   // Waiving the charge is an admin call, and only applies where a charge would land.
   const canAbsorb =
@@ -292,8 +315,8 @@ export function ReportStockLossDialog({
 
   function resetForm() {
     setAgentId(lockedAgentId ?? "");
-    setReason("damage");
-    setHqReason("damaged");
+    setReason(defaultReason);
+    setHqReason(defaultHqReason);
     setAbsorbedByHQ(false);
     setNotes("");
     setRows([emptyRow()]);
@@ -433,7 +456,13 @@ export function ReportStockLossDialog({
       <DialogContent className="sm:max-w-2xl">
         <DialogHeader>
           <DialogTitle>
-            {lockedAgentId ? "Report My Stock Loss" : "Report Stock Loss"}
+            {isGiftReason(isHQSubject ? hqReason : reason)
+              ? lockedAgentId
+                ? "Record My Gift"
+                : "Record Gift"
+              : lockedAgentId
+                ? "Report My Stock Loss"
+                : "Report Stock Loss"}
           </DialogTitle>
         </DialogHeader>
         <div className="max-h-[75vh] overflow-y-auto overflow-x-hidden -mx-4 px-4">
@@ -554,27 +583,55 @@ export function ReportStockLossDialog({
               {isHQSubject ? (
                 <Select value={hqReason} onValueChange={(v) => setHqReason(v as HQReason)}>
                   <SelectTrigger>
-                    <SelectValue>{hqReasonLabels[hqReason]}</SelectValue>
+                    <SelectValue>
+                      {triggerLabel(hqReason, hqReasonLabels[hqReason])}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {(Object.keys(hqReasonLabels) as HQReason[]).map((k) => (
-                      <SelectItem key={k} value={k}>
-                        {hqReasonLabels[k]}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      <SelectLabel>Loss</SelectLabel>
+                      {HQ_LOSS_REASONS.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {hqReasonLabels[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>Gift — given away on purpose</SelectLabel>
+                      {GIFT_REASONS.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {hqReasonLabels[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               ) : (
                 <Select value={reason} onValueChange={(v) => setReason(v as Reason)}>
                   <SelectTrigger>
-                    <SelectValue>{reasonLabels[reason]}</SelectValue>
+                    <SelectValue>
+                      {triggerLabel(reason, reasonLabels[reason])}
+                    </SelectValue>
                   </SelectTrigger>
                   <SelectContent>
-                    {availableReasons.map((k) => (
-                      <SelectItem key={k} value={k}>
-                        {reasonLabels[k]}
-                      </SelectItem>
-                    ))}
+                    <SelectGroup>
+                      <SelectLabel>Loss</SelectLabel>
+                      {availableLossReasons.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {reasonLabels[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                    <SelectSeparator />
+                    <SelectGroup>
+                      <SelectLabel>Gift — given away on purpose</SelectLabel>
+                      {GIFT_REASONS.map((k) => (
+                        <SelectItem key={k} value={k}>
+                          {reasonLabels[k]}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
                   </SelectContent>
                 </Select>
               )}
