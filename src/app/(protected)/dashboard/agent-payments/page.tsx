@@ -269,6 +269,8 @@ function PayCommissionDialog({
   const [methodOverride, setMethodOverride] = useState<CommissionMethod | null>(
     null
   );
+  const today = new Date().toISOString().split("T")[0];
+  const [transferDate, setTransferDate] = useState(today);
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [showQrDialog, setShowQrDialog] = useState(false);
@@ -291,11 +293,13 @@ function PayCommissionDialog({
       await markCommissionPaid({
         settlementId: settlement._id,
         paymentMethod,
+        paymentDate: new Date(transferDate).getTime(),
         notes: notes.trim() || undefined,
       });
       setOpen(false);
       setNotes("");
       setMethodOverride(null);
+      setTransferDate(today);
     } finally {
       setSubmitting(false);
     }
@@ -494,6 +498,20 @@ function PayCommissionDialog({
             </div>
           )}
 
+          <div className="space-y-2">
+            <Label>Transfer Date</Label>
+            <Input
+              type="date"
+              value={transferDate}
+              max={today}
+              onChange={(e) => setTransferDate(e.target.value)}
+            />
+            <p className="text-xs text-muted-foreground">
+              The day you actually transferred — set it back if you&apos;re
+              recording this later.
+            </p>
+          </div>
+
           <div>
             <Label>Admin Note (optional)</Label>
             <Textarea
@@ -507,7 +525,7 @@ function PayCommissionDialog({
           <Button
             className="w-full"
             onClick={handleConfirm}
-            disabled={submitting}
+            disabled={submitting || !transferDate}
           >
             {submitting ? "Processing..." : "Confirm Commission Paid"}
           </Button>

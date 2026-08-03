@@ -164,6 +164,9 @@ export const markCommissionPaid = mutation({
       v.literal("online"), // legacy
       v.literal("other")
     ),
+    // When HQ actually transferred. Omitted means "today" — admins often record
+    // the payout days after making it, so this is not the same as confirmedAt.
+    paymentDate: v.optional(v.number()),
     notes: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
@@ -178,12 +181,21 @@ export const markCommissionPaid = mutation({
       throw new Error("Commission already paid");
     }
 
+    const now = Date.now();
+    const paymentDate = args.paymentDate ?? now;
+    // Dates arrive as midnight in the browser's timezone, so allow a day of
+    // slack — anything beyond that is a genuinely future date.
+    if (paymentDate > now + 24 * 60 * 60 * 1000) {
+      throw new Error("Transfer date cannot be in the future");
+    }
+
     await ctx.db.patch(args.settlementId, {
       paymentStatus: "paid",
       amountPaid: settlement.totalAmount,
       paymentMethod: args.paymentMethod,
-      paidAt: Date.now(),
-      confirmedAt: Date.now(),
+      paymentDate,
+      paidAt: paymentDate,
+      confirmedAt: now,
       notes: args.notes,
     });
   },
