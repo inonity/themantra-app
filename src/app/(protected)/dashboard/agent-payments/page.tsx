@@ -89,6 +89,25 @@ const CHANNEL_LABELS: Record<string, string> = {
   internal: "Internal",
 };
 
+// Methods HQ can pay a commission with. "online" is a legacy value kept only so
+// old records still render a readable label.
+type CommissionMethod = "bank_transfer" | "qr" | "cash" | "other";
+
+const COMMISSION_METHOD_OPTIONS: CommissionMethod[] = [
+  "bank_transfer",
+  "qr",
+  "cash",
+  "other",
+];
+
+const COMMISSION_METHOD_LABELS: Record<string, string> = {
+  bank_transfer: "Bank Transfer",
+  qr: "QR / e-Wallet",
+  cash: "Cash",
+  online: "Online (legacy)",
+  other: "Other",
+};
+
 function stockModelLabel(model?: string) {
   switch (model) {
     case "hold_paid":
@@ -245,24 +264,36 @@ function PayCommissionDialog({
     api.agentSettlements.markCommissionPaid
   );
   const [open, setOpen] = useState(false);
-  const [paymentMethod, setPaymentMethod] = useState<string>("bank_transfer");
+  // null = follow the agent's preferred payout method until admin picks one
+  const [methodOverride, setMethodOverride] = useState<CommissionMethod | null>(
+    null
+  );
   const [notes, setNotes] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [showQrDialog, setShowQrDialog] = useState(false);
+
+  const payout = useQuery(
+    api.agentProfiles.getPayoutDetails,
+    open ? { agentId: settlement.agentId } : "skip"
+  );
+
+  const paymentMethod: CommissionMethod =
+    methodOverride ?? payout?.payoutMethod ?? "bank_transfer";
+
+  const bankName = payout?.bankName;
+  const accountNumber = payout?.accountNumber;
 
   async function handleConfirm() {
     setSubmitting(true);
     try {
       await markCommissionPaid({
         settlementId: settlement._id,
-        paymentMethod: paymentMethod as
-          | "cash"
-          | "bank_transfer"
-          | "online"
-          | "other",
+        paymentMethod,
         notes: notes.trim() || undefined,
       });
       setOpen(false);
       setNotes("");
+      setMethodOverride(null);
     } finally {
       setSubmitting(false);
     }
@@ -278,7 +309,22 @@ function PayCommissionDialog({
         <BanknoteIcon className="h-4 w-4 mr-1" />
         Pay Commission
       </DialogTrigger>
-      <DialogContent>
+      <Dialog open={showQrDialog} onOpenChange={setShowQrDialog}>
+        <DialogContent className="flex flex-col gap-4 sm:max-w-md">
+          <DialogTitle>{agentName}&apos;s Payout QR</DialogTitle>
+          <div className="flex flex-1 items-center justify-center px-4 py-2">
+            {payout?.qrUrl && (
+              /* eslint-disable-next-line @next/next/no-img-element */
+              <img
+                alt={`${agentName} payout QR`}
+                src={payout.qrUrl}
+                className="h-auto block"
+              />
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+      <DialogContent className="max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>
             Pay Commission to {agentName} — {settlement.referenceId}
@@ -304,18 +350,107 @@ function PayCommissionDialog({
 
           <div className="space-y-2">
             <Label>Payment Method</Label>
-            <Select value={paymentMethod} onValueChange={(v) => { if (v) setPaymentMethod(v); }}>
-              <SelectTrigger>
-                <SelectValue />
+            <Select
+              value={paymentMethod}
+              onValueChange={(v) => {
+                if (v) setMethodOverride(v as CommissionMethod);
+              }}
+            >
+              <SelectTrigger className="w-full">
+                <SelectValue>
+                  {COMMISSION_METHOD_LABELS[paymentMethod]}
+                </SelectValue>
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="bank_transfer">Bank Transfer</SelectItem>
-                <SelectItem value="cash">Cash</SelectItem>
-                <SelectItem value="online">Online</SelectItem>
-                <SelectItem value="other">Other</SelectItem>
+                {COMMISSION_METHOD_OPTIONS.map((m) => (
+                  <SelectItem key={m} value={m}>
+                    {COMMISSION_METHOD_LABELS[m]}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
+            {payout?.payoutMethod && methodOverride === null && (
+              <p className="text-xs text-muted-foreground">
+                {agentName} prefers{" "}
+                {COMMISSION_METHOD_LABELS[payout.payoutMethod]}.
+              </p>
+            )}
           </div>
+
+          {/* Agent's bank account */}
+          {paymentMethod === "bank_transfer" && (
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
+              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                Transfer to
+              </p>
+              {payout === undefined ? (
+                <p className="text-sm text-muted-foreground">
+                  Loading bank details...
+                </p>
+              ) : bankName && accountNumber ? (
+                <div className="space-y-1">
+                  <p className="font-semibold text-base">
+                    {payout.accountHolder ?? agentName}
+                  </p>
+                  <p className="text-sm text-muted-foreground">{bankName}</p>
+                  <div className="flex items-center gap-1">
+                    <span className="font-mono font-semibold text-base tracking-widest">
+                      {accountNumber}
+                    </span>
+                    <CopyButton text={accountNumber} />
+                  </div>
+                  {!payout.accountHolder && (
+                    <p className="text-xs text-muted-foreground">
+                      Account holder name not set — confirm with the agent
+                      before transferring.
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {agentName} hasn&apos;t added bank details yet. Ask them to
+                  fill in Settings → Commission Payout Details.
+                </p>
+              )}
+            </div>
+          )}
+
+          {/* Agent's payout QR */}
+          {paymentMethod === "qr" && (
+            <div className="rounded-lg border bg-muted/30 p-4 space-y-2">
+              {payout === undefined ? (
+                <p className="text-sm text-muted-foreground">Loading QR...</p>
+              ) : payout.qrUrl ? (
+                <>
+                  <p className="text-sm font-medium">
+                    {agentName}&apos;s QR — scan to pay
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setShowQrDialog(true)}
+                    className="block rounded-lg border overflow-hidden hover:opacity-75 transition-opacity focus:outline-none focus:ring-2 focus:ring-ring mx-auto"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={payout.qrUrl}
+                      alt={`${agentName} payout QR`}
+                      className="h-48 w-48 object-contain"
+                    />
+                  </button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    {payout.qrIsFallback
+                      ? "No payout QR set — showing their customer payment QR."
+                      : "Tap to enlarge"}
+                  </p>
+                </>
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  {agentName} hasn&apos;t uploaded a payout QR. Ask them to add
+                  one in Settings → Commission Payout Details.
+                </p>
+              )}
+            </div>
+          )}
 
           <div>
             <Label>Admin Note (optional)</Label>
@@ -410,6 +545,13 @@ function SettlementRow({
       {expanded && (
         <TableRow>
           <TableCell colSpan={8} className="bg-muted/50 p-4">
+            {settlement.paymentMethod && (
+              <p className="text-sm text-muted-foreground mb-3">
+                Paid via:{" "}
+                {COMMISSION_METHOD_LABELS[settlement.paymentMethod] ??
+                  settlement.paymentMethod}
+              </p>
+            )}
             {settlement.agentNotes && (
               <p className="text-sm text-muted-foreground mb-3">
                 Agent note: {settlement.agentNotes}

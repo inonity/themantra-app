@@ -494,6 +494,16 @@ export default defineSchema({
     ),
     // Seller's own QR image — shown when the seller collects via QR
     paymentQrStorageId: v.optional(v.id("_storage")),
+    // --- Commission payout details (how HQ pays the seller) ---
+    // How the seller prefers to receive their commission from HQ
+    payoutMethod: v.optional(
+      v.union(v.literal("bank_transfer"), v.literal("qr"))
+    ),
+    payoutBankName: v.optional(v.string()),
+    payoutBankAccountNumber: v.optional(v.string()),
+    payoutBankAccountHolder: v.optional(v.string()),
+    // Seller's DuitNow/e-wallet QR — shown to HQ when paying commission via QR
+    payoutQrStorageId: v.optional(v.id("_storage")),
     notes: v.optional(v.string()),
     updatedAt: v.optional(v.number()),
   }).index("by_agentId", ["agentId"]),
@@ -519,7 +529,8 @@ export default defineSchema({
       v.union(
         v.literal("cash"),
         v.literal("bank_transfer"),
-        v.literal("online"),
+        v.literal("qr"),
+        v.literal("online"), // legacy — kept for existing records
         v.literal("other")
       )
     ),

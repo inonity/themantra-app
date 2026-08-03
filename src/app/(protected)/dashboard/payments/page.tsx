@@ -37,6 +37,7 @@ import {
   ArrowDownIcon,
 } from "lucide-react";
 import { useState, useMemo } from "react";
+import Link from "next/link";
 
 type SortCol = "direction" | "amount" | "status" | "payment_date" | "confirmed";
 type SortDir = "asc" | "desc";
@@ -773,6 +774,13 @@ export default function AgentPaymentsPage() {
   const activeSettlement = useQuery(api.agentSettlements.getActiveSettlement);
   const activeCommission = useQuery(api.agentSettlements.getActiveCommission);
   const settlements = useQuery(api.agentSettlements.listMy);
+  const myProfile = useQuery(api.agentProfiles.getMyProfile);
+
+  // HQ can only pay out once the seller has given bank details or a payout QR
+  const missingPayoutDetails =
+    myProfile !== undefined &&
+    !(myProfile?.payoutBankName && myProfile?.payoutBankAccountNumber) &&
+    !myProfile?.payoutQrStorageId;
 
   const [historySortCol, setHistorySortCol] = useState<SortCol>("payment_date");
   const [breakdownTab, setBreakdownTab] = useState<"to_hq" | "from_hq">("to_hq");
@@ -891,6 +899,18 @@ export default function AgentPaymentsPage() {
                         </span>
                         <CopyButton text={activeCommission.referenceId} />
                       </div>
+                      {missingPayoutDetails && (
+                        <p className="text-xs text-muted-foreground">
+                          HQ needs your payout details —{" "}
+                          <Link
+                            href="/dashboard/settings"
+                            className="underline underline-offset-2"
+                          >
+                            add your bank account or QR in Settings
+                          </Link>
+                          .
+                        </p>
+                      )}
                     </div>
                   ) : (
                     <div className="text-4xl font-bold text-muted-foreground">

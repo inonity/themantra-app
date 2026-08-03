@@ -75,8 +75,11 @@ export const getByAgentId = query({
     const paymentQrUrl = profile.paymentQrStorageId
       ? await ctx.storage.getUrl(profile.paymentQrStorageId)
       : null;
+    const payoutQrUrl = profile.payoutQrStorageId
+      ? await ctx.storage.getUrl(profile.payoutQrStorageId)
+      : null;
 
-    return { ...profile, paymentQrUrl };
+    return { ...profile, paymentQrUrl, payoutQrUrl };
   },
 });
 
@@ -93,8 +96,11 @@ export const getMyProfile = query({
     const paymentQrUrl = profile.paymentQrStorageId
       ? await ctx.storage.getUrl(profile.paymentQrStorageId)
       : null;
+    const payoutQrUrl = profile.payoutQrStorageId
+      ? await ctx.storage.getUrl(profile.payoutQrStorageId)
+      : null;
 
-    return { ...profile, paymentQrUrl };
+    return { ...profile, paymentQrUrl, payoutQrUrl };
   },
 });
 
@@ -177,6 +183,129 @@ export const removeMyPaymentQr = mutation({
       paymentQrStorageId: undefined,
       updatedAt: Date.now(),
     });
+  },
+});
+
+// Seller: set the details HQ needs to pay out their commission.
+// Empty strings are treated as "clear this field".
+export const updateMyPayoutDetails = mutation({
+  args: {
+    payoutMethod: v.optional(
+      v.union(v.literal("bank_transfer"), v.literal("qr"))
+    ),
+    payoutBankName: v.optional(v.string()),
+    payoutBankAccountNumber: v.optional(v.string()),
+    payoutBankAccountHolder: v.optional(v.string()),
+    payoutQrStorageId: v.optional(v.id("_storage")),
+  },
+  handler: async (ctx, args) => {
+    const seller = await requireSeller(ctx);
+
+    const clean = (s?: string) => {
+      const trimmed = s?.trim();
+      return trimmed ? trimmed : undefined;
+    };
+    const bankName = clean(args.payoutBankName);
+    const accountNumber = clean(args.payoutBankAccountNumber);
+    const accountHolder = clean(args.payoutBankAccountHolder);
+
+    if (accountNumber && !/^[0-9]{5,20}$/.test(accountNumber)) {
+      throw new Error("Account number must be 5–20 digits");
+    }
+    if (args.payoutMethod === "bank_transfer" && (!bankName || !accountNumber)) {
+      throw new Error(
+        "Bank name and account number are required for bank transfer payouts"
+      );
+    }
+
+    const existing = await ctx.db
+      .query("agentProfiles")
+      .withIndex("by_agentId", (q) => q.eq("agentId", seller._id))
+      .unique();
+
+    // If swapping out the payout QR image, delete the old storage object
+    if (
+      existing?.payoutQrStorageId &&
+      args.payoutQrStorageId !== undefined &&
+      args.payoutQrStorageId !== existing.payoutQrStorageId
+    ) {
+      await ctx.storage.delete(existing.payoutQrStorageId);
+    }
+
+    const fields = {
+      payoutMethod: args.payoutMethod,
+      payoutBankName: bankName,
+      payoutBankAccountNumber: accountNumber,
+      payoutBankAccountHolder: accountHolder,
+    };
+
+    if (existing) {
+      await ctx.db.patch(existing._id, {
+        ...fields,
+        payoutQrStorageId:
+          args.payoutQrStorageId === undefined
+            ? existing.payoutQrStorageId
+            : args.payoutQrStorageId,
+        updatedAt: Date.now(),
+      });
+      return existing._id;
+    }
+
+    return await ctx.db.insert("agentProfiles", {
+      agentId: seller._id,
+      ...fields,
+      payoutQrStorageId: args.payoutQrStorageId,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+export const removeMyPayoutQr = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const seller = await requireSeller(ctx);
+    const profile = await ctx.db
+      .query("agentProfiles")
+      .withIndex("by_agentId", (q) => q.eq("agentId", seller._id))
+      .unique();
+    if (!profile?.payoutQrStorageId) return;
+
+    await ctx.storage.delete(profile.payoutQrStorageId);
+    await ctx.db.patch(profile._id, {
+      payoutQrStorageId: undefined,
+      updatedAt: Date.now(),
+    });
+  },
+});
+
+// Admin: payout details for a seller, used when paying out commission.
+// Falls back to the seller's customer-payment QR when no dedicated payout QR is set.
+export const getPayoutDetails = query({
+  args: { agentId: v.id("users") },
+  handler: async (ctx, args) => {
+    await requireRole(ctx, "admin");
+
+    const profile = await ctx.db
+      .query("agentProfiles")
+      .withIndex("by_agentId", (q) => q.eq("agentId", args.agentId))
+      .unique();
+
+    const payoutQrUrl = profile?.payoutQrStorageId
+      ? await ctx.storage.getUrl(profile.payoutQrStorageId)
+      : null;
+    const fallbackQrUrl =
+      !payoutQrUrl && profile?.paymentQrStorageId
+        ? await ctx.storage.getUrl(profile.paymentQrStorageId)
+        : null;
+
+    return {
+      payoutMethod: profile?.payoutMethod,
+      bankName: profile?.payoutBankName,
+      accountNumber: profile?.payoutBankAccountNumber,
+      accountHolder: profile?.payoutBankAccountHolder,
+      qrUrl: payoutQrUrl ?? fallbackQrUrl,
+      qrIsFallback: !payoutQrUrl && !!fallbackQrUrl,
+    };
   },
 });
 

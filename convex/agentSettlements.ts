@@ -160,7 +160,8 @@ export const markCommissionPaid = mutation({
     paymentMethod: v.union(
       v.literal("cash"),
       v.literal("bank_transfer"),
-      v.literal("online"),
+      v.literal("qr"),
+      v.literal("online"), // legacy
       v.literal("other")
     ),
     notes: v.optional(v.string()),
@@ -308,7 +309,8 @@ export const markPaid = mutation({
     paymentMethod: v.union(
       v.literal("cash"),
       v.literal("bank_transfer"),
-      v.literal("online"),
+      v.literal("qr"),
+      v.literal("online"), // legacy
       v.literal("other")
     ),
   },

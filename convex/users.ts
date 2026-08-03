@@ -258,6 +258,7 @@ export const getSettingsData = query({
     // Get agent profile if seller
     let agentProfile: Doc<"agentProfiles"> | null = null;
     let paymentQrUrl: string | null = null;
+    let payoutQrUrl: string | null = null;
     if (user.role === "agent" || user.role === "sales") {
       agentProfile = await ctx.db
         .query("agentProfiles")
@@ -265,6 +266,9 @@ export const getSettingsData = query({
         .unique();
       if (agentProfile?.paymentQrStorageId) {
         paymentQrUrl = await ctx.storage.getUrl(agentProfile.paymentQrStorageId);
+      }
+      if (agentProfile?.payoutQrStorageId) {
+        payoutQrUrl = await ctx.storage.getUrl(agentProfile.payoutQrStorageId);
       }
     }
 
@@ -300,6 +304,7 @@ export const getSettingsData = query({
       user,
       agentProfile,
       paymentQrUrl,
+      payoutQrUrl,
       rate,
       applicableOffers,
       offerPricing: offerPricingList,
