@@ -32,6 +32,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
+import { Separator } from "@/components/ui/separator";
 import { FacetedFilter } from "@/components/stock/faceted-filter";
 import {
   CopyIcon,
@@ -282,6 +283,7 @@ function PayCommissionDialog({
 
   const bankName = payout?.bankName;
   const accountNumber = payout?.accountNumber;
+  const accountHolder = payout?.accountHolder ?? agentName;
 
   async function handleConfirm() {
     setSubmitting(true);
@@ -332,9 +334,12 @@ function PayCommissionDialog({
         </DialogHeader>
         <div className="space-y-4">
           <div className="rounded-lg bg-muted p-3 space-y-2">
-            <div className="flex justify-between text-sm">
+            <div className="flex items-center justify-between text-sm">
               <span className="text-muted-foreground">Agent</span>
-              <span className="font-medium">{agentName}</span>
+              <span className="flex items-center gap-1">
+                <span className="font-medium">{agentName}</span>
+                <CopyButton text={agentName} />
+              </span>
             </div>
             <div className="flex justify-between text-sm">
               <span className="text-muted-foreground">Commission Amount</span>
@@ -380,36 +385,62 @@ function PayCommissionDialog({
           {/* Agent's bank account */}
           {paymentMethod === "bank_transfer" && (
             <div className="rounded-lg border bg-muted/30 p-4 space-y-3">
-              <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                Transfer to
-              </p>
               {payout === undefined ? (
                 <p className="text-sm text-muted-foreground">
                   Loading bank details...
                 </p>
               ) : bankName && accountNumber ? (
-                <div className="space-y-1">
-                  <p className="font-semibold text-base">
-                    {payout.accountHolder ?? agentName}
-                  </p>
-                  <p className="text-sm text-muted-foreground">{bankName}</p>
-                  <div className="flex items-center gap-1">
-                    <span className="font-mono font-semibold text-base tracking-widest">
-                      {accountNumber}
-                    </span>
-                    <CopyButton text={accountNumber} />
-                  </div>
-                  {!payout.accountHolder && (
-                    <p className="text-xs text-muted-foreground">
-                      Account holder name not set — confirm with the agent
-                      before transferring.
+                <>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Account Holder
                     </p>
-                  )}
-                </div>
+                    <div className="flex items-center gap-1">
+                      <span className="font-semibold text-base">
+                        {accountHolder}
+                      </span>
+                      <CopyButton text={accountHolder} />
+                    </div>
+                    {!payout.accountHolder && (
+                      <p className="text-xs text-muted-foreground">
+                        Account holder name not set — confirm with the agent
+                        before transferring.
+                      </p>
+                    )}
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Bank
+                    </p>
+                    <p className="font-semibold text-base">{bankName}</p>
+                  </div>
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Account Number
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono font-semibold text-base tracking-widest">
+                        {accountNumber}
+                      </span>
+                      <CopyButton text={accountNumber} />
+                    </div>
+                  </div>
+                  <Separator />
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Payment Description
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono font-bold text-base tracking-widest">
+                        {settlement.referenceId}
+                      </span>
+                      <CopyButton text={settlement.referenceId} />
+                    </div>
+                  </div>
+                </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {agentName} hasn&apos;t added bank details yet. Ask them to
-                  fill in Settings → Commission Payout Details.
+                  {`${agentName} hasn't added bank details yet. Ask them to fill in Settings → Commission Payout Details.`}
                 </p>
               )}
             </div>
@@ -442,11 +473,22 @@ function PayCommissionDialog({
                       ? "No payout QR set — showing their customer payment QR."
                       : "Tap to enlarge"}
                   </p>
+                  <Separator />
+                  <div className="space-y-1">
+                    <p className="text-xs font-medium uppercase tracking-wider text-muted-foreground">
+                      Payment Description
+                    </p>
+                    <div className="flex items-center gap-1">
+                      <span className="font-mono font-bold text-base tracking-widest">
+                        {settlement.referenceId}
+                      </span>
+                      <CopyButton text={settlement.referenceId} />
+                    </div>
+                  </div>
                 </>
               ) : (
                 <p className="text-sm text-muted-foreground">
-                  {agentName} hasn&apos;t uploaded a payout QR. Ask them to add
-                  one in Settings → Commission Payout Details.
+                  {`${agentName} hasn't uploaded a payout QR. Ask them to add one in Settings → Commission Payout Details.`}
                 </p>
               )}
             </div>
