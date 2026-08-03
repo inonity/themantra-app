@@ -134,7 +134,10 @@ export default defineSchema({
       v.union(
         v.literal("damage"),
         v.literal("self_use"),
-        v.literal("lost")
+        v.literal("lost"),
+        v.literal("gift_pr"),
+        v.literal("gift_giveaway"),
+        v.literal("gift_goodwill")
       )
     ),
     offerId: v.optional(v.id("offers")),
@@ -321,7 +324,8 @@ export default defineSchema({
       )
     ),
     hqUnitPrice: v.optional(v.number()),
-    // Set when toPartyType === "writeoff" — why the stock was written off
+    // Set when toPartyType === "writeoff" — why the stock was written off.
+    // gift_* categories are deliberate giveaways (marketing spend), not losses.
     writeOffCategory: v.optional(
       v.union(
         v.literal("damaged"),
@@ -330,9 +334,17 @@ export default defineSchema({
         v.literal("miscount"),
         v.literal("sample"),
         v.literal("self_use"),
+        v.literal("gift_pr"),
+        v.literal("gift_giveaway"),
+        v.literal("gift_goodwill"),
         v.literal("other")
       )
     ),
+    // RM value of the written-off stock, recorded regardless of who absorbs the cost.
+    // Agent chargeable lines: quantity × HQ price (matches salePrice).
+    // HQ write-offs and absorbed lines: quantity × retail price — nobody is billed,
+    // but the value is still needed to report gifting/shrinkage as a cost.
+    writeOffValue: v.optional(v.number()),
     // Salesperson or user blamed for the loss (HQ-side write-offs only — agent losses already identified via fromPartyId)
     attributedToUserId: v.optional(v.id("users")),
   })

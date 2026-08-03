@@ -129,6 +129,25 @@ export async function resolveAgentPrice(
   return { hqUnitPrice: retailPrice, retailPrice };
 }
 
+/**
+ * Resolves the plain retail price for a product/variant, with no agent rate applied.
+ *
+ * Used to value HQ-side write-offs (damage, gifts, samples). HQ stock has no stored
+ * cost basis, so retail is the closest available measure of what left the business.
+ */
+export async function resolveRetailPrice(
+  ctx: QueryCtx | MutationCtx,
+  productId: Id<"products">,
+  variantId?: Id<"productVariants">
+): Promise<number> {
+  if (variantId) {
+    const variant = await ctx.db.get(variantId);
+    if (variant) return variant.price;
+  }
+  const product = await ctx.db.get(productId);
+  return product?.price ?? 0;
+}
+
 /** Look up the agent's assigned rateId from their profile. */
 async function getAgentRateId(
   ctx: QueryCtx | MutationCtx,

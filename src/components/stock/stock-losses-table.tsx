@@ -24,6 +24,9 @@ const categoryLabel: Record<string, string> = {
   miscount: "Miscount",
   sample: "Sample",
   self_use: "Self-Use",
+  gift_pr: "Gift · Influencer/PR",
+  gift_giveaway: "Gift · Giveaway",
+  gift_goodwill: "Gift · Goodwill",
   other: "Other",
 };
 
@@ -34,8 +37,14 @@ const categoryTone: Record<string, string> = {
   miscount: "text-slate-600 border-slate-300",
   sample: "text-purple-600 border-purple-300",
   self_use: "text-blue-600 border-blue-300",
+  gift_pr: "text-pink-600 border-pink-300",
+  gift_giveaway: "text-fuchsia-600 border-fuchsia-300",
+  gift_goodwill: "text-violet-600 border-violet-300",
   other: "text-muted-foreground border-muted",
 };
+
+// Deliberate giveaways — reported separately from things that actually went wrong.
+const GIFT_CATEGORIES = ["gift_pr", "gift_giveaway", "gift_goodwill"];
 
 const stockModelLabel: Record<string, string> = {
   hold_paid: "Hold & Paid",
@@ -102,15 +111,27 @@ export function StockLossesTable() {
     let chargedAmount = 0;
     let totalQty = 0;
     let writeOffCount = 0;
+    let absorbedValue = 0;
+    let giftQty = 0;
+    let giftValue = 0;
     for (const l of filtered) {
       totalQty += l.quantity;
+      const isGift = l.writeOffCategory
+        ? GIFT_CATEGORIES.includes(l.writeOffCategory)
+        : false;
+      if (isGift) {
+        giftQty += l.quantity;
+        giftValue += l.writeOffValue ?? 0;
+      }
       if (l.salePrice && l.salePrice > 0) {
         chargedAmount += l.salePrice;
       } else {
         writeOffCount += 1;
+        // Nobody was billed — this is what the business itself ate.
+        absorbedValue += l.writeOffValue ?? 0;
       }
     }
-    return { chargedAmount, totalQty, writeOffCount };
+    return { chargedAmount, totalQty, writeOffCount, absorbedValue, giftQty, giftValue };
   }, [filtered]);
 
   if (losses === undefined) {
@@ -152,7 +173,7 @@ export function StockLossesTable() {
             Reset <XIcon className="ml-2 size-4" />
           </Button>
         )}
-        <div className="flex w-full items-center gap-4 text-xs text-muted-foreground sm:ml-auto sm:w-auto">
+        <div className="flex w-full flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground sm:ml-auto sm:w-auto">
           <span>
             <span className="font-medium text-foreground">{totals.totalQty}</span>{" "}
             unit{totals.totalQty !== 1 ? "s" : ""}
@@ -163,6 +184,21 @@ export function StockLossesTable() {
               {formatRM(totals.chargedAmount)}
             </span>
           </span>
+          <span>
+            Absorbed:{" "}
+            <span className="font-medium text-foreground">
+              {formatRM(totals.absorbedValue)}
+            </span>
+          </span>
+          {totals.giftQty > 0 && (
+            <span>
+              Gifts:{" "}
+              <span className="font-medium text-foreground">
+                {totals.giftQty} unit{totals.giftQty !== 1 ? "s" : ""} ·{" "}
+                {formatRM(totals.giftValue)}
+              </span>
+            </span>
+          )}
           <span>
             Write-offs:{" "}
             <span className="font-medium text-foreground">{totals.writeOffCount}</span>
@@ -264,6 +300,17 @@ export function StockLossesTable() {
                     <TableCell className="text-right tabular-nums">
                       {charged !== null ? (
                         <span className="font-medium">{formatRM(charged)}</span>
+                      ) : l.writeOffValue ? (
+                        // Nobody was billed, but the stock still had value — show it
+                        // so gifting and shrinkage can be read as a cost.
+                        <div className="flex flex-col items-end leading-tight">
+                          <span className="text-muted-foreground">
+                            {formatRM(l.writeOffValue)}
+                          </span>
+                          <span className="text-[10px] text-muted-foreground">
+                            absorbed
+                          </span>
+                        </div>
                       ) : (
                         <span className="text-muted-foreground">Write-off</span>
                       )}

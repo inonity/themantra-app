@@ -32,13 +32,24 @@ import { toast } from "sonner";
 
 type Mode = "adjust" | "writeoff";
 type AdjustDirection = "add" | "deduct";
-type WriteOffCategory = "damaged" | "expired" | "lost" | "sample" | "other";
+type WriteOffCategory =
+  | "damaged"
+  | "expired"
+  | "lost"
+  | "sample"
+  | "gift_pr"
+  | "gift_giveaway"
+  | "gift_goodwill"
+  | "other";
 
 const writeOffCategoryLabels: Record<WriteOffCategory, string> = {
   damaged: "Damaged / Broken",
   expired: "Expired",
   lost: "Lost / Missing",
   sample: "Sample / Testing",
+  gift_pr: "Gift — Influencer / PR",
+  gift_giveaway: "Gift — Giveaway / Contest",
+  gift_goodwill: "Gift — Customer Goodwill",
   other: "Other",
 };
 
@@ -254,7 +265,7 @@ export function StockAdjustmentDialog({
           <TabsContent value="writeoff" className="mt-4">
             <p className="text-sm text-muted-foreground mb-4">
               Record units that left the business without a sale — damaged, expired,
-              lost, or used as samples.
+              lost, used as samples, or given away as gifts.
             </p>
             <form onSubmit={submitWriteOff} className="space-y-4">
               <div className="space-y-2">

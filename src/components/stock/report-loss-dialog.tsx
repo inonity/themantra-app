@@ -27,6 +27,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Table,
   TableBody,
@@ -45,8 +46,22 @@ const stockModelLabels: Record<string, string> = {
 };
 
 type LossStockModel = "hold_paid" | "consignment" | "presell";
-type Reason = "damage" | "self_use" | "lost";
-type HQReason = "damaged" | "expired" | "lost" | "sample" | "other";
+type Reason =
+  | "damage"
+  | "self_use"
+  | "lost"
+  | "gift_pr"
+  | "gift_giveaway"
+  | "gift_goodwill";
+type HQReason =
+  | "damaged"
+  | "expired"
+  | "lost"
+  | "sample"
+  | "gift_pr"
+  | "gift_giveaway"
+  | "gift_goodwill"
+  | "other";
 
 const HQ_SUBJECT_ID = "__hq__";
 
@@ -54,6 +69,9 @@ const reasonLabels: Record<Reason, string> = {
   damage: "Damage / Broken",
   self_use: "Self-Use / Personal",
   lost: "Lost / Missing",
+  gift_pr: "Gift — Influencer / PR",
+  gift_giveaway: "Gift — Giveaway / Contest",
+  gift_goodwill: "Gift — Customer Goodwill",
 };
 
 const hqReasonLabels: Record<HQReason, string> = {
@@ -61,8 +79,17 @@ const hqReasonLabels: Record<HQReason, string> = {
   expired: "Expired",
   lost: "Lost / Missing",
   sample: "Sample / Testing",
+  gift_pr: "Gift — Influencer / PR",
+  gift_giveaway: "Gift — Giveaway / Contest",
+  gift_goodwill: "Gift — Customer Goodwill",
   other: "Other",
 };
+
+const GIFT_REASONS = ["gift_pr", "gift_giveaway", "gift_goodwill"] as const;
+
+function isGiftReason(reason: string) {
+  return (GIFT_REASONS as readonly string[]).includes(reason);
+}
 
 type LossRow = {
   id: string;
@@ -133,6 +160,7 @@ export function ReportStockLossDialog({
   const [agentId, setAgentId] = useState<string>(lockedAgentId ?? "");
   const [reason, setReason] = useState<Reason>("damage");
   const [hqReason, setHqReason] = useState<HQReason>("damaged");
+  const [absorbedByHQ, setAbsorbedByHQ] = useState(false);
   const [notes, setNotes] = useState("");
   const [rows, setRows] = useState<LossRow[]>([emptyRow()]);
   const [error, setError] = useState("");
@@ -153,8 +181,12 @@ export function ReportStockLossDialog({
 
   // Sales staff never purchase from HQ — self-use is hidden for them.
   const availableReasons: Reason[] = subjectIsSales
-    ? ["damage", "lost"]
-    : ["damage", "self_use", "lost"];
+    ? ["damage", "lost", ...GIFT_REASONS]
+    : ["damage", "self_use", "lost", ...GIFT_REASONS];
+
+  // Waiving the charge is an admin call, and only applies where a charge would land.
+  const canAbsorb =
+    !lockedAgentId && !isHQSubject && !subjectIsSales && isGiftReason(reason);
 
   const batchMap = useMemo(
     () => new Map((allBatches ?? []).map((b) => [b._id, b])),
@@ -262,6 +294,7 @@ export function ReportStockLossDialog({
     setAgentId(lockedAgentId ?? "");
     setReason("damage");
     setHqReason("damaged");
+    setAbsorbedByHQ(false);
     setNotes("");
     setRows([emptyRow()]);
     setError("");
@@ -273,6 +306,11 @@ export function ReportStockLossDialog({
       setReason("damage");
     }
   }, [reason, subjectIsSales]);
+
+  // The waiver only exists for agent gifts — drop it whenever that stops being true.
+  useEffect(() => {
+    if (!canAbsorb && absorbedByHQ) setAbsorbedByHQ(false);
+  }, [canAbsorb, absorbedByHQ]);
 
   // Auto-select subject when only HQ is available (no agents, no sales staff)
   useEffect(() => {
@@ -326,8 +364,10 @@ export function ReportStockLossDialog({
     ? parsedHQItems.length
     : parsedAgentItems.length;
 
-  // Chargeable preview: any non-hold_paid line = agent will owe HQ.
-  const chargeableLines = parsedAgentItems.filter((i) => i.stockModel !== "hold_paid");
+  // Chargeable preview: any non-hold_paid line = agent will owe HQ, unless HQ absorbs it.
+  const chargeableLines = absorbedByHQ
+    ? []
+    : parsedAgentItems.filter((i) => i.stockModel !== "hold_paid");
 
   const canSubmit =
     agentId &&
@@ -361,6 +401,7 @@ export function ReportStockLossDialog({
         await recordStockLoss({
           agentId: lockedAgentId ? undefined : (agentId as Id<"users">),
           reason,
+          absorbedByHQ: canAbsorb && absorbedByHQ ? true : undefined,
           notes: notes || undefined,
           items: parsedAgentItems,
         });
@@ -476,9 +517,9 @@ export function ReportStockLossDialog({
               <div className="rounded-md border border-muted bg-muted/30 px-3 py-2 text-xs text-muted-foreground leading-relaxed">
                 {isHQSubject ? (
                   <>
-                    Write off HQ-held stock (damaged, expired, lost, etc.). The
-                    batch&apos;s total count decreases. Optionally attribute to a
-                    salesperson for internal tracking — no charge is ever
+                    Write off HQ-held stock (damaged, expired, lost, gifts, etc.).
+                    The batch&apos;s total count decreases. Optionally attribute to
+                    a salesperson for internal tracking — no charge is ever
                     applied.
                   </>
                 ) : subjectIsSales ? (
@@ -538,6 +579,31 @@ export function ReportStockLossDialog({
                 </Select>
               )}
             </div>
+
+            {canAbsorb && (
+              <div className="flex items-start gap-2 rounded-md border border-muted bg-muted/30 px-3 py-2">
+                <Checkbox
+                  id="absorbedByHQ"
+                  checked={absorbedByHQ}
+                  onCheckedChange={(checked) => setAbsorbedByHQ(!!checked)}
+                  className="mt-0.5"
+                />
+                <div className="space-y-0.5">
+                  <Label
+                    htmlFor="absorbedByHQ"
+                    className="text-sm font-medium cursor-pointer"
+                  >
+                    Company gift — don&apos;t charge the agent
+                  </Label>
+                  <p className="text-xs text-muted-foreground leading-relaxed">
+                    Tick this when {hqName} approved the giveaway. The agent
+                    won&apos;t be billed and nothing is added to their settlement.
+                    Leave it unticked and the gift is charged like any other
+                    consignment stock they used up.
+                  </p>
+                </div>
+              </div>
+            )}
 
 <div className="space-y-2">
               <Label htmlFor="lossNotes">Notes (optional)</Label>
@@ -648,7 +714,9 @@ export function ReportStockLossDialog({
                                       ? "HQ write-off (no charge)"
                                       : isHoldPaid
                                         ? "No HQ charge (already paid)"
-                                        : "Charged to HQ at HQ price"}
+                                        : absorbedByHQ
+                                          ? "Absorbed by HQ (no charge)"
+                                          : "Charged to HQ at HQ price"}
                                 </p>
                               )}
                             </TableCell>
@@ -726,6 +794,13 @@ export function ReportStockLossDialog({
                 {chargeableLines.length} line{chargeableLines.length !== 1 ? "s" : ""} will
                 be charged to {lockedAgentId ? "you" : "the agent"} at HQ price and added
                 to the pending settlement.
+              </p>
+            )}
+
+            {canAbsorb && absorbedByHQ && (
+              <p className="text-xs text-muted-foreground">
+                Nothing will be charged — {hqName} absorbs this gift. It still shows
+                in the losses report with its value.
               </p>
             )}
 

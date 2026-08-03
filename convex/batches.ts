@@ -1,6 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
 import { requireRole } from "./helpers/auth";
+import { resolveRetailPrice } from "./helpers/pricing";
 
 const batchStatusValidator = v.union(
   v.literal("upcoming"),
@@ -659,6 +660,9 @@ const writeOffCategoryValidator = v.union(
   v.literal("lost"),
   v.literal("miscount"),
   v.literal("sample"),
+  v.literal("gift_pr"),
+  v.literal("gift_giveaway"),
+  v.literal("gift_goodwill"),
   v.literal("other")
 );
 
@@ -742,17 +746,25 @@ export const adjustStock = mutation({
     // Record an audit movement. Deductions flow to the "writeoff" sink and carry
     // the category. Additions stay from→to business (count correction / restock).
     if (args.adjustment < 0) {
+      // HQ stock carries no cost basis, so value what left at retail.
+      const retailPrice = await resolveRetailPrice(
+        ctx,
+        batch.productId,
+        batch.variantId
+      );
+      const quantity = Math.abs(args.adjustment);
       await ctx.db.insert("stockMovements", {
         batchId: args.id,
         productId: batch.productId,
         variantId: batch.variantId,
         fromPartyType: "business",
         toPartyType: "writeoff",
-        quantity: Math.abs(args.adjustment),
+        quantity,
         movedAt: Date.now(),
         notes: args.reason,
         recordedBy: admin._id,
         writeOffCategory: args.category ?? "other",
+        writeOffValue: Math.round(quantity * retailPrice * 100) / 100,
         attributedToUserId: args.attributedToUserId,
       });
     } else {

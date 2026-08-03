@@ -66,6 +66,9 @@ const categoryLabel: Record<string, string> = {
   miscount: "Miscount",
   sample: "Sample",
   self_use: "Self use",
+  gift_pr: "Gift · Influencer/PR",
+  gift_giveaway: "Gift · Giveaway",
+  gift_goodwill: "Gift · Goodwill",
   other: "Other",
 };
 

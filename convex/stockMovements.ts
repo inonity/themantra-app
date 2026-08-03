@@ -1,7 +1,7 @@
 import { query, mutation } from "./_generated/server";
 import { v, ConvexError } from "convex/values";
 import { requireAuth, requireRole, isSellerRole } from "./helpers/auth";
-import { resolveAgentPrice } from "./helpers/pricing";
+import { resolveAgentPrice, resolveRetailPrice } from "./helpers/pricing";
 import { addSaleToSettlement } from "./agentSettlements";
 import type { Id } from "./_generated/dataModel";
 
@@ -484,8 +484,18 @@ export const listStockLosses = query({
 const internalReasonValidator = v.union(
   v.literal("damage"),
   v.literal("self_use"),
-  v.literal("lost")
+  v.literal("lost"),
+  v.literal("gift_pr"),
+  v.literal("gift_giveaway"),
+  v.literal("gift_goodwill")
 );
+
+// Deliberate giveaways — the only reasons HQ may choose to absorb on an agent's behalf.
+const GIFT_REASONS = ["gift_pr", "gift_giveaway", "gift_goodwill"] as const;
+
+function isGiftReason(reason: string): boolean {
+  return (GIFT_REASONS as readonly string[]).includes(reason);
+}
 
 const lossStockModelValidator = v.union(
   v.literal("hold_paid"),
@@ -493,14 +503,18 @@ const lossStockModelValidator = v.union(
   v.literal("presell")
 );
 
-// Report stock loss / self-use from an agent's inventory.
+// Report stock loss / self-use / gift from an agent's inventory.
 // Admin can file for any agent; agents/sales can file for themselves.
 // hold_paid stock → inventory just decrements (agent already paid; it's their loss).
 // consignment/presell/self_use → creates a b2b "internal" sale at HQ price; lands in settlement.
+// Gifts follow the same charging rule by default, so "gift" can't be used to pull free
+// stock — an admin must explicitly set absorbedByHQ to waive the charge.
 export const recordStockLoss = mutation({
   args: {
     agentId: v.optional(v.id("users")), // admin supplies this; agents leave undefined
     reason: internalReasonValidator,
+    // Admin-only, gift reasons only: HQ sanctioned the giveaway, so the agent isn't billed.
+    absorbedByHQ: v.optional(v.boolean()),
     notes: v.optional(v.string()),
     items: v.array(
       v.object({
@@ -541,6 +555,17 @@ export const recordStockLoss = mutation({
       throw new ConvexError("Salespersons cannot file self-use — they do not purchase from HQ");
     }
 
+    // Waiving the charge is a company decision, and only makes sense for a deliberate gift.
+    const absorbedByHQ = args.absorbedByHQ === true;
+    if (absorbedByHQ) {
+      if (caller.role !== "admin") {
+        throw new ConvexError("Only an admin can mark a loss as absorbed by HQ");
+      }
+      if (!isGiftReason(args.reason)) {
+        throw new ConvexError("Only gifts can be absorbed by HQ");
+      }
+    }
+
     if (args.items.length === 0) throw new ConvexError("No items to report");
 
     const movedAt = Date.now();
@@ -549,7 +574,9 @@ export const recordStockLoss = mutation({
         ? ("damaged" as const)
         : args.reason === "self_use"
           ? ("self_use" as const)
-          : ("lost" as const);
+          : args.reason === "lost"
+            ? ("lost" as const)
+            : args.reason;
 
     // Validate and pre-resolve pricing for chargeable lines
     type LineDetail = {
@@ -588,21 +615,21 @@ export const recordStockLoss = mutation({
         );
       }
 
-      // Sales staff never owe HQ. Only agent consignment/presell losses are chargeable.
-      const chargeable = !subjectIsSales && item.stockModel !== "hold_paid";
+      // Sales staff never owe HQ, and hold_paid stock is already the agent's own.
+      // An HQ-absorbed gift waives the charge on everything else.
+      const chargeable =
+        !subjectIsSales && !absorbedByHQ && item.stockModel !== "hold_paid";
 
-      let hqUnitPrice = 0;
-      let retailPrice = 0;
-      if (chargeable) {
-        const resolved = await resolveAgentPrice(
-          ctx,
-          agentId,
-          batch.productId,
-          batch.variantId
-        );
-        hqUnitPrice = Math.round(resolved.hqUnitPrice * 100) / 100;
-        retailPrice = resolved.retailPrice;
-      }
+      // Resolved even when nothing is billed — the value of stock that left the
+      // business is still needed for gift/shrinkage reporting.
+      const resolved = await resolveAgentPrice(
+        ctx,
+        agentId,
+        batch.productId,
+        batch.variantId
+      );
+      const hqUnitPrice = Math.round(resolved.hqUnitPrice * 100) / 100;
+      const retailPrice = resolved.retailPrice;
 
       details.push({
         batchId: item.batchId,
@@ -705,6 +732,12 @@ export const recordStockLoss = mutation({
         unitPrice: d.chargeable ? d.hqUnitPrice : undefined,
         hqUnitPrice: d.chargeable ? d.hqUnitPrice : undefined,
         writeOffCategory,
+        // Billed lines are worth what the agent owes; unbilled lines are valued at
+        // retail, since nobody is charged but the stock still left.
+        writeOffValue:
+          Math.round(
+            d.quantity * (d.chargeable ? d.hqUnitPrice : d.retailPrice) * 100
+          ) / 100,
       });
     }
 
@@ -722,11 +755,16 @@ const hqWriteOffCategoryValidator = v.union(
   v.literal("expired"),
   v.literal("lost"),
   v.literal("sample"),
+  v.literal("gift_pr"),
+  v.literal("gift_giveaway"),
+  v.literal("gift_goodwill"),
   v.literal("other")
 );
 
-// Admin: write off HQ-held stock across multiple batches in one go.
-// Optional salesperson attribution when a specific person is responsible.
+// Admin: write off HQ-held stock across multiple batches in one go — losses as well as
+// deliberate giveaways (gift_*). Never charged to anyone; the retail value is recorded so
+// gifting can be reported as marketing spend.
+// Optional salesperson attribution when a specific person is responsible or handed it out.
 export const recordHQStockLoss = mutation({
   args: {
     category: hqWriteOffCategoryValidator,
@@ -784,6 +822,13 @@ export const recordHQStockLoss = mutation({
         updatedAt: movedAt,
       });
 
+      // HQ stock carries no cost basis, so value what left at retail.
+      const retailPrice = await resolveRetailPrice(
+        ctx,
+        batch.productId,
+        batch.variantId
+      );
+
       await ctx.db.insert("stockMovements", {
         batchId: item.batchId,
         productId: batch.productId,
@@ -795,6 +840,7 @@ export const recordHQStockLoss = mutation({
         notes: args.notes,
         recordedBy: admin._id,
         writeOffCategory: args.category,
+        writeOffValue: Math.round(item.quantity * retailPrice * 100) / 100,
         attributedToUserId: args.attributedToUserId,
       });
     }
