@@ -22,6 +22,10 @@ export const create = mutation({
     name: v.string(),
     phone: v.string(),
     role: v.optional(v.union(v.literal("agent"), v.literal("sales"))),
+    // Accepted but ignored. Older deployed clients still send this; the link
+    // is always built from SITE_URL server-side. Remove once every client is
+    // on a build that no longer sends it.
+    siteUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, "admin");
@@ -106,6 +110,10 @@ export const markEmailFailed = internalMutation({
 export const resendInviteEmail = mutation({
   args: {
     inviteId: v.id("agentInvites"),
+    // Accepted but ignored. Older deployed clients still send this; the link
+    // is always built from SITE_URL server-side. Remove once every client is
+    // on a build that no longer sends it.
+    siteUrl: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");

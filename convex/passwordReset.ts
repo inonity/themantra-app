@@ -11,7 +11,13 @@ const RESET_TOKEN_TTL_MS = 60 * 60 * 1000; // 1 hour
 // Public mutation: request a password reset link for the given email.
 // Always succeeds silently — don't reveal whether the email exists.
 export const requestReset = mutation({
-  args: { email: v.string() },
+  args: {
+    email: v.string(),
+    // Accepted but ignored. Older deployed clients still send this; the link
+    // is always built from SITE_URL server-side. Remove once every client is
+    // on a build that no longer sends it.
+    siteUrl: v.optional(v.string()),
+  },
   handler: async (ctx, args) => {
     // The reset link is built from a server-side origin, never from a
     // caller-supplied one. A caller-supplied URL would let anyone have this
