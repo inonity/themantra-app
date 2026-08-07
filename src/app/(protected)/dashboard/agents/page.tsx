@@ -435,7 +435,7 @@ export default function AgentsPage() {
                                             <Button
                                               variant="ghost"
                                               size="sm"
-                                              onClick={() => resendEmail({ inviteId: invite._id, siteUrl: window.location.origin })}
+                                              onClick={() => resendEmail({ inviteId: invite._id })}
                                             />
                                           }
                                         >

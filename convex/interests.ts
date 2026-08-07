@@ -139,6 +139,31 @@ export const get = query({
 });
 
 // Public: submit interest via a shared form (no auth required)
+// Bounds for the unauthenticated public-form mutations below. These are the
+// only writes an anonymous caller can make, so cap the payload to stop a
+// single request inserting an unbounded document.
+const MAX_FORM_ITEMS = 50;
+const MAX_ITEM_QUANTITY = 1000;
+const MAX_TEXT_LEN = 200;
+
+function assertFormItems(
+  items: { quantity: number }[],
+): void {
+  if (items.length === 0) throw new Error("No items specified");
+  if (items.length > MAX_FORM_ITEMS) {
+    throw new Error(`Too many items (max ${MAX_FORM_ITEMS})`);
+  }
+  for (const item of items) {
+    if (!Number.isFinite(item.quantity) || !Number.isInteger(item.quantity)) {
+      throw new Error("Quantity must be a whole number");
+    }
+    if (item.quantity < 1) throw new Error("Quantity must be at least 1");
+    if (item.quantity > MAX_ITEM_QUANTITY) {
+      throw new Error(`Quantity too large (max ${MAX_ITEM_QUANTITY})`);
+    }
+  }
+}
+
 export const recordViaForm = mutation({
   args: {
     formId: v.id("interestForms"),
@@ -155,7 +180,13 @@ export const recordViaForm = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    if (args.items.length === 0) throw new Error("No items specified");
+    assertFormItems(args.items);
+    const name = args.customerDetail.name.trim();
+    const phone = args.customerDetail.phone.trim();
+    if (!name || !phone) throw new Error("Name and phone are required");
+    if (name.length > MAX_TEXT_LEN || phone.length > MAX_TEXT_LEN) {
+      throw new Error("Name or phone is too long");
+    }
 
     const form = await ctx.db.get(args.formId);
     if (!form) throw new Error("Form not found");
@@ -164,16 +195,12 @@ export const recordViaForm = mutation({
     for (const item of args.items) {
       const product = await ctx.db.get(item.productId);
       if (!product) throw new Error("Product not found");
-      if (item.quantity < 1) throw new Error("Quantity must be at least 1");
     }
 
     return await ctx.db.insert("interests", {
       agentId: form.agentId,
       formId: form._id,
-      customerDetail: {
-        name: args.customerDetail.name,
-        phone: args.customerDetail.phone,
-      },
+      customerDetail: { name, phone },
       items: args.items,
       status: "active",
       createdAt: Date.now(),
@@ -195,7 +222,7 @@ export const updateViaForm = mutation({
     ),
   },
   handler: async (ctx, args) => {
-    if (args.items.length === 0) throw new Error("No items specified");
+    assertFormItems(args.items);
 
     const interest = await ctx.db.get(args.interestId);
     if (!interest) throw new Error("Entry not found");
@@ -215,7 +242,6 @@ export const updateViaForm = mutation({
     for (const item of args.items) {
       const product = await ctx.db.get(item.productId);
       if (!product) throw new Error("Product not found");
-      if (item.quantity < 1) throw new Error("Quantity must be at least 1");
     }
 
     await ctx.db.patch(args.interestId, {

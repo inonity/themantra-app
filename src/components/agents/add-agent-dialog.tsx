@@ -53,15 +53,14 @@ export function AddAgentDialog({
     setError("");
     setPending(true);
     try {
-      const siteUrl = window.location.origin;
       const result = await createInvite({
         email,
         name,
         phone,
         role,
-        siteUrl,
       });
-      const link = `${siteUrl}/join?token=${result.inviteToken}`;
+      // Display-only copy link; the emailed link is built server-side.
+      const link = `${window.location.origin}/join?token=${result.inviteToken}`;
       setInviteLink(link);
     } catch (err) {
       setError(getErrorMessage(err, "Failed to create invite"));

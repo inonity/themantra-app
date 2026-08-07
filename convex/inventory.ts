@@ -39,6 +39,7 @@ export const getBusinessInventory = query({
 export const getByBatch = query({
   args: { batchId: v.id("batches") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db
       .query("inventory")
       .withIndex("by_batchId_and_heldByType_and_heldById", (q) =>

@@ -3,16 +3,29 @@ import { internal } from "./_generated/api";
 import { v } from "convex/values";
 import { requireRole } from "./helpers/auth";
 
+/**
+ * Origin used to build emailed links. Always server-side — a caller-supplied
+ * origin would let the sender be used to mail a valid token to a domain the
+ * caller controls.
+ */
+function requireSiteUrl(): string {
+  const siteUrl = process.env.SITE_URL;
+  if (!siteUrl) {
+    throw new Error("Server configuration error: SITE_URL not set");
+  }
+  return siteUrl;
+}
+
 export const create = mutation({
   args: {
     email: v.string(),
     name: v.string(),
     phone: v.string(),
     role: v.optional(v.union(v.literal("agent"), v.literal("sales"))),
-    siteUrl: v.string(),
   },
   handler: async (ctx, args) => {
     const admin = await requireRole(ctx, "admin");
+    const siteUrl = requireSiteUrl();
 
     // Check if email already has an existing user
     const existingUser = await ctx.db
@@ -47,7 +60,7 @@ export const create = mutation({
     });
 
     // Schedule sending the invite email (action handles status tracking)
-    const inviteLink = `${args.siteUrl}/join?token=${inviteToken}`;
+    const inviteLink = `${siteUrl}/join?token=${inviteToken}`;
     await ctx.scheduler.runAfter(0, internal.emails.sendInviteEmail, {
       email: args.email,
       name: args.name,
@@ -93,10 +106,10 @@ export const markEmailFailed = internalMutation({
 export const resendInviteEmail = mutation({
   args: {
     inviteId: v.id("agentInvites"),
-    siteUrl: v.string(),
   },
   handler: async (ctx, args) => {
     await requireRole(ctx, "admin");
+    const siteUrl = requireSiteUrl();
 
     const invite = await ctx.db.get(args.inviteId);
     if (!invite) throw new Error("Invite not found");
@@ -110,7 +123,7 @@ export const resendInviteEmail = mutation({
       emailError: undefined,
     });
 
-    const inviteLink = `${args.siteUrl}/join?token=${invite.inviteToken}`;
+    const inviteLink = `${siteUrl}/join?token=${invite.inviteToken}`;
     await ctx.scheduler.runAfter(0, internal.emails.sendInviteEmail, {
       email: invite.email,
       name: invite.name,

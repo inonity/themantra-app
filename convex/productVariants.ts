@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireRole } from "./helpers/auth";
+import { requireAuth, requireRole } from "./helpers/auth";
 
 const forWhoValidator = v.union(
   v.literal("customers"),
@@ -11,6 +11,7 @@ const forWhoValidator = v.union(
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     return await ctx.db.query("productVariants").take(500);
   },
 });
@@ -30,6 +31,7 @@ export const listAllPublic = query({
 export const listByProduct = query({
   args: { productId: v.id("products") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db
       .query("productVariants")
       .withIndex("by_productId", (q) => q.eq("productId", args.productId))
@@ -55,6 +57,7 @@ export const listPublicByProduct = query({
 export const listActiveByProduct = query({
   args: { productId: v.id("products") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db
       .query("productVariants")
       .withIndex("by_productId_and_status", (q) =>
@@ -67,6 +70,7 @@ export const listActiveByProduct = query({
 export const get = query({
   args: { id: v.id("productVariants") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db.get(args.id);
   },
 });
@@ -74,6 +78,7 @@ export const get = query({
 export const getByIds = query({
   args: { ids: v.array(v.id("productVariants")) },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     const results = [];
     for (const id of args.ids) {
       const variant = await ctx.db.get(id);
@@ -87,6 +92,7 @@ export const getByIds = query({
 export const listSizes = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     const variants = await ctx.db.query("productVariants").take(500);
     const sizes = new Set<number>();
     for (const v of variants) {
@@ -100,6 +106,7 @@ export const listSizes = query({
 export const listAgentTypes = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     const variants = await ctx.db.query("productVariants").take(500);
     const types = new Set<string>();
     for (const v of variants) {

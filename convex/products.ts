@@ -1,10 +1,11 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireRole } from "./helpers/auth";
+import { requireAuth, requireRole } from "./helpers/auth";
 
 export const list = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     return await ctx.db.query("products").take(200);
   },
 });

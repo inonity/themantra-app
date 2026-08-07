@@ -340,6 +340,7 @@ export const getSettingsData = query({
 export const getHQName = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     const admin = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "admin"))

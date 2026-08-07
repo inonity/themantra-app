@@ -27,10 +27,7 @@ export default function ForgotPasswordPage() {
     setError("");
     setPending(true);
     try {
-      await requestReset({
-        email,
-        siteUrl: window.location.origin,
-      });
+      await requestReset({ email });
       setSubmitted(true);
     } catch (err) {
       setError(

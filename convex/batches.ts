@@ -1,6 +1,6 @@
 import { query, mutation } from "./_generated/server";
 import { v } from "convex/values";
-import { requireRole } from "./helpers/auth";
+import { requireAuth, requireRole } from "./helpers/auth";
 import { resolveRetailPrice } from "./helpers/pricing";
 
 const batchStatusValidator = v.union(
@@ -38,6 +38,7 @@ function validateTransition(from: BatchStatus, to: BatchStatus): string | null {
 export const listAll = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     return await ctx.db.query("batches").take(500);
   },
 });
@@ -207,6 +208,7 @@ export const listRecentActivity = query({
 export const listByProduct = query({
   args: { productId: v.id("products") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db
       .query("batches")
       .withIndex("by_productId", (q) => q.eq("productId", args.productId))
@@ -217,6 +219,7 @@ export const listByProduct = query({
 export const get = query({
   args: { id: v.id("batches") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     return await ctx.db.get(args.id);
   },
 });
@@ -224,6 +227,7 @@ export const get = query({
 export const getNextBatchNumber = query({
   args: { productId: v.id("products") },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     const product = await ctx.db.get(args.productId);
     if (!product) return null;
 
@@ -257,6 +261,7 @@ export const getNextBatchNumber = query({
 export const checkBatchCodeUnique = query({
   args: { batchCode: v.string(), excludeBatchId: v.optional(v.id("batches")) },
   handler: async (ctx, args) => {
+    await requireAuth(ctx);
     const existing = await ctx.db
       .query("batches")
       .withIndex("by_batchCode", (q) => q.eq("batchCode", args.batchCode))
