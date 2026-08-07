@@ -46,6 +46,37 @@ Both `npm run dev` and `npx convex dev` must run concurrently during development
 - Use `getAuthUserId(ctx)` from `@convex-dev/auth/server` for auth checks in backend functions
 - **Always read `convex/_generated/ai/guidelines.md`** before writing Convex code
 
+### Public storefront shares this backend
+
+`../themantra-site` (The Mantra's public shop) talks to this same Convex
+deployment. It has no `convex/` directory — **this repo owns the function
+codebase**, and the storefront only calls into it.
+
+These five must stay callable without auth, or the shop breaks:
+
+`products:listSellable`, `products:get`, `products:listCollections`,
+`productVariants:listAllPublic`, `productVariants:listPublicByProduct`
+
+The storefront also vendors a copy of `convex/schema.ts`. After changing the
+schema, run `npm run sync:schema` there.
+
+### Convex functions are public by default
+
+A function is reachable by anyone holding the deployment URL unless it checks
+auth itself. The URL ships in the storefront's public JavaScript, so **assume
+every new function is internet-facing until you add a guard.**
+
+An audit in Aug 2026 found 41 endpoints open, including one that returned raw
+`users` documents — leaking password-reset tokens and enabling account takeover.
+They are now guarded. When writing a query or mutation:
+
+- Call `requireAuth`, `requireRole` or `requireSeller` from `helpers/auth` unless
+  the function is deliberately public.
+- Never return a raw `users` document. Project it — see `publicUserFields()` in
+  `convex/users.ts`.
+- Never build an emailed link from a caller-supplied origin. Use
+  `process.env.SITE_URL` (set in both deployments).
+
 ### Data Model
 - **Products** → have many **Batches** (manufacturing runs with maturation tracking)
 - **Batches** → have **Inventory** records (who holds how much) and **StockMovements** (transfer history)
