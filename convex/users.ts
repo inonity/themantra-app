@@ -7,6 +7,27 @@ import { Doc } from "./_generated/dataModel";
 
 const EMAIL_CONFIRM_EXPIRY_MS = 30 * 60 * 1000; // 30 minutes
 
+/**
+ * Projects a user document down to the fields that are safe to hand to a
+ * caller other than the user themselves.
+ *
+ * The raw document carries `passwordResetToken` and `pendingEmailToken`.
+ * Returning it wholesale lets a caller read someone else's reset token and
+ * take over that account, so every list query must project through this.
+ */
+function publicUserFields(user: Doc<"users">) {
+  return {
+    _id: user._id,
+    _creationTime: user._creationTime,
+    name: user.name,
+    nickname: user.nickname,
+    email: user.email,
+    phone: user.phone,
+    image: user.image,
+    role: user.role,
+  };
+}
+
 export const current = query({
   args: {},
   handler: async (ctx) => {
@@ -49,20 +70,24 @@ export const getDisplayNameById = query({
 export const listAgents = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db
+    await requireAuth(ctx);
+    const agents = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "agent"))
       .take(100);
+    return agents.map(publicUserFields);
   },
 });
 
 export const listSalesStaff = query({
   args: {},
   handler: async (ctx) => {
-    return await ctx.db
+    await requireAuth(ctx);
+    const salesStaff = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "sales"))
       .take(100);
+    return salesStaff.map(publicUserFields);
   },
 });
 
@@ -327,6 +352,7 @@ export const getHQName = query({
 export const listSellers = query({
   args: {},
   handler: async (ctx) => {
+    await requireAuth(ctx);
     const agents = await ctx.db
       .query("users")
       .withIndex("by_role", (q) => q.eq("role", "agent"))
@@ -345,7 +371,7 @@ export const listSellers = query({
           .withIndex("by_agentId", (q) => q.eq("agentId", seller._id))
           .unique();
         return {
-          ...seller,
+          ...publicUserFields(seller),
           defaultStockModel: profile?.defaultStockModel ?? undefined,
         };
       })
