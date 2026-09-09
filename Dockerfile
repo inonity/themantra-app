@@ -1,3 +1,4 @@
+# syntax=docker/dockerfile:1.7
 FROM node:24-alpine AS base
 
 # Install dependencies only when needed
@@ -6,7 +7,10 @@ RUN apk add --no-cache libc6-compat
 WORKDIR /app
 
 COPY package.json package-lock.json ./
-RUN npm ci
+# Keeps the npm download cache between builds, so a rebuild after a dependency
+# bump re-fetches only what actually changed instead of the whole tree.
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --fund=false
 
 # Rebuild the source code only when needed
 FROM base AS builder
@@ -16,10 +20,20 @@ COPY . .
 
 ENV NEXT_TELEMETRY_DISABLED=1
 
+# Next inlines process.env.NEXT_PUBLIC_* at build time, so these cannot be
+# supplied as runtime env vars -- setting them in Coolify's runtime section
+# has no effect. Each one the code reads has to arrive here as a build arg.
 ARG NEXT_PUBLIC_CONVEX_URL
+ARG NEXT_PUBLIC_CONVEX_SITE_URL
+ARG NEXT_PUBLIC_APP_URL
 ENV NEXT_PUBLIC_CONVEX_URL=$NEXT_PUBLIC_CONVEX_URL
+ENV NEXT_PUBLIC_CONVEX_SITE_URL=$NEXT_PUBLIC_CONVEX_SITE_URL
+ENV NEXT_PUBLIC_APP_URL=$NEXT_PUBLIC_APP_URL
 
-RUN npm run build
+# Next's incremental compile cache. Persisting it is the single biggest saving
+# on the Coolify server, where every deploy otherwise starts from cold.
+RUN --mount=type=cache,target=/app/.next/cache \
+    npm run build
 
 # Production image, copy all the files and run next
 FROM base AS runner

@@ -9,3 +9,15 @@ docker-compose.yml
 README.md
 .vscode
 .idea
+
+# Agent tooling and local build artefacts. None of it is read by `next build`,
+# and keeping it out shrinks the context uploaded to the builder.
+.claude
+.agents
+.deltest
+CLAUDE.md
+AGENTS.md
+skills-lock.json
+tsconfig.tsbuildinfo
+.DS_Store
+*.log
