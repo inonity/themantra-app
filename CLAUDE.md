@@ -10,8 +10,51 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `npx convex dev` — start Convex dev backend (run alongside Next.js dev server)
 - `npm run build` — production build
 - `npm run lint` — run ESLint
+- `npm run deploy:convex` — deploy the Convex backend to production
+- `npm run deploy` — build the image here and deploy the frontend
 
 Both `npm run dev` and `npx convex dev` must run concurrently during development.
+
+## Deploying
+
+**The frontend and the backend deploy separately.** The Docker image carries
+Next.js only; nothing in Coolify runs `npx convex deploy`. Ship the backend
+first — a frontend calling functions that are not deployed yet is what
+`ae951f0` had to unbreak.
+
+```bash
+npm run deploy:convex   # only when convex/ changed
+npm run deploy          # frontend; refuses to run if the backend is behind
+```
+
+`npm run deploy` builds the image on this machine, copies it to the deployment
+server and then pushes. Coolify skips its own build when an image tagged
+`<app-uuid>:<commit-sha>` is already on the server, so the deploy is just a
+rolling restart — about 15-30s, against ~9 minutes when Coolify builds. It
+needs a clean tree on `main`, and reads production build args from
+`.env.production.local` (**not** `.env.local`, which points at a personal dev
+Convex deployment).
+
+The seeding has to happen before the push, not after: pushing first starts a
+server-side build that the local one cannot overtake.
+
+Pushing to `main` by any other route still works — a webhook fires and Coolify
+builds from source as before. That is the path for work done away from the
+build machine, and it is why `Dockerfile` keeps its BuildKit cache mounts. It
+does **not** deploy Convex either.
+
+`scripts/deploy-local.sh` blocks when the last commit touching `convex/` is not
+the one recorded in `.convex-deployed` (gitignored, written by
+`deploy:convex`). The marker is per-machine, so deploying Convex elsewhere
+leaves it stale; re-run `deploy:convex`, or `SKIP_CONVEX_CHECK=1` for one run.
+
+`NEXT_PUBLIC_*` vars are inlined by Next at build time, so they must be build
+args — setting them in Coolify's runtime env does nothing. All three the code
+reads are wired through `Dockerfile`.
+
+Preview deployments are not configured. If they are ever enabled, give them a
+Convex **preview deploy key** — never the production or personal dev
+deployment.
 
 ## Architecture
 
@@ -22,7 +65,7 @@ Both `npm run dev` and `npx convex dev` must run concurrently during development
 - **Backend:** Convex (real-time backend-as-a-service) — no REST API, no database migrations
 - **Auth:** `@convex-dev/auth` with Password provider, session managed via `ConvexAuthProvider`
 - **Forms:** react-hook-form + zod validation
-- **Deployment:** Docker (standalone Next.js output)
+- **Deployment:** Docker (standalone Next.js output) on Coolify; see [Deploying](#deploying)
 
 ### Route Structure
 - `src/app/(auth)/` — login, join (public routes)
