@@ -674,4 +674,62 @@ export default defineSchema({
   })
     .index("by_agentId_and_status", ["agentId", "status"])
     .index("by_status_and_createdAt", ["status", "createdAt"]),
+
+  /* -------------------------- MCP access -------------------------- */
+
+  // Personal access tokens used by MCP clients (Claude Code, Codex, Claude
+  // Desktop) to reach the /mcp endpoint. Only the SHA-256 hash is stored —
+  // the secret is shown once at creation and cannot be recovered afterwards.
+  mcpTokens: defineTable({
+    userId: v.id("users"), // whose data and role this token acts as
+    name: v.string(), // human label, e.g. "Huzaifah — MacBook"
+    tokenHash: v.string(), // sha256 hex of the full secret
+    tokenPrefix: v.string(), // first 6 chars of the secret body, for display
+    // manual = created on the settings page, oauth = minted by the claude.ai
+    // connector flow.
+    source: v.union(v.literal("manual"), v.literal("oauth")),
+    oauthClientId: v.optional(v.string()),
+    lastUsedAt: v.optional(v.number()),
+    expiresAt: v.optional(v.number()), // absent = never expires
+    revokedAt: v.optional(v.number()),
+    createdAt: v.number(),
+  })
+    .index("by_tokenHash", ["tokenHash"])
+    .index("by_userId_and_createdAt", ["userId", "createdAt"]),
+
+  // OAuth clients that registered themselves (RFC 7591). claude.ai registers
+  // once, the first time someone adds the connector.
+  mcpOAuthClients: defineTable({
+    clientId: v.string(),
+    clientName: v.optional(v.string()),
+    redirectUris: v.array(v.string()),
+    createdAt: v.number(),
+  }).index("by_clientId", ["clientId"]),
+
+  // Short-lived PKCE authorization codes. Consumed once at the token endpoint
+  // and deleted immediately.
+  mcpOAuthCodes: defineTable({
+    code: v.string(),
+    clientId: v.string(),
+    userId: v.id("users"),
+    redirectUri: v.string(),
+    codeChallenge: v.string(),
+    expiresAt: v.number(),
+  }).index("by_code", ["code"]),
+
+  // One row per MCP tool call, so the team can see how much the connectors are
+  // used and which tools actually earn their place. Arguments are deliberately
+  // not stored — they can contain customer names and other PII.
+  mcpToolCalls: defineTable({
+    tokenId: v.id("mcpTokens"),
+    userId: v.id("users"),
+    tool: v.string(),
+    ok: v.boolean(),
+    durationMs: v.number(),
+    errorMessage: v.optional(v.string()),
+    calledAt: v.number(),
+  })
+    .index("by_calledAt", ["calledAt"])
+    .index("by_userId_and_calledAt", ["userId", "calledAt"])
+    .index("by_tokenId_and_calledAt", ["tokenId", "calledAt"]),
 });

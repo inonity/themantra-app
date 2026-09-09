@@ -15,7 +15,16 @@ export function AuthGuard({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
-      router.push("/login");
+      // Preserve where they were headed, so flows that carry query parameters
+      // (the MCP connector consent screen) survive the trip through login.
+      // Read from `location` rather than useSearchParams: this only runs in the
+      // browser, and it keeps every protected page out of a Suspense boundary.
+      const target = `${window.location.pathname}${window.location.search}`;
+      router.push(
+        target === "/dashboard"
+          ? "/login"
+          : `/login?next=${encodeURIComponent(target)}`
+      );
     }
   }, [isAuthenticated, isLoading, router]);
 

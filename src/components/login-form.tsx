@@ -15,13 +15,17 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { safeNextPath } from "@/lib/next-path";
 
 export function LoginForm({
   emailConfirmed,
   errorMessage,
+  next,
 }: {
   emailConfirmed?: boolean;
   errorMessage?: string;
+  /** Where to land after signing in — set by AuthGuard when it redirects here. */
+  next?: string;
 }) {
   const { signIn } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
@@ -38,9 +42,11 @@ export function LoginForm({
   // causing AuthGuard to redirect back to /login.
   useEffect(() => {
     if (signInComplete && isAuthenticated) {
-      router.push("/dashboard");
+      // `next` carries the page the user was sent away from — used by the MCP
+      // connector consent screen, which must not lose its query string.
+      router.push(safeNextPath(next) ?? "/dashboard");
     }
-  }, [signInComplete, isAuthenticated, router]);
+  }, [signInComplete, isAuthenticated, router, next]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

@@ -3,7 +3,7 @@ import { LoginForm } from "@/components/login-form";
 export default async function LoginPage({
   searchParams,
 }: {
-  searchParams: Promise<{ emailConfirmed?: string; error?: string }>;
+  searchParams: Promise<{ emailConfirmed?: string; error?: string; next?: string }>;
 }) {
   const params = await searchParams;
 
@@ -12,6 +12,7 @@ export default async function LoginPage({
       <LoginForm
         emailConfirmed={params.emailConfirmed === "true"}
         errorMessage={params.error}
+        next={params.next}
       />
     </div>
   );
