@@ -7,6 +7,7 @@ import { RoleSection } from "@/components/settings/role-section";
 import { PaymentPreferencesSection } from "@/components/settings/payment-preferences-section";
 import { PayoutDetailsSection } from "@/components/settings/payout-details-section";
 import { McpSection } from "@/components/settings/mcp-section";
+import { mcpAllowedForRole } from "@/lib/mcp";
 import { Skeleton } from "@/components/ui/skeleton";
 
 function SettingsSkeleton() {
@@ -62,7 +63,9 @@ export function SettingsClient({ appOrigin }: { appOrigin: string }) {
         </>
       )}
 
-      <McpSection appOrigin={appOrigin} />
+      {mcpAllowedForRole(settingsData.user.role) && (
+        <McpSection appOrigin={appOrigin} />
+      )}
     </div>
   );
 }

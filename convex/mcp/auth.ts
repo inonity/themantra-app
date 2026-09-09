@@ -1,6 +1,7 @@
 import { v } from "convex/values";
 import { internalMutation, internalQuery } from "../_generated/server";
 import { Doc, Id } from "../_generated/dataModel";
+import { mcpAllowedForRole } from "./config";
 
 export type McpRole = "admin" | "agent" | "sales";
 
@@ -15,7 +16,8 @@ export type McpIdentity = {
 
 /**
  * Resolve a bearer token to the user it acts as. Returns null for unknown,
- * revoked, expired, or role-less tokens — the caller turns that into a 401.
+ * revoked, expired, or role-less tokens, and for roles that may no longer use
+ * MCP at all — the caller turns that into a 401.
  */
 export const resolveToken = internalQuery({
   args: { tokenHash: v.string(), now: v.number() },
@@ -31,6 +33,8 @@ export const resolveToken = internalQuery({
 
     const user: Doc<"users"> | null = await ctx.db.get(token.userId);
     if (!user?.role) return null;
+    // Covers tokens minted while a role still had MCP access.
+    if (!mcpAllowedForRole(user.role)) return null;
 
     return {
       tokenId: token._id,

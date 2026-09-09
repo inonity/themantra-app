@@ -17,6 +17,7 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Loader2Icon, PlugIcon, TriangleAlertIcon } from "lucide-react";
 import { getErrorMessage } from "@/lib/utils";
+import { mcpAllowedForRole } from "@/lib/mcp";
 
 export type AuthorizeParams = {
   clientId?: string;
@@ -27,7 +28,15 @@ export type AuthorizeParams = {
   state?: string;
 };
 
-function Problem({ title, detail }: { title: string; detail: string }) {
+function Problem({
+  title,
+  detail,
+  advice,
+}: {
+  title: string;
+  detail: string;
+  advice?: string;
+}) {
   return (
     <Card className="w-full max-w-md">
       <CardHeader>
@@ -39,8 +48,8 @@ function Problem({ title, detail }: { title: string; detail: string }) {
       </CardHeader>
       <CardContent>
         <p className="text-sm text-muted-foreground">
-          Start the connection again from your MCP client. If it keeps failing,
-          remove the connector and add it afresh.
+          {advice ??
+            "Start the connection again from your MCP client. If it keeps failing, remove the connector and add it afresh."}
         </p>
       </CardContent>
     </Card>
@@ -105,6 +114,16 @@ export function AuthorizeConsent({ params }: { params: AuthorizeParams }) {
           <Skeleton className="h-20 w-full" />
         </CardContent>
       </Card>
+    );
+  }
+
+  if (!mcpAllowedForRole(user?.role)) {
+    return (
+      <Problem
+        title="MCP access is not available"
+        detail="Your account cannot connect an MCP client to The Mantra."
+        advice="Cancel the connection in your client. If you think you should have access, ask an admin."
+      />
     );
   }
 

@@ -4,6 +4,7 @@ import { internalMutation } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { Id } from "./_generated/dataModel";
 import { requireRealAuth } from "./helpers/auth";
+import { mcpAllowedForRole } from "./mcp/config";
 import { generateSecret, secretPrefix, sha256Hex } from "./mcp/crypto";
 
 export const TOKEN_PREFIX = "mtk";
@@ -51,6 +52,9 @@ export const insertToken = internalMutation({
     const user = await ctx.db.get(userId);
     if (!user?.role) {
       throw new Error("Your account has no role assigned yet");
+    }
+    if (!mcpAllowedForRole(user.role)) {
+      throw new Error("MCP access is not available for your account");
     }
 
     const existing = await ctx.db

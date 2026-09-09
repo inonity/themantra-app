@@ -7,6 +7,7 @@ import { v } from "convex/values";
 import { internalMutation, mutation, query } from "./_generated/server";
 import { requireRealAuth } from "./helpers/auth";
 import { AUTHORIZATION_CODE_TTL_MS } from "./mcp/oauth";
+import { mcpAllowedForRole } from "./mcp/config";
 
 export const registerClient = internalMutation({
   args: {
@@ -72,6 +73,9 @@ export const approve = mutation({
     const user = await ctx.db.get(userId);
     if (!user?.role) {
       throw new Error("Your account has no role assigned yet");
+    }
+    if (!mcpAllowedForRole(user.role)) {
+      throw new Error("MCP access is not available for your account");
     }
 
     if (args.codeChallengeMethod !== "S256") {
@@ -154,6 +158,9 @@ export const exchangeCode = internalMutation({
 
     const user = await ctx.db.get(row.userId);
     if (!user?.role) return { ok: false, error: "User no longer has access" };
+    if (!mcpAllowedForRole(user.role)) {
+      return { ok: false, error: "User no longer has access" };
+    }
 
     const client = await ctx.db
       .query("mcpOAuthClients")

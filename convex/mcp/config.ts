@@ -25,3 +25,17 @@ export function requirePublicOrigin(): string {
   }
   return origin;
 }
+
+/**
+ * Roles allowed to connect an MCP client at all.
+ *
+ * Agents and sales staff have no use for MCP yet, so it is admin-only for now:
+ * their settings page hides the section, the consent screen turns them away,
+ * no token can be minted for them, and any token already issued stops
+ * resolving. Opening it back up is a matter of adding roles to this list.
+ */
+const MCP_ROLES = ["admin"];
+
+export function mcpAllowedForRole(role: string | undefined | null): boolean {
+  return typeof role === "string" && MCP_ROLES.includes(role);
+}
