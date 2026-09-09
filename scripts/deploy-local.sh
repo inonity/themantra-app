@@ -42,6 +42,46 @@ current_branch=$(git rev-parse --abbrev-ref HEAD)
 
 [ -f "$ENV_FILE" ] || die "$ENV_FILE not found -- it holds the production Convex URL"
 
+# --- convex guard ---------------------------------------------------------
+# The image carries the frontend ONLY. Everything under convex/ deploys
+# separately through `npx convex deploy`, and shipping a frontend whose backend
+# has not caught up is exactly how ae951f0 ("accept legacy siteUrl arg to
+# unbreak already-deployed clients") happened. Refuse when convex/ has moved
+# since the last recorded backend deploy.
+CONVEX_MARKER=".convex-deployed"
+convex_head=$(git log -1 --format=%H -- convex/ 2>/dev/null || true)
+
+if [ -n "$convex_head" ] && [ "${SKIP_CONVEX_CHECK:-}" != "1" ]; then
+  recorded=""
+  if [ -f "$CONVEX_MARKER" ]; then
+    recorded=$(tr -d '[:space:]' < "$CONVEX_MARKER")
+  fi
+
+  if [ "$convex_head" != "$recorded" ]; then
+    printf '\033[31merror:\033[0m convex/ has changed since the last recorded backend deploy.\n\n' >&2
+    printf '  convex/ last changed in  %s  %s\n' \
+      "$(git log -1 --format=%h "$convex_head")" "$(git log -1 --format=%s "$convex_head")" >&2
+    if [ -n "$recorded" ]; then
+      printf '  backend last deployed at %s\n' \
+        "$(git log -1 --format=%h "$recorded" 2>/dev/null || printf '%s' "$recorded")" >&2
+    else
+      printf '  backend last deployed at (never recorded)\n' >&2
+    fi
+    cat >&2 <<'MSG'
+
+  Deploy the backend first, then re-run this:
+
+      npm run deploy:convex
+
+  If the backend is already up to date -- deployed from another machine, say --
+  either run that (it is idempotent and records the marker), or override once:
+
+      SKIP_CONVEX_CHECK=1 npm run deploy
+MSG
+    exit 1
+  fi
+fi
+
 git fetch origin "$BRANCH" --quiet
 local_sha=$(git rev-parse HEAD)
 remote_sha=$(git rev-parse "origin/$BRANCH")

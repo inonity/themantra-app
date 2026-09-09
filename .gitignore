@@ -43,3 +43,6 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# local record of which convex/ commit was last deployed (see scripts/)
+.convex-deployed
