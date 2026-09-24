@@ -72,12 +72,16 @@ export async function proxyToConvex(
     if (value) headers.set(name, value);
   }
 
-  const hasBody = request.method !== "GET" && request.method !== "DELETE";
+  // Next answers HEAD with the GET handler. Convex has no HEAD routes, and
+  // fetch rejects a HEAD with a body, so ask upstream with GET and drop the body.
+  const isHead = request.method === "HEAD";
+  const method = isHead ? "GET" : request.method;
+  const hasBody = method !== "GET" && method !== "DELETE";
 
   let upstream: Response;
   try {
     upstream = await fetch(`${origin}${upstreamPath}`, {
-      method: request.method,
+      method,
       headers,
       body: hasBody ? await request.text() : undefined,
       // Never let a CDN or the fetch cache sit between a client and its data.
@@ -100,7 +104,7 @@ export async function proxyToConvex(
     if (value) responseHeaders.set(name, value);
   }
 
-  const body = await upstream.text();
+  const body = isHead ? "" : await upstream.text();
   return new Response(body || null, {
     status: upstream.status,
     headers: responseHeaders,

@@ -286,6 +286,9 @@ async function handleMessage(
   }
 }
 
+export const TOKEN_REQUIRED =
+  "A valid MCP access token is required. Create one in The Mantra under Settings → MCP access.";
+
 export async function handleMcpPost(
   ctx: ActionCtx,
   request: Request
@@ -294,9 +297,7 @@ export async function handleMcpPost(
 
   const identity = await authenticate(ctx, request, now);
   if (!identity) {
-    return unauthorized(
-      "A valid MCP access token is required. Create one in The Mantra under Settings → MCP access."
-    );
+    return unauthorized(TOKEN_REQUIRED);
   }
 
   let body: unknown;

@@ -1,7 +1,13 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
 import { auth } from "./auth";
-import { CORS_HEADERS, handleMcpPost } from "./mcp/server";
+import {
+  CORS_HEADERS,
+  TOKEN_REQUIRED,
+  authenticate,
+  handleMcpPost,
+  unauthorized,
+} from "./mcp/server";
 import {
   authorizationServerMetadata,
   issueToken,
@@ -26,11 +32,15 @@ http.route({
 });
 
 // This server never initiates messages, so there is no SSE stream to open.
-// The spec allows refusing GET outright.
+// The spec allows refusing GET outright. Challenge first, though: connector
+// setup may probe with GET, and a bare 405 hides how to sign in.
 http.route({
   path: "/mcp",
   method: "GET",
-  handler: httpAction(async () => {
+  handler: httpAction(async (ctx, request) => {
+    if (!(await authenticate(ctx, request, Date.now()))) {
+      return unauthorized(TOKEN_REQUIRED);
+    }
     return new Response(
       JSON.stringify({
         error: "method_not_allowed",
