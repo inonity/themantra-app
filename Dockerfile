@@ -1,4 +1,7 @@
-# syntax=docker/dockerfile:1.7
+# syntax=docker/dockerfile:1
+# Tracks the latest 1.x frontend. Coolify rewrites every RUN to add
+# `--mount=type=secret,...,env=...`, and the `env=` key only parses on 1.10+;
+# pinning 1.7 made every server-side build fail before it started.
 FROM node:24-alpine AS base
 
 # Install dependencies only when needed
