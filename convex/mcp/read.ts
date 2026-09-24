@@ -24,6 +24,7 @@ import {
   LOW_STOCK_THRESHOLD,
   Range,
   Scope,
+  TRANSFER_SCAN_CAP,
   UserIndex,
   fetchSales,
   getScope,
@@ -884,6 +885,143 @@ async function rankings(
   );
 }
 
+async function transfers(
+  ctx: AnyCtx,
+  scope: Scope,
+  input: Input,
+  now: number
+): Promise<string> {
+  const range = resolveRange(
+    now,
+    str(input.period) ?? "all",
+    str(input.from),
+    str(input.to)
+  );
+  const direction = str(input.direction) ?? "all";
+  const search = str(input.search)?.toLowerCase();
+  const limit = int(input.limit, 25, 200);
+  const [catalog, users] = await Promise.all([loadCatalog(ctx), loadUsers(ctx)]);
+
+  let agentFilter: Id<"users"> | null = scope.sellerId;
+  const agentTerm = str(input.agent);
+  if (agentTerm) {
+    const resolved = resolveAgentArg(users, scope, agentTerm);
+    if ("error" in resolved) return resolved.error;
+    agentFilter = resolved.id;
+  }
+
+  // No index covers movedAt, so read the newest movements into each side and
+  // filter here. `toPartyType: "agent"` also holds cancellation reversals
+  // (customer -> agent), and `"business"` holds batch releases; both are
+  // dropped by the fromPartyType checks below.
+  const scan = (to: "agent" | "business") =>
+    ctx.db
+      .query("stockMovements")
+      .withIndex("by_toPartyType", (q) => q.eq("toPartyType", to))
+      .order("desc")
+      .take(TRANSFER_SCAN_CAP);
+
+  const [toAgent, toHq] = await Promise.all([
+    direction === "return" ? [] : scan("agent"),
+    direction === "to_agent" ? [] : scan("business"),
+  ]);
+
+  type Row = { move: Doc<"stockMovements">; outbound: boolean; agentId: Id<"users"> | undefined };
+  let rows: Row[] = [
+    ...toAgent
+      .filter((m) => m.fromPartyType === "business")
+      .map((move) => ({ move, outbound: true, agentId: move.toPartyId })),
+    ...toHq
+      .filter((m) => m.fromPartyType === "agent")
+      .map((move) => ({ move, outbound: false, agentId: move.fromPartyId })),
+  ];
+
+  rows = rows.filter(
+    (r) => r.move.movedAt >= range.from && r.move.movedAt <= range.to
+  );
+  if (agentFilter) rows = rows.filter((r) => r.agentId === agentFilter);
+  if (search)
+    rows = rows.filter((r) => {
+      const product = catalog.productById.get(r.move.productId);
+      return (
+        product?.name.toLowerCase().includes(search) ||
+        product?.shortCode?.toLowerCase() === search
+      );
+    });
+
+  const what =
+    direction === "to_agent"
+      ? "HQ-to-agent transfers"
+      : direction === "return"
+        ? "returns to HQ"
+        : "transfers or returns";
+  if (rows.length === 0) return `No ${what} in ${range.label} matching those filters.`;
+
+  rows.sort((a, b) => b.move.movedAt - a.move.movedAt);
+
+  // One bulk transfer writes a row per batch, all with the same movedAt.
+  const shipmentKey = (r: Row) => `${r.outbound}:${r.agentId}:${r.move.movedAt}`;
+  const shipments = new Set(rows.map(shipmentKey)).size;
+  const unitsOut = rows
+    .filter((r) => r.outbound)
+    .reduce((sum, r) => sum + r.move.quantity, 0);
+  const unitsBack = rows
+    .filter((r) => !r.outbound)
+    .reduce((sum, r) => sum + r.move.quantity, 0);
+
+  // Never end the page partway through a shipment, or "the latest transfer"
+  // with a small limit would read as fewer items than were sent.
+  let end = Math.min(limit, rows.length);
+  while (end < rows.length && shipmentKey(rows[end]) === shipmentKey(rows[end - 1])) end++;
+  const page = rows.slice(0, end);
+  const batchIds = [...new Set(page.map((r) => r.move.batchId))];
+  const batchDocs = await Promise.all(batchIds.map((id) => ctx.db.get(id)));
+  const batchCode = new Map(
+    batchDocs
+      .filter((b): b is Doc<"batches"> => b !== null)
+      .map((b) => [b._id, b.batchCode])
+  );
+
+  const body = page.map(({ move, outbound, agentId }) => {
+    const unit = move.hqUnitPrice ?? move.unitPrice;
+    return [
+      dateTimeMY(move.movedAt),
+      outbound ? "to agent" : "return",
+      truncate(userLabel(users, agentId), 14),
+      truncate(catalog.productById.get(move.productId)?.name ?? "?", 22),
+      truncate(
+        move.variantId ? catalog.variantById.get(move.variantId)?.name ?? "?" : "—",
+        12
+      ),
+      batchCode.get(move.batchId) ?? "?",
+      num(move.quantity),
+      move.stockModel ?? "—",
+      unit !== undefined ? rm(unit) : "—",
+      move.saleId ? `sale ${move.saleId}` : truncate(move.notes ?? "", 30),
+    ];
+  });
+
+  const summary = [
+    `${shipments} shipment${shipments === 1 ? "" : "s"}`,
+    unitsOut > 0 ? `${num(unitsOut)} units to agents` : null,
+    unitsBack > 0 ? `${num(unitsBack)} units returned` : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return sections(
+    `${heading(`Stock transfers — ${range.label}`)}\n${summary}. Times are Malaysia (UTC+8). ${scopeNote(scope)}`,
+    table(
+      ["WHEN", "DIR", "AGENT", "PRODUCT", "VARIANT", "BATCH", "QTY", "MODEL", "HQ UNIT", "NOTE"],
+      body,
+      ["l", "l", "l", "l", "l", "l", "r", "l", "r", "l"]
+    ),
+    rows.length > page.length
+      ? `Showing ${page.length} of ${rows.length} rows. Raise \`limit\` or narrow the filters for more.`
+      : null
+  );
+}
+
 async function stockRequests(
   ctx: AnyCtx,
   scope: Scope,
@@ -968,6 +1106,8 @@ export const runReadTool = internalQuery({
         return await payments(ctx, scope, input);
       case "rankings":
         return await rankings(ctx, scope, input, args.now);
+      case "transfers":
+        return await transfers(ctx, scope, input, args.now);
       case "stock_requests":
         return await stockRequests(ctx, scope, input);
       default:

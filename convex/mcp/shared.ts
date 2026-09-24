@@ -15,6 +15,7 @@ import { McpRole } from "./auth";
 export const DAY_MS = 24 * 60 * 60 * 1000;
 export const SALES_SCAN_CAP = 5000;
 export const INVENTORY_SCAN_CAP = 5000;
+export const TRANSFER_SCAN_CAP = 3000;
 export const LOW_STOCK_THRESHOLD = 10;
 
 export type AnyCtx = QueryCtx | MutationCtx;

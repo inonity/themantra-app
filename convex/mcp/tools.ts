@@ -216,6 +216,29 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "transfers",
+    title: "Stock transfers",
+    description:
+      "Stock moved between HQ and agents, newest first: HQ-to-agent transfers (including B2B sales) and agent returns to HQ, with product, batch, quantity, stock model and HQ unit price. Rows sharing a timestamp are one shipment. Use `agent` for one person's latest transfer.",
+    kind: "read",
+    inputSchema: {
+      type: "object",
+      properties: {
+        agent: { type: "string", description: "Agent name or nickname." },
+        direction: {
+          type: "string",
+          enum: ["to_agent", "return", "all"],
+          description: "to_agent = HQ to agent, return = agent back to HQ. Defaults to all.",
+        },
+        search: { type: "string", description: "Product name or short code." },
+        period: { ...periodProp, description: "Time window. Defaults to all." },
+        from: { type: "string", description: "YYYY-MM-DD, overrides period." },
+        to: { type: "string", description: "YYYY-MM-DD, overrides period." },
+        limit: { type: "number", description: "Rows to return, default 25, max 200." },
+      },
+    },
+  },
+  {
     name: "stock_requests",
     title: "Stock requests",
     description:
