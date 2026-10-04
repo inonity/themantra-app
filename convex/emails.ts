@@ -267,6 +267,11 @@ function orderSummaryHtml(order: Doc<"orders">): string {
   return `
     <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
       ${rows}
+      ${
+        order.discount
+          ? `<tr><td style="padding: 8px 0; color: #6b7280;">${esc(order.discount.name)}</td><td style="padding: 8px 0; text-align: right;">−${rm(order.discount.amount)}</td></tr>`
+          : ""
+      }
       <tr><td style="padding: 8px 0; color: #6b7280;">Shipping</td><td style="padding: 8px 0; text-align: right;">${order.shippingFee === 0 ? "Free" : rm(order.shippingFee)}</td></tr>
       <tr><td style="padding: 8px 0; font-weight: 600;">Total</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">${rm(order.total)}</td></tr>
     </table>

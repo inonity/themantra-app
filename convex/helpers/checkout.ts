@@ -12,7 +12,7 @@ import type { QueryCtx } from "../_generated/server";
 export const SHIPPING = {
   west: 8, // RM, Peninsular Malaysia
   east: 15, // RM, Sabah, Sarawak and Labuan
-  freeOver: 200, // RM subtotal at or above which shipping is free
+  freeOver: 200, // RM spent on goods (after any offer) at or above which shipping is free
 };
 
 export const MAX_LINES = 20;
@@ -61,15 +61,30 @@ export type PricedLine = Doc<"orders">["lines"][number];
 
 export type Unavailable = { variantId: Id<"productVariants">; reason: string };
 
+/** The deal taken off an order, snapshotted onto it. */
+export type AppliedOffer = NonNullable<Doc<"orders">["discount"]>;
+
+/** "Add 1 more for 3 for RM100" — what the cart is short of a bundle. */
+export type OfferHint = { name: string; minQuantity: number; bundlePrice: number; needed: number };
+
+export type PricedCart = {
+  lines: PricedLine[];
+  unavailable: Unavailable[];
+  /** Before any offer. */
+  subtotal: number;
+  discount: AppliedOffer | null;
+  /** What the goods cost after the offer; shipping is worked out on this. */
+  merchandise: number;
+  offerHint: OfferHint | null;
+};
+
 /**
  * Prices a cart against the live catalog. Lines for the same variant are
  * merged; anything that can't be sold right now is returned separately
- * rather than silently dropped.
+ * rather than silently dropped. The best offer a shopper is entitled to is
+ * applied automatically.
  */
-export async function priceCart(
-  ctx: QueryCtx,
-  items: CartItem[]
-): Promise<{ lines: PricedLine[]; unavailable: Unavailable[]; subtotal: number }> {
+export async function priceCart(ctx: QueryCtx, items: CartItem[]): Promise<PricedCart> {
   if (items.length > MAX_LINES) {
     throw new ConvexError(`A cart can hold at most ${MAX_LINES} different items.`);
   }
@@ -84,6 +99,7 @@ export async function priceCart(
 
   const lines: PricedLine[] = [];
   const unavailable: Unavailable[] = [];
+  const collections = new Map<Id<"products">, string | undefined>();
   let subtotalSen = 0;
 
   for (const [variantId, quantity] of merged) {
@@ -110,6 +126,7 @@ export async function priceCart(
       );
     }
 
+    collections.set(product._id, product.collection);
     lines.push({
       productId: product._id,
       variantId: variant._id,
@@ -122,7 +139,138 @@ export async function priceCart(
     subtotalSen += toSen(variant.price) * quantity;
   }
 
-  return { lines, unavailable, subtotal: toRm(subtotalSen) };
+  const offers = await shopperOffers(ctx);
+  const { discount, offerHint } = applyBestOffer(offers, lines, collections);
+  const merchandiseSen = subtotalSen - (discount ? toSen(discount.amount) : 0);
+
+  return {
+    lines,
+    unavailable,
+    subtotal: toRm(subtotalSen),
+    discount,
+    merchandise: toRm(merchandiseSen),
+    offerHint,
+  };
+}
+
+/* --------------------------------- Offers --------------------------------- */
+/*
+ * Shoppers get the same bundle deals HQ sets up under Offers in the admin —
+ * the ones meant for customers. An order takes at most one offer, as a sale
+ * does; when several apply, the shopper gets whichever saves the most.
+ */
+
+/** Offers open to anonymous shoppers: active, in date, not agent-only. */
+export async function shopperOffers(ctx: QueryCtx): Promise<Doc<"offers">[]> {
+  const now = Date.now();
+  const active = await ctx.db
+    .query("offers")
+    .withIndex("by_isActive", (q) => q.eq("isActive", true))
+    .take(100);
+  return active.filter(
+    (o) =>
+      o.forWho !== "agents" &&
+      !(o.agentIds && o.agentIds.length > 0) &&
+      (!o.startDate || now >= o.startDate) &&
+      (!o.endDate || now <= o.endDate) &&
+      o.minQuantity >= 2 &&
+      o.bundlePrice > 0
+  );
+}
+
+/** Which lines an offer covers. Same scoping rules as recording a sale. */
+function covers(
+  offer: Doc<"offers">,
+  line: PricedLine,
+  collections: Map<Id<"products">, string | undefined>
+): boolean {
+  let ok = true;
+  if (offer.variantId) ok = line.variantId === offer.variantId;
+  else if (offer.variantIds && offer.variantIds.length > 0) ok = offer.variantIds.includes(line.variantId);
+  else if (offer.productId) ok = line.productId === offer.productId;
+  else if (offer.productIds && offer.productIds.length > 0) ok = offer.productIds.includes(line.productId);
+  else if (offer.collection) ok = collections.get(line.productId) === offer.collection;
+  // Legacy variant-scoped offers already pin a size.
+  const variantScoped = !!offer.variantId || !!(offer.variantIds && offer.variantIds.length > 0);
+  if (ok && offer.sizeMl != null && !variantScoped) ok = line.sizeMl === offer.sizeMl;
+  return ok;
+}
+
+export function applyBestOffer(
+  offers: Doc<"offers">[],
+  lines: PricedLine[],
+  collections: Map<Id<"products">, string | undefined>
+): { discount: AppliedOffer | null; offerHint: OfferHint | null } {
+  let discount: AppliedOffer | null = null;
+  let offerHint: OfferHint | null = null;
+  const hints = new Map<Id<"offers">, OfferHint>();
+
+  for (const offer of offers) {
+    // One entry per bottle the offer covers, dearest first, so the bundle
+    // takes the bottles it saves most on. (With equal prices — the usual
+    // case — this is exactly how a recorded sale prices it.)
+    const units = lines
+      .filter((line) => covers(offer, line, collections))
+      .flatMap((line) => Array<number>(line.quantity).fill(toSen(line.unitPrice)))
+      .sort((a, b) => b - a);
+    if (units.length === 0) continue;
+
+    const bundles = Math.floor(units.length / offer.minQuantity);
+    const bundledSen = units.slice(0, bundles * offer.minQuantity).reduce((sum, p) => sum + p, 0);
+    const savingSen = bundledSen - bundles * toSen(offer.bundlePrice);
+    if (bundles > 0 && savingSen > 0 && savingSen > toSen(discount?.amount ?? 0)) {
+      discount = {
+        offerId: offer._id,
+        name: offer.name,
+        minQuantity: offer.minQuantity,
+        bundlePrice: offer.bundlePrice,
+        amount: toRm(savingSen),
+      };
+    }
+
+    const short = units.length % offer.minQuantity;
+    if (short > 0) {
+      const hint = { name: offer.name, minQuantity: offer.minQuantity, bundlePrice: offer.bundlePrice, needed: offer.minQuantity - short };
+      hints.set(offer._id, hint);
+      if (!offerHint || hint.needed < offerHint.needed) offerHint = hint;
+    }
+  }
+
+  // Once a deal applies, only nudge towards more of that same deal.
+  if (discount) offerHint = hints.get(discount.offerId) ?? null;
+
+  return { discount, offerHint };
+}
+
+/**
+ * The public face of an offer, for the storefront to advertise. `productIds`
+ * is null when every scent counts.
+ */
+export async function offerSummary(ctx: QueryCtx, offer: Doc<"offers">) {
+  let productIds: Id<"products">[] | null = null;
+  if (offer.variantId || (offer.variantIds && offer.variantIds.length > 0)) {
+    const ids = offer.variantIds && offer.variantIds.length > 0 ? offer.variantIds : [offer.variantId!];
+    const variants = await Promise.all(ids.map((id) => ctx.db.get(id)));
+    productIds = [...new Set(variants.filter((v) => v !== null).map((v) => v.productId))];
+  } else if (offer.productId) {
+    productIds = [offer.productId];
+  } else if (offer.productIds && offer.productIds.length > 0) {
+    productIds = offer.productIds;
+  } else if (offer.collection) {
+    const inCollection = await ctx.db
+      .query("products")
+      .withIndex("by_collection", (q) => q.eq("collection", offer.collection))
+      .take(200);
+    productIds = inCollection.map((p) => p._id);
+  }
+  return {
+    name: offer.name,
+    description: offer.description,
+    minQuantity: offer.minQuantity,
+    bundlePrice: offer.bundlePrice,
+    sizeMl: offer.sizeMl ?? null,
+    productIds,
+  };
 }
 
 export function orderTotal(subtotal: number, fee: number): number {

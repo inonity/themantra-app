@@ -119,7 +119,13 @@ provider directly. Keep it that way.
   Stripe there.
 
 Orders are not `sales`: an order has no seller, stock model or batch until HQ
-packs it. Record the sale as usual, then `orders.linkSale`.
+packs it. Record the sale as usual — channel **Website**, with the order's
+offer if it has one — then `orders.linkSale`.
+
+Storefront deals are the customer **Offers** set up in the admin: active, in
+date, not `forWho: "agents"` and without `agentIds`. `priceCart` in
+`helpers/checkout.ts` applies whichever saves the shopper most (one per
+order, like a sale) and the order keeps a `discount` snapshot.
 
 Convex env vars (set per deployment with `npx convex env set`):
 

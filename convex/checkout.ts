@@ -13,10 +13,12 @@ import {
   cleanText,
   newAccessKey,
   newOrderNumber,
+  offerSummary,
   orderTotal,
   priceCart,
   sameSecret,
   shippingFee,
+  shopperOffers,
   zoneFor,
 } from "./helpers/checkout";
 import { PROVIDERS } from "./helpers/payments";
@@ -34,7 +36,7 @@ const cartItems = v.array(
 /** Everything the checkout page needs to know that isn't in the catalog. */
 export const config = query({
   args: {},
-  handler: async () => ({
+  handler: async (ctx) => ({
     shipping: SHIPPING,
     states: Object.keys(STATES),
     maxLines: MAX_LINES,
@@ -42,6 +44,8 @@ export const config = query({
     providers: Object.values(PROVIDERS)
       .filter((p) => p.configured())
       .map((p) => p.id),
+    // Customer deals from Offers in the admin, for the storefront to show.
+    offers: await Promise.all((await shopperOffers(ctx)).map((offer) => offerSummary(ctx, offer))),
   }),
 });
 
@@ -49,15 +53,18 @@ export const config = query({
 export const quote = query({
   args: { items: cartItems, state: v.optional(v.string()) },
   handler: async (ctx, args) => {
-    const { lines, unavailable, subtotal } = await priceCart(ctx, args.items);
+    const { lines, unavailable, subtotal, discount, merchandise, offerHint } = await priceCart(ctx, args.items);
     const zone = args.state ? zoneFor(args.state) : null;
-    const fee = zone && lines.length > 0 ? shippingFee(subtotal, zone) : null;
+    const fee = zone && lines.length > 0 ? shippingFee(merchandise, zone) : null;
     return {
       lines,
       unavailable,
       subtotal,
+      discount: discount && { name: discount.name, amount: discount.amount },
+      merchandise,
+      offerHint,
       shippingFee: fee,
-      total: fee === null ? null : orderTotal(subtotal, fee),
+      total: fee === null ? null : orderTotal(merchandise, fee),
     };
   },
 });
@@ -82,14 +89,14 @@ export const placeOrder = mutation({
     const zone = zoneFor(args.shippingAddress.state);
     if (!zone) throw new ConvexError("Choose a Malaysian state to ship to.");
 
-    const { lines, unavailable, subtotal } = await priceCart(ctx, args.items);
+    const { lines, unavailable, subtotal, discount, merchandise } = await priceCart(ctx, args.items);
     if (unavailable.length > 0) {
       throw new ConvexError("Some items in your bag are no longer available. Review your bag and try again.");
     }
     if (lines.length === 0) throw new ConvexError("Your bag is empty.");
 
-    const fee = shippingFee(subtotal, zone);
-    const total = orderTotal(subtotal, fee);
+    const fee = shippingFee(merchandise, zone);
+    const total = orderTotal(merchandise, fee);
     if (Math.round(total * 100) !== Math.round(args.expectedTotal * 100)) {
       throw new ConvexError("Prices changed while you were checking out. Review the new total and try again.");
     }
@@ -125,6 +132,7 @@ export const placeOrder = mutation({
       shippingZone: zone,
       lines,
       subtotal,
+      discount: discount ?? undefined,
       shippingFee: fee,
       total,
       notes: cleanText(args.notes, "Notes", { max: 500, required: false }),
@@ -159,6 +167,7 @@ export const getOrder = query({
       shippingAddress: order.shippingAddress,
       lines: order.lines,
       subtotal: order.subtotal,
+      discount: order.discount ? { name: order.discount.name, amount: order.discount.amount } : null,
       shippingFee: order.shippingFee,
       total: order.total,
       paidAt: order.paidAt,

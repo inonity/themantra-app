@@ -352,6 +352,12 @@ export function OrderDetail({ order }: { order: OrderWithPayments }) {
                   <span className="text-muted-foreground">Subtotal</span>
                   <span>{formatRM(order.subtotal)}</span>
                 </div>
+                {order.discount && (
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">{order.discount.name}</span>
+                    <span>−{formatRM(order.discount.amount)}</span>
+                  </div>
+                )}
                 <div className="flex justify-between">
                   <span className="text-muted-foreground">
                     Shipping ({ZONE_LABELS[order.shippingZone]})
@@ -363,6 +369,12 @@ export function OrderDetail({ order }: { order: OrderWithPayments }) {
                   <span>{formatRM(order.total)}</span>
                 </div>
               </div>
+              {order.discount && (
+                <p className="text-xs text-muted-foreground">
+                  When you record the sale, choose channel Website and apply the “{order.discount.name}” offer so the
+                  sale matches what the customer paid.
+                </p>
+              )}
               {order.notes && (
                 <div className="rounded-md bg-muted/50 p-3 text-sm">
                   <div className="mb-1 text-xs text-muted-foreground">Customer note</div>

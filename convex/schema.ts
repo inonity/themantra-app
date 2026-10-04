@@ -126,6 +126,7 @@ export default defineSchema({
       v.literal("agent"),
       v.literal("tiktok"),
       v.literal("shopee"),
+      v.literal("website"), // an order placed on the storefront; HQ is the seller
       v.literal("other"),
       v.literal("internal")
     ),
@@ -775,8 +776,18 @@ export default defineSchema({
         quantity: v.number(),
       })
     ),
-    // All in RM, rounded to sen.
-    subtotal: v.number(),
+    // All in RM, rounded to sen. total = subtotal − discount + shippingFee.
+    subtotal: v.number(), // before any offer
+    // The offer the shopper got, snapshotted (see helpers/checkout.ts).
+    discount: v.optional(
+      v.object({
+        offerId: v.id("offers"),
+        name: v.string(),
+        minQuantity: v.number(),
+        bundlePrice: v.number(),
+        amount: v.number(), // RM taken off
+      })
+    ),
     shippingFee: v.number(),
     total: v.number(),
     notes: v.optional(v.string()),
