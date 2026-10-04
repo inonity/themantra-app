@@ -200,6 +200,34 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
+    name: "bank",
+    title: "HQ bank account movements",
+    description:
+      "Money in and out of HQ's bank account (RHB), oldest first, dated by when the money moved rather than the sale date: customer payments HQ collected, agent settlements paid to HQ, and commission HQ paid out. Defaults to bank transfer, QR and online; `method: all` adds cash. For money still owed, use `payments`.",
+    kind: "read",
+    roles: ["admin"],
+    inputSchema: {
+      type: "object",
+      properties: {
+        period: periodProp,
+        from: { type: "string", description: "YYYY-MM-DD, overrides period." },
+        to: { type: "string", description: "YYYY-MM-DD, overrides period." },
+        direction: {
+          type: "string",
+          enum: ["in", "out", "all"],
+          description: "in = received by HQ, out = commission paid to agents. Defaults to all.",
+        },
+        method: {
+          type: "string",
+          enum: ["bank", "bank_transfer", "qr", "online", "cash", "all"],
+          description: "bank = bank_transfer + qr + online. Defaults to bank.",
+        },
+        agent: { type: "string", description: "Seller or agent name or nickname." },
+        limit: { type: "number", description: "Rows to return, default 100, max 300." },
+      },
+    },
+  },
+  {
     name: "rankings",
     title: "Top performers",
     description:

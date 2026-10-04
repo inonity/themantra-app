@@ -23,6 +23,8 @@ import {
   INVENTORY_SCAN_CAP,
   LOW_STOCK_THRESHOLD,
   Range,
+  SALES_SCAN_CAP,
+  SETTLEMENT_SCAN_CAP,
   Scope,
   TRANSFER_SCAN_CAP,
   UserIndex,
@@ -812,6 +814,238 @@ async function payments(
   return sections(heading("Outstanding money"), ...parts);
 }
 
+const BANK_METHODS = new Set(["bank_transfer", "qr", "online"]);
+
+/** A sale marked paid in the same mutation that recorded it. */
+const PAID_ON_RECORD_MS = 5 * 60 * 1000;
+
+type BankRow = {
+  at: number;
+  dir: "in" | "out";
+  amount: number;
+  /** Undefined when the record never captured one (legacy B2B purchases). */
+  method: string | undefined;
+  source: string;
+  party: string;
+  ref: string;
+  agentId: Id<"users"> | undefined;
+  /** Customer sale settled after it was recorded — possibly in instalments. */
+  paidLater?: boolean;
+};
+
+/**
+ * Money through HQ's bank account, for reconciling against a bank statement.
+ *
+ * Nothing stores a payment ledger, so rows are derived from three records:
+ * - customer sales HQ collected (or an admin sold), dated by `paidAt`
+ * - agent_to_hq settlements, dated by the transfer date the agent entered
+ * - hq_to_agent settlements (commission), dated by the payout date
+ * Agent-collected sales are excluded — that money reaches HQ through the
+ * settlement, and counting both would double it. Internal B2B sales (loss
+ * charges) are paid through settlements for the same reason.
+ */
+async function bank(
+  ctx: AnyCtx,
+  scope: Scope,
+  input: Input,
+  now: number
+): Promise<string> {
+  if (!scope.isAdmin) return "Only admins can see HQ's bank account.";
+
+  const range = resolveRange(now, str(input.period), str(input.from), str(input.to));
+  const direction = str(input.direction) ?? "all";
+  const method = str(input.method) ?? "bank";
+  const limit = int(input.limit, 100, 300);
+  const users = await loadUsers(ctx);
+
+  let agentFilter: Id<"users"> | null = null;
+  const agentTerm = str(input.agent);
+  if (agentTerm) {
+    const resolved = resolveAgentArg(users, scope, agentTerm);
+    if ("error" in resolved) return resolved.error;
+    agentFilter = resolved.id;
+  }
+
+  const inRange = (ts: number) => ts >= range.from && ts <= range.to;
+  const rows: BankRow[] = [];
+
+  // Money can arrive long after the sale, so the scan is bounded only by
+  // saleDate <= range end; the payment date is checked below.
+  const [paidSales, settlements] = await Promise.all([
+    direction === "out"
+      ? []
+      : ctx.db
+          .query("sales")
+          .withIndex("by_paymentStatus_and_saleDate", (q) =>
+            q.eq("paymentStatus", "paid").lte("saleDate", range.to)
+          )
+          .order("desc")
+          .take(SALES_SCAN_CAP),
+    ctx.db.query("agentSettlements").order("desc").take(SETTLEMENT_SCAN_CAP),
+  ]);
+
+  const hqCollected = (sale: Doc<"sales">) =>
+    sale.paymentCollector === "hq" ||
+    (sale.sellerId !== undefined && users.byId.get(sale.sellerId)?.role === "admin");
+
+  for (const sale of paidSales) {
+    if (sale.cancelledAt !== undefined || sale.saleChannel === "internal") continue;
+
+    if (sale.type === "b2b") {
+      // Legacy HQ-to-agent purchases: marked paid when recorded, no method.
+      if (!inRange(sale.saleDate)) continue;
+      rows.push({
+        at: sale.saleDate,
+        dir: "in",
+        amount: sale.amountPaid ?? 0,
+        method: sale.paymentMethod,
+        source: "stock purchase",
+        party: userLabel(users, sale.buyerId),
+        ref: sale._id,
+        agentId: sale.buyerId,
+      });
+      continue;
+    }
+
+    if (!hqCollected(sale) || sale.paidAt === undefined) continue;
+    // paidAt is the clock time of recording, so a backdated sale that was
+    // paid on the spot would otherwise land on the day it was keyed in.
+    const paidOnRecord = sale.paidAt - sale._creationTime < PAID_ON_RECORD_MS;
+    const at = paidOnRecord ? sale.saleDate : sale.paidAt;
+    if (!inRange(at)) continue;
+    rows.push({
+      at,
+      dir: "in",
+      amount: sale.amountReceived ?? sale.amountPaid ?? 0,
+      method: sale.paymentMethod,
+      source: "customer sale",
+      party: `${sale.customerDetail?.name ?? "customer"} (${userLabel(users, sale.sellerId)})`,
+      ref: sale._id,
+      agentId: sale.sellerId,
+      paidLater: !paidOnRecord,
+    });
+  }
+
+  let awaiting = { count: 0, amount: 0 };
+  for (const s of settlements) {
+    const out = s.direction === "hq_to_agent";
+    if (direction === (out ? "in" : "out")) continue;
+    const at = s.paymentDate ?? s.paidAt;
+    if (at === undefined || !inRange(at)) continue;
+    if (s.paymentStatus !== "paid") {
+      // Agent says they transferred; an admin has not confirmed it yet.
+      if (!out && s.paymentStatus === "submitted") {
+        if (agentFilter && s.agentId !== agentFilter) continue;
+        awaiting = {
+          count: awaiting.count + 1,
+          amount: awaiting.amount + s.totalAmount - s.amountPaid,
+        };
+      }
+      continue;
+    }
+    rows.push({
+      at,
+      dir: out ? "out" : "in",
+      amount: s.amountPaid,
+      method: s.paymentMethod,
+      source: out ? "commission" : "agent settlement",
+      party: userLabel(users, s.agentId),
+      ref: `${s.referenceId} (${s.saleIds.length} sale${s.saleIds.length === 1 ? "" : "s"})`,
+      agentId: s.agentId,
+    });
+  }
+
+  let candidates = agentFilter ? rows.filter((r) => r.agentId === agentFilter) : rows;
+
+  const methodMatches = (m: string | undefined) =>
+    method === "all" ||
+    (method === "bank" ? m !== undefined && BANK_METHODS.has(m) : m === method);
+  const excluded = candidates.filter((r) => !methodMatches(r.method));
+  candidates = candidates.filter((r) => methodMatches(r.method));
+
+  const methodLabel =
+    method === "bank" ? "bank transfer, QR and online" : method === "all" ? "all methods" : method;
+  const notes: string[] = [];
+  if (excluded.length > 0) {
+    const sum = excluded.reduce((acc, r) => acc + r.amount, 0);
+    notes.push(
+      `Not shown: ${excluded.length} other movement${excluded.length === 1 ? "" : "s"} (${rm(sum)}) by other or unrecorded methods. Pass \`method: all\` to include them.`
+    );
+  }
+  if (awaiting.count > 0) {
+    notes.push(
+      `${awaiting.count} agent payment${awaiting.count === 1 ? "" : "s"} (${rm(awaiting.amount)}) dated in this range ${awaiting.count === 1 ? "is" : "are"} submitted but not yet confirmed in the app, so not listed.`
+    );
+  }
+  if (direction !== "out") {
+    const partial = (await fetchByPaymentStatus(ctx, scope, ["partial"])).filter(
+      (s) =>
+        s.type === "b2c" &&
+        hqCollected(s) &&
+        inRange(s.saleDate) &&
+        (!agentFilter || s.sellerId === agentFilter)
+    );
+    if (partial.length > 0) {
+      const sum = partial.reduce((acc, s) => acc + (s.amountPaid ?? 0), 0);
+      notes.push(
+        `${partial.length} HQ-collected sale${partial.length === 1 ? " is" : "s are"} part-paid (${rm(sum)} received so far). The app does not record when part-payments arrive, so they are not listed: ${partial.map((s) => s._id).join(", ")}.`
+      );
+    }
+  }
+  if (candidates.some((r) => r.paidLater)) {
+    notes.push(
+      "A customer sale paid in instalments shows as one line, for the full amount, on the date of its final payment."
+    );
+  }
+  if (paidSales.length === SALES_SCAN_CAP || settlements.length === SETTLEMENT_SCAN_CAP) {
+    notes.push("Scan limit reached; older records may be missing. Narrow the period.");
+  }
+
+  if (candidates.length === 0) {
+    return sections(
+      `No HQ bank movements (${methodLabel}) in ${range.label} matching those filters.`,
+      ...notes
+    );
+  }
+
+  candidates.sort((a, b) => a.at - b.at);
+  const totalIn = candidates.filter((r) => r.dir === "in").reduce((acc, r) => acc + r.amount, 0);
+  const totalOut = candidates.filter((r) => r.dir === "out").reduce((acc, r) => acc + r.amount, 0);
+  const countIn = candidates.filter((r) => r.dir === "in").length;
+  const page = candidates.slice(0, limit);
+
+  const summary = [
+    direction !== "out" ? `In ${rm(totalIn)} (${countIn})` : null,
+    direction !== "in" ? `Out ${rm(totalOut)} (${candidates.length - countIn})` : null,
+    direction === "all"
+      ? `Net ${totalIn < totalOut ? "-" : ""}${rm(Math.abs(totalIn - totalOut))}`
+      : null,
+  ]
+    .filter(Boolean)
+    .join(", ");
+
+  return sections(
+    `${heading(`HQ bank account (RHB) — ${range.label}`)}\n${summary}. Methods: ${methodLabel}. Dates are when the money moved, Malaysia time.`,
+    table(
+      ["DATE", "DIR", "AMOUNT", "METHOD", "SOURCE", "PARTY", "REF"],
+      page.map((r) => [
+        dateMY(r.at),
+        r.dir,
+        rm(r.amount),
+        r.method ?? "—",
+        r.source,
+        truncate(r.party, 28),
+        r.ref,
+      ]),
+      ["l", "l", "r", "l", "l", "l", "l"]
+    ),
+    candidates.length > page.length
+      ? `Showing the first ${page.length} of ${candidates.length}; totals cover all. Raise \`limit\` or narrow the period for more.`
+      : null,
+    ...notes
+  );
+}
+
 async function rankings(
   ctx: AnyCtx,
   scope: Scope,
@@ -1104,6 +1338,8 @@ export const runReadTool = internalQuery({
         return await batchesList(ctx, input, args.now);
       case "payments":
         return await payments(ctx, scope, input);
+      case "bank":
+        return await bank(ctx, scope, input, args.now);
       case "rankings":
         return await rankings(ctx, scope, input, args.now);
       case "transfers":
