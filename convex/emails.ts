@@ -1,6 +1,8 @@
 import { internalAction } from "./_generated/server";
 import { internal } from "./_generated/api";
 import { v } from "convex/values";
+import type { Doc } from "./_generated/dataModel";
+import { orderPageUrl } from "./helpers/checkout";
 
 const BREVO_API_URL = "https://api.brevo.com/v3/smtp/email";
 
@@ -231,6 +233,121 @@ export const sendWelcomeEmail = internalAction({
           <p style="color: #9ca3af; font-size: 12px;">
             The Mantra - Inventory & Sales Management
           </p>
+        </div>
+      `,
+    });
+  },
+});
+
+/* ---------------------------- Storefront orders --------------------------- */
+
+// Everything below renders text a shopper typed, so it is always escaped.
+function esc(value: string | undefined): string {
+  return (value ?? "")
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+const rm = (amount: number) => `RM${amount.toFixed(2)}`;
+
+function orderSummaryHtml(order: Doc<"orders">): string {
+  const rows = order.lines
+    .map(
+      (l) => `
+        <tr>
+          <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb;">${esc(l.productName)} <span style="color: #6b7280;">${esc(l.variantName)}</span> × ${l.quantity}</td>
+          <td style="padding: 8px 0; border-bottom: 1px solid #e5e7eb; text-align: right;">${rm(l.unitPrice * l.quantity)}</td>
+        </tr>`
+    )
+    .join("");
+  const a = order.shippingAddress;
+  return `
+    <table style="width: 100%; border-collapse: collapse; font-size: 14px;">
+      ${rows}
+      <tr><td style="padding: 8px 0; color: #6b7280;">Shipping</td><td style="padding: 8px 0; text-align: right;">${order.shippingFee === 0 ? "Free" : rm(order.shippingFee)}</td></tr>
+      <tr><td style="padding: 8px 0; font-weight: 600;">Total</td><td style="padding: 8px 0; text-align: right; font-weight: 600;">${rm(order.total)}</td></tr>
+    </table>
+    <p style="font-size: 14px; color: #374151; margin-top: 16px;">
+      <strong>Shipping to</strong><br/>
+      ${esc(order.customer.name)}<br/>
+      ${esc(a.line1)}<br/>
+      ${a.line2 ? `${esc(a.line2)}<br/>` : ""}
+      ${esc(a.postcode)} ${esc(a.city)}, ${esc(a.state)}
+    </p>`;
+}
+
+function orderButton(order: Doc<"orders">): string {
+  const link = orderPageUrl(order);
+  return `
+    <p style="margin: 24px 0;">
+      <a href="${link}" style="background-color: #18181b; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 6px; display: inline-block; font-weight: 500;">
+        View your order
+      </a>
+    </p>`;
+}
+
+export const sendOrderPaid = internalAction({
+  args: { orderId: v.id("orders") },
+  handler: async (ctx, args) => {
+    const order = await ctx.runQuery(internal.orders.getInternal, args);
+    if (!order) return;
+
+    await sendBrevoEmail({
+      to: [{ email: order.customer.email, name: order.customer.name }],
+      subject: `Order ${order.orderNumber} confirmed — The Mantra`,
+      htmlContent: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>Thank you, ${esc(order.customer.name)}.</h2>
+          <p>We've received your payment for order <strong>${order.orderNumber}</strong>. We'll email you again with tracking once it ships.</p>
+          ${orderSummaryHtml(order)}
+          ${orderButton(order)}
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="color: #9ca3af; font-size: 12px;">The Mantra</p>
+        </div>
+      `,
+    });
+
+    // HQ hears about every paid order. Optional: unset means no notification.
+    const notify = process.env.ORDER_NOTIFY_EMAIL;
+    if (notify) {
+      await sendBrevoEmail({
+        to: notify.split(",").map((email) => ({ email: email.trim() })),
+        subject: `New paid order ${order.orderNumber} — ${rm(order.total)}`,
+        htmlContent: `
+          <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+            <h2>New order ${order.orderNumber}</h2>
+            <p>${esc(order.customer.name)} · ${esc(order.customer.email)} · +${esc(order.customer.phone)}</p>
+            ${order.notes ? `<p><strong>Notes:</strong> ${esc(order.notes)}</p>` : ""}
+            ${orderSummaryHtml(order)}
+            <p><a href="${process.env.SITE_URL ?? ""}/dashboard/orders/${order._id}">Open in the dashboard</a></p>
+          </div>
+        `,
+      });
+    }
+  },
+});
+
+export const sendOrderShipped = internalAction({
+  args: { orderId: v.id("orders"), resend: v.boolean() },
+  handler: async (ctx, args) => {
+    const order = await ctx.runQuery(internal.orders.getInternal, { orderId: args.orderId });
+    if (!order || !order.trackingNumber) return;
+
+    await sendBrevoEmail({
+      to: [{ email: order.customer.email, name: order.customer.name }],
+      subject: `${args.resend ? "Updated tracking for" : "Your order has shipped:"} ${order.orderNumber} — The Mantra`,
+      htmlContent: `
+        <div style="font-family: sans-serif; max-width: 600px; margin: 0 auto;">
+          <h2>${args.resend ? "Updated tracking" : "It's on its way."}</h2>
+          <p>Order <strong>${order.orderNumber}</strong> has shipped with <strong>${esc(order.courier)}</strong>.</p>
+          <p style="font-size: 18px;">Tracking number: <strong>${esc(order.trackingNumber)}</strong></p>
+          ${orderSummaryHtml(order)}
+          ${orderButton(order)}
+          <hr style="border: none; border-top: 1px solid #e5e7eb; margin: 24px 0;" />
+          <p style="color: #9ca3af; font-size: 12px;">The Mantra</p>
         </div>
       `,
     });

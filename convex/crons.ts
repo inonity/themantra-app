@@ -11,4 +11,12 @@ crons.interval(
   {}
 );
 
+// Lapse unpaid storefront orders — see ORDER_TTL_MS in helpers/checkout.ts.
+crons.interval(
+  "expire unpaid storefront orders",
+  { minutes: 30 },
+  internal.orders.expireStale,
+  {}
+);
+
 export default crons;

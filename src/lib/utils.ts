@@ -1,5 +1,6 @@
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
+import { ConvexError } from "convex/values"
 
 export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
@@ -12,6 +13,8 @@ export function cn(...inputs: ClassValue[]) {
  * This extracts just "Email already in use".
  */
 export function getErrorMessage(error: unknown, fallback: string): string {
+  // `throw new ConvexError("…")` arrives with the message as its data.
+  if (error instanceof ConvexError && typeof error.data === "string") return error.data;
   if (!(error instanceof Error)) return fallback;
   const msg = error.message;
   const match = msg.match(/Uncaught Error:\s*(.+?)(?:\n|$)/);
