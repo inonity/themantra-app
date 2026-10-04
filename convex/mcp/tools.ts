@@ -200,8 +200,8 @@ export const TOOLS: ToolDef[] = [
     },
   },
   {
-    name: "bank",
-    title: "HQ bank account movements",
+    name: "bank_transactions",
+    title: "HQ bank transactions",
     description:
       "Money in and out of HQ's bank account (RHB), oldest first, dated by when the money moved rather than the sale date: customer payments HQ collected, agent settlements paid to HQ, and commission HQ paid out. Defaults to bank transfer, QR and online; `method: all` adds cash. For money still owed, use `payments`.",
     kind: "read",

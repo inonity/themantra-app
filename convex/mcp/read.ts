@@ -844,7 +844,7 @@ type BankRow = {
  * settlement, and counting both would double it. Internal B2B sales (loss
  * charges) are paid through settlements for the same reason.
  */
-async function bank(
+async function bankTransactions(
   ctx: AnyCtx,
   scope: Scope,
   input: Input,
@@ -1338,8 +1338,8 @@ export const runReadTool = internalQuery({
         return await batchesList(ctx, input, args.now);
       case "payments":
         return await payments(ctx, scope, input);
-      case "bank":
-        return await bank(ctx, scope, input, args.now);
+      case "bank_transactions":
+        return await bankTransactions(ctx, scope, input, args.now);
       case "rankings":
         return await rankings(ctx, scope, input, args.now);
       case "transfers":
