@@ -79,6 +79,7 @@ export const recordB2CSale = mutation({
       v.literal("direct"),
       v.literal("tiktok"),
       v.literal("shopee"),
+      v.literal("website"),
       v.literal("other")
     ),
     customerDetail: v.object({
@@ -879,6 +880,7 @@ export const recordPresellSale = mutation({
       v.literal("direct"),
       v.literal("tiktok"),
       v.literal("shopee"),
+      v.literal("website"),
       v.literal("other")
     ),
     customerDetail: v.object({

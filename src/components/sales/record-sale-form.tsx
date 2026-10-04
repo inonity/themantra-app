@@ -83,6 +83,7 @@ const SALE_CHANNEL_LABELS: Record<string, string> = {
   direct: "Direct",
   tiktok: "TikTok",
   shopee: "Shopee",
+  website: "Website",
   other: "Other",
 };
 
@@ -735,7 +736,7 @@ export function RecordSaleForm({
         setUploadingProof(false);
       }
 
-      const channel = saleChannel as "direct" | "tiktok" | "shopee" | "other";
+      const channel = saleChannel as "direct" | "tiktok" | "shopee" | "website" | "other";
       const customerDetail = {
         name: customerName,
         phone: customerPhone,
@@ -1036,6 +1037,7 @@ export function RecordSaleForm({
                   <SelectItem value="direct">Direct</SelectItem>
                   <SelectItem value="tiktok">TikTok</SelectItem>
                   <SelectItem value="shopee">Shopee</SelectItem>
+                  <SelectItem value="website">Website</SelectItem>
                   <SelectItem value="other">Other</SelectItem>
                 </SelectContent>
               </Select>

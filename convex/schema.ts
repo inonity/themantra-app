@@ -126,6 +126,7 @@ export default defineSchema({
       v.literal("agent"),
       v.literal("tiktok"),
       v.literal("shopee"),
+      v.literal("website"), // an order placed on the storefront; HQ is the seller
       v.literal("other"),
       v.literal("internal")
     ),
@@ -732,4 +733,108 @@ export default defineSchema({
     .index("by_calledAt", ["calledAt"])
     .index("by_userId_and_calledAt", ["userId", "calledAt"])
     .index("by_tokenId_and_calledAt", ["tokenId", "calledAt"]),
+
+  // Orders placed by anonymous shoppers on the storefront (../themantra-site).
+  // Kept apart from `sales`: a sale needs a seller, a stock model and batches,
+  // none of which exist until HQ picks and packs the order. `saleId` links the
+  // two once the order has been recorded as a sale.
+  orders: defineTable({
+    orderNumber: v.string(), // shown to the shopper, e.g. "TM-7K3Q9P"
+    // Secret that lets the shopper view the order without an account. Checked
+    // by every public function that takes an orderNumber.
+    accessKey: v.string(),
+    status: v.union(
+      v.literal("awaiting_payment"),
+      v.literal("paid"),
+      v.literal("shipped"),
+      v.literal("delivered"),
+      v.literal("cancelled"),
+      v.literal("expired")
+    ),
+    customer: v.object({
+      name: v.string(),
+      email: v.string(),
+      phone: v.string(),
+    }),
+    shippingAddress: v.object({
+      line1: v.string(),
+      line2: v.optional(v.string()),
+      city: v.string(),
+      postcode: v.string(),
+      state: v.string(),
+    }),
+    shippingZone: v.union(v.literal("west"), v.literal("east")),
+    // Snapshot at order time; bounded by MAX_LINES in helpers/checkout.ts.
+    lines: v.array(
+      v.object({
+        productId: v.id("products"),
+        variantId: v.id("productVariants"),
+        productName: v.string(),
+        variantName: v.string(),
+        sizeMl: v.optional(v.number()),
+        unitPrice: v.number(),
+        quantity: v.number(),
+      })
+    ),
+    // All in RM, rounded to sen. total = subtotal − discount + shippingFee.
+    subtotal: v.number(), // before any offer
+    // The offer the shopper got, snapshotted (see helpers/checkout.ts).
+    discount: v.optional(
+      v.object({
+        offerId: v.id("offers"),
+        name: v.string(),
+        minQuantity: v.number(),
+        bundlePrice: v.number(),
+        amount: v.number(), // RM taken off
+      })
+    ),
+    shippingFee: v.number(),
+    total: v.number(),
+    notes: v.optional(v.string()),
+    expiresAt: v.number(), // unpaid orders lapse after this
+    paidAt: v.optional(v.number()),
+    shippedAt: v.optional(v.number()),
+    courier: v.optional(v.string()),
+    trackingNumber: v.optional(v.string()),
+    deliveredAt: v.optional(v.number()),
+    cancelledAt: v.optional(v.number()),
+    cancelledBy: v.optional(v.id("users")),
+    cancellationReason: v.optional(v.string()),
+    // Set when money arrives for an order that was no longer awaiting it —
+    // e.g. paid after an admin cancelled it. Someone has to refund or ship.
+    needsAttention: v.optional(v.string()),
+    saleId: v.optional(v.id("sales")),
+    updatedAt: v.number(),
+  })
+    .index("by_orderNumber", ["orderNumber"])
+    .index("by_status_and_expiresAt", ["status", "expiresAt"])
+    .index("by_needsAttention", ["needsAttention"]),
+
+  // One row per attempt to pay an order. A shopper may retry, or switch
+  // provider, so an order can have several; at most one ends up "paid".
+  payments: defineTable({
+    orderId: v.id("orders"),
+    provider: v.union(v.literal("toyyibpay"), v.literal("manual")),
+    status: v.union(
+      v.literal("created"), // row exists, provider not called yet
+      v.literal("pending"), // shopper sent to the provider
+      v.literal("paid"),
+      v.literal("failed"),
+      // The provider says paid, but not the amount we asked for.
+      v.literal("needs_review")
+    ),
+    amount: v.number(), // RM we asked for
+    reference: v.optional(v.string()), // provider's id, e.g. ToyyibPay BillCode
+    redirectUrl: v.optional(v.string()),
+    providerTransactionId: v.optional(v.string()),
+    channel: v.optional(v.string()), // "FPX", "Credit Card", …
+    amountReceived: v.optional(v.number()),
+    failureReason: v.optional(v.string()),
+    recordedBy: v.optional(v.id("users")), // manual payments only
+    createdAt: v.number(),
+    updatedAt: v.number(),
+    paidAt: v.optional(v.number()),
+  })
+    .index("by_orderId", ["orderId"])
+    .index("by_provider_and_reference", ["provider", "reference"]),
 });

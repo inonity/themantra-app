@@ -95,10 +95,47 @@ deployment.
 deployment. It has no `convex/` directory — **this repo owns the function
 codebase**, and the storefront only calls into it.
 
-These five must stay callable without auth, or the shop breaks:
+These must stay callable without auth, or the shop breaks:
 
 `products:listSellable`, `products:get`, `products:listCollections`,
-`productVariants:listAllPublic`, `productVariants:listPublicByProduct`
+`productVariants:listAllPublic`, `productVariants:listPublicByProduct`,
+`checkout:config`, `checkout:quote`, `checkout:placeOrder`, `checkout:getOrder`,
+`payments:start`, `payments:refresh`
+
+The checkout ones are public on purpose. Each order-reading one demands the
+order's `accessKey`; nothing trusts a price from the browser; and only
+`payments.applyResult` (internal) marks anything paid, after asking the
+provider directly. Keep it that way.
+
+### Storefront orders
+
+- `checkout.ts` — shopper-facing: quote, place order, view order.
+- `payments.ts` — opening bills, reconciling them, the ToyyibPay callback
+  (routed in `http.ts` at `/payments/toyyibpay/callback`).
+- `orders.ts` — admin-only fulfilment: ship, deliver, cancel, manual payment.
+  UI at `/dashboard/orders`.
+- `helpers/checkout.ts` — **shipping rates**, order limits, validation.
+- `helpers/payments.ts` — the provider interface. Add Billplz, HerePay or
+  Stripe there.
+
+Orders are not `sales`: an order has no seller, stock model or batch until HQ
+packs it. Record the sale as usual — channel **Website**, with the order's
+offer if it has one — then `orders.linkSale`.
+
+Storefront deals are the customer **Offers** set up in the admin: active, in
+date, not `forWho: "agents"` and without `agentIds`. `priceCart` in
+`helpers/checkout.ts` applies whichever saves the shopper most (one per
+order, like a sale) and the order keeps a `discount` snapshot.
+
+Convex env vars (set per deployment with `npx convex env set`):
+
+| Var | |
+| --- | --- |
+| `STOREFRONT_URL` | Storefront origin, for return links and order emails. Required. |
+| `TOYYIBPAY_SECRET_KEY`, `TOYYIBPAY_CATEGORY_CODE` | Enables ToyyibPay. |
+| `TOYYIBPAY_BASE_URL` | `https://dev.toyyibpay.com` for the sandbox. Defaults to production. |
+| `TOYYIBPAY_PAYMENT_CHANNEL` | `0` FPX (default), `1` card, `2` both. |
+| `ORDER_NOTIFY_EMAIL` | Comma-separated; HQ is emailed each paid order. Optional. |
 
 The storefront also vendors a copy of `convex/schema.ts`. After changing the
 schema, run `npm run sync:schema` there.

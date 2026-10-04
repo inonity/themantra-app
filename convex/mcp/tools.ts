@@ -126,7 +126,7 @@ export const TOOLS: ToolDef[] = [
         to: { type: "string", description: "YYYY-MM-DD, overrides period." },
         channel: {
           type: "string",
-          enum: ["direct", "agent", "tiktok", "shopee", "other", "internal"],
+          enum: ["direct", "agent", "tiktok", "shopee", "website", "other", "internal"],
         },
         agent: { type: "string", description: "Seller name or nickname." },
         paymentStatus: {

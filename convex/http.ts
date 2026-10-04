@@ -1,5 +1,6 @@
 import { httpRouter } from "convex/server";
 import { httpAction } from "./_generated/server";
+import { internal } from "./_generated/api";
 import { auth } from "./auth";
 import {
   CORS_HEADERS,
@@ -107,5 +108,35 @@ http.route({
   handler: httpAction(async (ctx, request) => issueToken(ctx, request)),
 });
 http.route({ path: "/mcp/oauth/token", method: "OPTIONS", handler: preflight });
+
+/* --------------------------- Payment callbacks ---------------------------- */
+
+// ToyyibPay posts here when a bill changes. The body is never trusted: the
+// bill code only tells us which payment to re-check with ToyyibPay directly.
+http.route({
+  path: "/payments/toyyibpay/callback",
+  method: "POST",
+  handler: httpAction(async (ctx, request) => {
+    let billCode: string | null = null;
+    try {
+      const form = await request.formData();
+      const value = form.get("billcode");
+      billCode = typeof value === "string" ? value.trim() : null;
+    } catch {
+      return new Response("Bad request", { status: 400 });
+    }
+    if (!billCode || billCode.length > 64) return new Response("Bad request", { status: 400 });
+
+    const paymentId = await ctx.runQuery(internal.payments.findByReference, {
+      provider: "toyyibpay",
+      reference: billCode,
+    });
+    if (paymentId) {
+      await ctx.scheduler.runAfter(0, internal.payments.reconcile, { paymentId });
+    }
+    // Always OK, so an unknown bill code tells a prober nothing.
+    return new Response("OK", { status: 200 });
+  }),
+});
 
 export default http;

@@ -21,6 +21,7 @@ import {
   LogOut,
   Settings,
   ArrowLeftRight,
+  ShoppingBagIcon,
 } from "lucide-react"
 import Link from "next/link"
 import { usePathname, useRouter } from "next/navigation"
@@ -112,6 +113,11 @@ const adminNav = [
     title: "Sales",
     url: "/dashboard/sales",
     icon: ShoppingCartIcon,
+  },
+  {
+    title: "Online Orders",
+    url: "/dashboard/orders",
+    icon: ShoppingBagIcon,
   },
 ]
 

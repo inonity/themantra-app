@@ -86,6 +86,7 @@ const CHANNEL_LABELS: Record<string, string> = {
   agent: "Agent",
   tiktok: "TikTok",
   shopee: "Shopee",
+  website: "Website",
   other: "Other",
   internal: "Internal",
 };
